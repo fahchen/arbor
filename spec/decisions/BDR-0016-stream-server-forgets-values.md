@@ -14,7 +14,7 @@ summary: After a stream op is flushed to the wire, the server retains only the o
 Long, append-mostly collections (chat history, activity feeds, log streams) do not fit the "server holds full state" model: a 50K-item chat would otherwise tie up server memory linearly. `Phoenix.LiveView`'s `stream/4` family solves this by emitting per-op deltas to the client and dropping item values server-side after each render flush. Arbor adopts the model directly because:
 
 - The wire payload model already separates JSON Patch (full state) from stream ops (deltas).
-- Snapshot persistence (a separate feature) can persist the dom_id index for `:limit` accounting on restart while still avoiding item-value persistence.
+- Persistence is an application-driven pattern (via hooks; see `spec/backlog.md`); applications that want to persist the dom_id index for `:limit` accounting on restart can do so without retaining item values.
 - Reconnect re-seeding via `mount/1` or `reload_stream/2` covers the "server lost state" recovery path.
 
 ## Behaviours Considered

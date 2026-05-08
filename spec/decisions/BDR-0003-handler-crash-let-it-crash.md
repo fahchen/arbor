@@ -1,13 +1,13 @@
 ---
 id: BDR-0003
-title: Handler crash terminates the page runtime; reconnect re-mounts from snapshot
+title: Handler crash terminates the page runtime; reconnect re-mounts from scratch
 status: accepted
 date: 2026-05-08
-summary: No try/rescue around handlers. Page runtime dies on raise. Client reconnect mounts a fresh runtime and reloads state from the snapshot adapter, mirroring Phoenix.LiveView.
+summary: No try/rescue around handlers. Page runtime dies on raise. Client reconnect mounts a fresh runtime whose mount/1 re-initializes state from scratch, mirroring Phoenix.LiveView. Snapshot persistence is not a built-in primitive (see backlog); applications that want session restoration implement it via hook-based persistence patterns.
 ---
 
 **Feature**: runtime/features/command-routing.feature
-**Rule**: A handler crash terminates the page runtime and the client reconnects from snapshot
+**Rule**: A handler crash terminates the page runtime and the client reconnects via fresh mount
 
 ## Context
 
@@ -19,7 +19,7 @@ Phoenix LiveView (`channel.ex:132-135`) terminates the LV process on `phx_leave`
 
 ### Option A: let-it-crash, LV-actual reconnect
 
-Handler runs without try/rescue. Exception → page runtime exits → supervisor restarts. Transport drops; client reconnects; fresh runtime mounts; snapshot adapter restores state. No reply is sent for the crashing command. Aligns with LV.
+Handler runs without try/rescue. Exception → page runtime exits → supervisor restarts. Transport drops; client reconnects; fresh runtime mounts and re-runs `mount/1` from scratch. Applications that want richer session restoration (e.g., persisted assigns, draft recovery) layer that on top via the hook-based persistence pattern. No reply is sent for the crashing command. Aligns with LV.
 
 ### Option B: Defensive try/rescue with `runtime_error` reply
 
@@ -35,7 +35,7 @@ Runtime survives a transport drop for N seconds; buffers replies/patches for lat
 
 ## Decision
 
-Adopt Option A. No try/rescue. No grace window. No buffering. Reconnect → fresh mount → snapshot reload. Drops the `runtime_error` wire category (no surviving runtime to send it).
+Adopt Option A. No try/rescue. No grace window. No buffering. Reconnect → fresh mount → application-driven session restoration (if any). Drops the `runtime_error` wire category (no surviving runtime to send it).
 
 ## Rejected Alternatives
 

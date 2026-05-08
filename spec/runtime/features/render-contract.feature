@@ -84,7 +84,8 @@ Feature: Render Contract
       Given a mounted child node
       When the parent's next render output no longer includes that child(...)
       Then the node is dropped without invoking any callback
-      And async tasks owned by the node are cancelled by their supervisor link
+      And any async tasks the node had spawned continue running
+      And their results, when they arrive, are lazy-discarded with [:arbor, :async, :lazy_discard] telemetry
 
   Rule: The root page store may define terminate(reason, ctx)
 
@@ -186,7 +187,7 @@ Feature: Render Contract
       When render/1 raises a KeyError
       Then the page runtime exits
       And the supervisor restarts a fresh runtime
-      And the snapshot adapter restores assigns on reconnect
+      And the next reconnect re-runs mount/1 from scratch
 
   Rule: Arbor.State modules declare reusable output types only
 

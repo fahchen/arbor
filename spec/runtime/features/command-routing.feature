@@ -115,7 +115,7 @@ Feature: Command Routing
       Then the client receives a reply with status "ok" and payload {"order_id": "ord_42"}
       And the resulting state mutations are observable through the next patch push
 
-  Rule: A handler crash terminates the page runtime and the client reconnects from snapshot
+  Rule: A handler crash terminates the page runtime and the client reconnects via fresh mount
 
     Scenario: Handler raises during command execution
       When the handler raises an exception
@@ -123,7 +123,7 @@ Feature: Command Routing
       And no error reply is sent for the crashing command
       And the supervisor restarts the runtime
       And the client transport observes a connection drop
-      And the next reconnect mounts a fresh page runtime that reloads state from the snapshot adapter
+      And the next reconnect mounts a fresh page runtime whose mount/1 re-initializes state from scratch
 
   Rule: Commands are serialized per page runtime
 
@@ -162,7 +162,6 @@ Feature: Command Routing
       Then the transport reply is delivered first
       And a patch push follows carrying the state diff
       And the outbound message is published last
-      And a debounced snapshot save runs after the outbound message
 
   Rule: Path resolution consults the runtime's authoritative registry of mounted store nodes
 
@@ -225,15 +224,15 @@ Feature: Command Routing
       Then the page runtime terminates immediately
       And no in-flight reply or patch is buffered for delivery
 
-  Rule: A reconnecting client mounts a fresh page runtime that reloads state from the snapshot adapter
+  Rule: A reconnecting client mounts a fresh page runtime whose mount/1 re-initializes state from scratch
 
     Scenario: Client reconnects after a transport drop
       Given the previous page runtime exited due to a transport drop
       When the client reconnects
       Then a fresh page runtime mounts
-      And the runtime's mount callback re-runs
-      And the snapshot adapter restores the last persisted state
-      And the runtime does not automatically re-execute any in-flight commands
+      And the runtime's mount callback re-runs from scratch
+      And no in-flight commands from the previous runtime are re-executed
+      And the application is responsible for any session-restore behavior via its own mount logic or hook-based persistence pattern
 
   Rule: Outcomes emitted to a closed transport are silently discarded
 
