@@ -162,10 +162,10 @@ Stores receive arbitrary in-process messages via `handle_info(msg, ctx)`. Typica
 LiveView-parity stream API for collections that should not live in server memory after delivery. Declaration:
 
 ```elixir
-stream :messages, dom_id: &"msg-#{&1.id}", limit: -100
+stream :messages, item_key: &"msg-#{&1.id}", limit: -100
 ```
 
-Operations are ctx-pipe helpers: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_dom_id/3`. The full LV option set is supported: `:at`, `:limit`, `:reset`, `:dom_id`, `:update_only`. After flush the runtime retains only the dom_id index; item values are dropped.
+Operations are ctx-pipe helpers: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`. The full LV option set is supported: `:at`, `:limit`, `:reset`, `:item_key`, `:update_only`. After flush the runtime retains only the item_key index; item values are dropped.
 
 Stream-typed fields appear in `state do` as `field :name, stream(T)` and are opaque to JSON Patch. They render as `[]` in the initial-state envelope; subsequent envelopes' `ops` never touch their paths; stream content flows through `stream_ops` only. Cycles with non-empty `stream_ops` always emit an envelope, even when JSON Patch ops are empty (BDR-0018).
 
@@ -235,7 +235,7 @@ A `state do` field whose type is another store's `state()` may be populated by e
 | Command Router | Resolves `{path, command}` to a node via the store registry; runs schema validation and authorization middleware/hooks; dispatches `handle_command/3`. |
 | Middleware Runner | Executes ordered hooks around mount, command, render, terminate. |
 | Diff Engine | Produces RFC 6902 JSON Patch ops from previous to next resolved output. Pure structural minimal diff (BDR-0014). |
-| Stream Manager | Tracks per-store stream config and dom_id index; accumulates `stream_ops` per cycle; drops values after flush. |
+| Stream Manager | Tracks per-store stream config and item_key index; accumulates `stream_ops` per cycle; drops values after flush. |
 | Async Supervisor | Per-runtime `Task.Supervisor`; tracks refs; routes results to `assign_async` writers, `handle_async/3`, or `stream_async`'s atomic AsyncResult-and-stream update. |
 | Transport Adapter | Reference Phoenix Channel adapter; receives commands, sends ref replies, pushes patch envelopes. |
 | Codegen | Emits Elixir typespecs and TypeScript types from `state do` and `command do`. |
@@ -312,7 +312,7 @@ Error reply categories on the wire: `unknown_path | unknown_command | invalid_pa
 | `field name, type, opts` | One field in `state do` | Supports primitives, lists, nested state, `stream(T)`, `AsyncResult.of(T)`, native typespec unions |
 | `command name do payload ... end` | Declares command + payload schema | Runtime-validated |
 | `middleware Module` / `middleware {Module, opts}` | Per-store middleware | Runs only for that node's commands |
-| `stream name, opts` | Declares stream slot | `:dom_id` (function), `:limit` |
+| `stream name, opts` | Declares stream slot | `:item_key` (function), `:limit` |
 | `async name, opts` | Declares named async slot | Optional sugar over `start_async` |
 | `mount(ctx)` | Initialize ctx.assigns | Returns `{:ok, ctx}` |
 | `update(new_assigns, ctx)` | React to attr changes | Returns `{:ok, ctx}`; default merges new_assigns |
@@ -337,7 +337,7 @@ Error reply categories on the wire: `unknown_path | unknown_command | invalid_pa
 | `assign_async(ctx, key_or_keys, fun, opts)` | Spawn async task; AsyncResult writes |
 | `start_async(ctx, name, fun, opts)` | Spawn named async task; routes to handle_async |
 | `cancel_async(ctx, name_or_key, reason)` | Cancel an in-flight task |
-| `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_dom_id/3` | Stream API (LV-parity) |
+| `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3` | Stream API (LV-parity) |
 | `stream_async(ctx, name, fun, opts)` | Composite async + stream |
 | `reload_stream(ctx, name)` | Trigger stream reload via callback |
 
@@ -470,7 +470,7 @@ defmodule MyApp.Stores.MessagesStore do
     field :messages, AsyncResult.of(stream(MessageState.t()))
   end
 
-  stream :messages, dom_id: &"msg-#{&1.id}", limit: -100
+  stream :messages, item_key: &"msg-#{&1.id}", limit: -100
 
   command :reload do
   end
@@ -559,7 +559,7 @@ export type ProductPageStoreCommands = {
 | M1: Runtime kernel + metadata | Page runtime GenServer; `use Arbor.Store` / `use Arbor.State`; metadata registry for `attr`/`state`/`command`/`middleware`/`subscribe`/`stream`/`async`; `ctx` struct with `assign`/`update_assign`/`invoke`. | High | Weeks 1–2 |
 | M2: Render contract + resolver | `child(...)` placeholder, render-output resolver, identity-preserving reconciler, render-output validation middleware, `mount`/`update`/`render` lifecycle, `handle_info/2`, root `terminate/2`. | High | Weeks 3–4 |
 | M3: Command pipeline | Path-based routing, payload schema validation middleware, attach_hook/detach_hook, authorization middleware, `handle_command/3`, `handle_callback/3`, transport reply contract, error category enum, system command namespace. | High | Weeks 5–6 |
-| M4: Replication + streams | RFC 6902 diff engine, patch envelope (`ops` + `stream_ops`), version counter, stream API (LV-parity: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_dom_id/3`), `reload_stream/2`, reference WebSocket adapter. | High | Weeks 7–8 |
+| M4: Replication + streams | RFC 6902 diff engine, patch envelope (`ops` + `stream_ops`), version counter, stream API (LV-parity: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`), `reload_stream/2`, reference WebSocket adapter. | High | Weeks 7–8 |
 | M5: Async lifecycle | `assign_async`, `start_async`, `cancel_async`, `handle_async/3`, `Arbor.AsyncResult`, `Task.Supervisor`, `:timeout` extension, `:reset` (incl subset list), ref-prune races, lazy-discard, `stream_async/4`. | High | Weeks 9–10 |
 | M6: Codegen + hardening | Elixir typespec emission, TypeScript codegen for state and command schemas (incl streams, AsyncResult, variants, composite types), telemetry events, devtools, trace buffer, docs, examples, benchmarks. | Medium | Weeks 11–12 |
 

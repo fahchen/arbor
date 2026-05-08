@@ -10,17 +10,17 @@ Feature: Streams Lifecycle
 
   Rule: A store declares a stream slot via stream :name, opts
 
-    Scenario: Custom dom_id and limit
-      Given a store declares stream :messages, dom_id: &"msg-#{&1.id}", limit: -100
-      Then the runtime records the dom_id function and a limit of -100 for the messages stream
+    Scenario: Custom item_key and limit
+      Given a store declares stream :messages, item_key: &"msg-#{&1.id}", limit: -100
+      Then the runtime records the item_key function and a limit of -100 for the messages stream
 
-    Scenario: Default dom_id depends on item id
-      Given a store declares stream :songs without :dom_id
-      When the runtime computes a dom_id for an item with id "abc"
-      Then the dom_id is "songs-abc"
+    Scenario: Default item_key depends on item id
+      Given a store declares stream :songs without :item_key
+      When the runtime computes a item_key for an item with id "abc"
+      Then the item_key is "songs-abc"
 
-    Scenario: Default dom_id and missing item id
-      Given a store declares stream :songs without :dom_id
+    Scenario: Default item_key and missing item id
+      Given a store declares stream :songs without :item_key
       When the application passes an item without an :id field
       Then the runtime raises an ArgumentError pointing at the failing call site
 
@@ -47,22 +47,22 @@ Feature: Streams Lifecycle
         | call                                        |
         | stream(:messages, items)                    |
         | stream(:messages, items, reset: true)       |
-        | stream_configure(:messages, dom_id: ...)    |
+        | stream_configure(:messages, item_key: ...)    |
         | stream_insert(:messages, item)              |
         | stream_insert(:messages, item, at: 0)       |
         | stream_insert(:messages, item, limit: -100) |
         | stream_insert(:messages, item, update_only: true) |
         | stream_delete(:messages, item)              |
-        | stream_delete_by_dom_id(:messages, "msg-1") |
+        | stream_delete_by_item_key(:messages, "msg-1") |
 
-    Scenario: Insert is upsert by dom_id
-      Given the stream already contains an item at dom_id "msg-1"
+    Scenario: Insert is upsert by item_key
+      Given the stream already contains an item at item_key "msg-1"
       When the application calls stream_insert(:messages, %{id: 1, body: "edited"})
       Then the queued op replaces the item in place
       And the stream length does not change
 
-    Scenario: update_only true on a missing dom_id is a no-op
-      Given the stream does not contain dom_id "msg-9"
+    Scenario: update_only true on a missing item_key is a no-op
+      Given the stream does not contain item_key "msg-9"
       When the application calls stream_insert(:messages, %{id: 9}, update_only: true)
       Then no op is queued for that call
 
@@ -70,7 +70,7 @@ Feature: Streams Lifecycle
 
     Scenario: Configure after insert raises
       Given a handler queues stream_insert(:messages, msg)
-      When the same handler subsequently calls stream_configure(:messages, dom_id: ...)
+      When the same handler subsequently calls stream_configure(:messages, item_key: ...)
       Then the runtime raises
 
   Rule: Pending ops flush once per handler invocation
@@ -86,11 +86,11 @@ Feature: Streams Lifecycle
       When handler B begins for the next message
       Then handler B starts with no pending stream ops from handler A
 
-  Rule: After flush the runtime forgets stream values; only the dom_id index is retained
+  Rule: After flush the runtime forgets stream values; only the item_key index is retained
 
     Scenario: Server memory after a 1000-item flush
       When the application seeds 1000 items into a stream
-      Then the runtime retains only the ordered list of dom_ids server-side
+      Then the runtime retains only the ordered list of item_keys server-side
       And the runtime does not retain item bodies
 
   Rule: Initial state delivery splits stream fields between ops and stream_ops
@@ -119,19 +119,19 @@ Feature: Streams Lifecycle
       Then it first applies all ops, then applies stream_ops in array order
       And the reset clears the local stream before subsequent inserts populate it
 
-  Rule: :limit is re-evaluated only when the dom_id index grows
+  Rule: :limit is re-evaluated only when the item_key index grows
 
     Scenario: Upsert at the limit
       Given a stream has 100 items and limit: -100
-      When the application upserts an existing dom_id
+      When the application upserts an existing item_key
       Then the envelope's stream_ops contain only the insert
       And no delete is emitted
 
     Scenario: New insert at the limit
       Given a stream has 100 items and limit: -100
-      When the application inserts a new dom_id
+      When the application inserts a new item_key
       Then the envelope's stream_ops contain the insert
-      And the envelope contains a delete for the previously-trimmed-out dom_id
+      And the envelope contains a delete for the previously-trimmed-out item_key
 
   Rule: :at applies the standard LV positions
 
