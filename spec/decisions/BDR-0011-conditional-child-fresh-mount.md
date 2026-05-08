@@ -8,7 +8,7 @@ summary: Identity does not survive an absence in render output. When (parent_pat
 
 ## Scope
 
-**Feature**: runtime/features/render-contract.feature
+**Feature**: domains/runtime/features/render-contract.feature
 **Rule**: A disappeared child is unmounted; reappearance is a fresh mount with no preserved assigns
 
 ## Reason

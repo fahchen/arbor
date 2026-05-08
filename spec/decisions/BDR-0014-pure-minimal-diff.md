@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: The diff engine emits whatever the JSON-diff library produces — minimal add/remove/replace ops — with no thresholds, no whole-array replace heuristic, and no subtree-replace fallback. Bandwidth tuning is deferred.
 ---
 
-**Feature**: replication/features/json-patch-diff.feature
+**Feature**: domains/replication/features/json-patch-diff.feature
 **Rule**: The diff engine emits the structural minimal diff with no fallback to subtree replace
 
 ## Context

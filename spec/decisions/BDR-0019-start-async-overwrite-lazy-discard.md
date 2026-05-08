@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: A second start_async with the same name does not cancel the prior task. The runtime swaps the tracked ref; the prior task continues running but its result is dropped via ref-prune when it arrives. Mirrors Phoenix.LiveView.
 ---
 
-**Feature**: async/features/lifecycle.feature
+**Feature**: domains/async/features/lifecycle.feature
 **Rule**: A second start_async with the same name silently overwrites the prior tracked ref
 
 ## Context

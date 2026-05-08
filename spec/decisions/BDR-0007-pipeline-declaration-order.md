@@ -8,7 +8,7 @@ summary: No fixed magic order. Hooks and per-store middleware run in declaration
 
 ## Scope
 
-**Feature**: runtime/features/command-routing.feature
+**Feature**: domains/runtime/features/command-routing.feature
 **Rule**: Hooks and middleware run in declaration and attachment order
 
 ## Reason

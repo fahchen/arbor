@@ -8,7 +8,7 @@ summary: Refines replication/json-patch-diff Rule 1/2. An envelope is emitted wh
 
 ## Scope
 
-**Feature**: streams/features/lifecycle.feature
+**Feature**: domains/streams/features/lifecycle.feature
 **Rule**: Stream-only render cycles still emit envelopes
 
 ## Reason

@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: Per-store `middleware` declarations apply only to the addressed node. Cross-node concerns use `attach_hook(ctx, id, stage, fun)` mirroring Phoenix.LiveView.attach_hook/4.
 ---
 
-**Feature**: runtime/features/command-routing.feature
+**Feature**: domains/runtime/features/command-routing.feature
 **Rule**: Hooks and middleware run in declaration and attachment order
 **Rule**: Each store maintains its own hook table
 

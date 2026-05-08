@@ -8,7 +8,7 @@ summary: Side effects (e.g., out-of-band broadcasts, hook-implemented persistenc
 
 ## Scope
 
-**Feature**: runtime/features/command-routing.feature
+**Feature**: domains/runtime/features/command-routing.feature
 **Rule**: A successful handler returns either {:noreply, ctx} or {:reply, payload, ctx}
 
 ## Reason

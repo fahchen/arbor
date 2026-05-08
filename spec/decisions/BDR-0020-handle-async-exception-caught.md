@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: A raise in handle_async/3 is caught by the runtime, recorded as [:arbor, :async, :exception], and the runtime continues. Justified because async result-processing bugs would otherwise crash the page on every result delivery.
 ---
 
-**Feature**: async/features/lifecycle.feature
+**Feature**: domains/async/features/lifecycle.feature
 **Rule**: handle_async/3 exceptions are caught; runtime survives
 
 ## Context

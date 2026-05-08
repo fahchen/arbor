@@ -8,7 +8,7 @@ summary: Transport reply ships first, the patch push follows, side effects (out-
 
 ## Scope
 
-**Feature**: runtime/features/command-routing.feature
+**Feature**: domains/runtime/features/command-routing.feature
 **Rule**: A successful command's outcome is delivered as reply, then patch push, then effects
 
 ## Reason

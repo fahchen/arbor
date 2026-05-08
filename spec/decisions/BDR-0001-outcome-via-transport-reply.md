@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: Use Phoenix Channel ref-based replies for command outcomes; drop application-layer ack envelopes and client_seq.
 ---
 
-**Feature**: runtime/features/command-routing.feature
+**Feature**: domains/runtime/features/command-routing.feature
 **Rule**: Each command receives exactly one transport reply correlated to its source push
 
 ## Context

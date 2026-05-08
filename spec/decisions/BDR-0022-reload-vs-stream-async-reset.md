@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: reload_stream/2 silently refreshes a stream's contents without touching the AsyncResult; stream_async(reset: true) re-emits the loading state. Authors choose based on whether a loading flash is desired.
 ---
 
-**Feature**: async/features/stream-async.feature
+**Feature**: domains/async/features/stream-async.feature
 **Rule**: reload_stream and stream_async serve complementary recovery paths
 
 ## Context

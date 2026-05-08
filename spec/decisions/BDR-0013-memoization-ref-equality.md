@@ -8,7 +8,7 @@ summary: A child skips update/2 and render/1 when its ctx.assigns map is referen
 
 ## Scope
 
-**Feature**: runtime/features/render-contract.feature
+**Feature**: domains/runtime/features/render-contract.feature
 **Rule**: A child whose ctx.assigns is reference-equal to last cycle skips update/2 and render/1
 
 ## Reason

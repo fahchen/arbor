@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: handle_command/3 returns {:noreply, ctx} or {:reply, payload, ctx}; no {:error, reason} variant.
 ---
 
-**Feature**: runtime/features/command-routing.feature
+**Feature**: domains/runtime/features/command-routing.feature
 **Rule**: A successful handler returns either {:noreply, ctx} or {:reply, payload, ctx}
 
 ## Context

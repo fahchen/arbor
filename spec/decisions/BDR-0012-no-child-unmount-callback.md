@@ -8,7 +8,7 @@ summary: Mirrors Phoenix.LiveComponent (no terminate hook) and Phoenix.LiveView 
 
 ## Scope
 
-**Feature**: runtime/features/render-contract.feature
+**Feature**: domains/runtime/features/render-contract.feature
 **Rule**: Lifecycle for child stores is mount(ctx) and update(new_assigns, ctx); no per-child unmount callback
 **Rule**: The root page store may define terminate(reason, ctx)
 

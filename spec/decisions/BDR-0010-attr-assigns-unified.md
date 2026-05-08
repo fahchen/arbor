@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: At runtime, parent-passed values and store-internal state share one ctx.assigns map (LV-aligned). The attr macro stays for compile-time required/type/default validation, IDE hints, and codegen — but introduces no separate ctx.attrs namespace.
 ---
 
-**Feature**: runtime/features/render-contract.feature
+**Feature**: domains/runtime/features/render-contract.feature
 **Rule**: attr declares a parent-supplied assign with required, type, and default options
 
 ## Context

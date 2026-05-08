@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: Drop Arbor's `subscribe` block, `broadcast/4` ctx helper, and `handle_broadcast/3` callback. Stores subscribe via Phoenix.PubSub.subscribe/2 inside mount and react via handle_info(msg, ctx).
 ---
 
-**Feature**: runtime/features/command-routing.feature
+**Feature**: domains/runtime/features/command-routing.feature
 **Rule**: Arbor does not define a built-in pub/sub layer
 
 ## Context

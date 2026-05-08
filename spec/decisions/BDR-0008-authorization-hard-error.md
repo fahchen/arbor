@@ -8,7 +8,7 @@ summary: Denied commands always reply {status: "error", payload: %{category: "un
 
 ## Scope
 
-**Feature**: runtime/features/command-routing.feature
+**Feature**: domains/runtime/features/command-routing.feature
 **Rule**: Authorization failure always produces a hard error reply with no silent downgrade
 
 ## Reason

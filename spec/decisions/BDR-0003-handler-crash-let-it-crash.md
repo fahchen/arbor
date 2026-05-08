@@ -6,7 +6,7 @@ date: 2026-05-08
 summary: No try/rescue around handlers. Page runtime dies on raise. Client reconnect mounts a fresh runtime whose mount/1 re-initializes state from scratch, mirroring Phoenix.LiveView. Snapshot persistence is not a built-in primitive (see backlog); applications that want session restoration implement it via hook-based persistence patterns.
 ---
 
-**Feature**: runtime/features/command-routing.feature
+**Feature**: domains/runtime/features/command-routing.feature
 **Rule**: A handler crash terminates the page runtime and the client reconnects via fresh mount
 
 ## Context

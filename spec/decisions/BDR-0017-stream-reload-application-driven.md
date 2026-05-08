@@ -8,7 +8,7 @@ summary: The runtime exposes a reload_stream(ctx, name) helper that triggers the
 
 ## Scope
 
-**Feature**: streams/features/lifecycle.feature
+**Feature**: domains/streams/features/lifecycle.feature
 **Rule**: Stream reload is application-driven via ctx |> reload_stream(name)
 
 ## Reason

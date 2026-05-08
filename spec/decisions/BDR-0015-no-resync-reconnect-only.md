@@ -8,7 +8,7 @@ summary: Drop arbor:request_resync (and any subtree-resync variants). Under 1:1 
 
 ## Scope
 
-**Feature**: replication/features/json-patch-diff.feature
+**Feature**: domains/replication/features/json-patch-diff.feature
 **Rule**: There is no application-level resync command; reconnect is the recovery path
 
 ## Reason
