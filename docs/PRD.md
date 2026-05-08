@@ -26,8 +26,8 @@ Arbor lets developers model page state as a hierarchical tree of stateful stores
 | Predictable side effects | Plug-like middleware with halting + ordered hooks; effects via ctx-pipe (BDR-0006). |
 | Addressable mutations | Commands route by node path plus command name; outcome via Phoenix Channel ref reply (BDR-0001). |
 | Efficient replication | RFC 6902 JSON Patch, structural minimal diff with no threshold (BDR-0014). |
-| Stream support | LiveView-parity stream API; server forgets values, client owns materialization (BDR-0016). |
-| Async tasks | LiveView-parity `assign_async`/`start_async`/`cancel_async`/`handle_async` with `Arbor.AsyncResult`, plus Arbor `:timeout` extension (BDR-0021). |
+| Stream support | LiveView-parity stream API; server forgets values, client owns materialization. |
+| Async tasks | LiveView-parity `assign_async`/`start_async`/`cancel_async`/`handle_async` with `Arbor.AsyncResult`, plus an Arbor `:timeout` extension that kills overdue tasks. |
 | Recoverability | Reconnect path: 1:1 transport binding, fresh mount on disconnect, first patch envelope carries full root (BDR-0003). |
 | Type safety | Generated Elixir typespecs and TypeScript types from one source of truth (`state do` and `command do`). |
 | Observability | Telemetry events for command lifecycle, render, validation, diff, patch, async lifecycle, stream flush. |
@@ -46,7 +46,7 @@ Arbor lets developers model page state as a hierarchical tree of stateful stores
 | Application-level resync command | Recovery is the reconnect path (BDR-0015). |
 | Subtree-replace patch fallback / threshold | Always emit minimal RFC 6902 ops (BDR-0014). |
 | Per-child unmount/terminate callback | Mirrors LV LiveComponent (BDR-0012). |
-| Server-side stream value retention | Stream values live only on the client after delivery (BDR-0016). |
+| Server-side stream value retention | Stream values live only on the client after delivery. |
 | Async result auto-persistence | No `persist: :ok_only` opt-in. Application implements via hooks if needed. |
 | `move`/`copy`/`test` JSON Patch ops | Out of scope. |
 
@@ -159,7 +159,7 @@ Stores receive arbitrary in-process messages via `handle_info(msg, ctx)`. Typica
 
 ### Streams
 
-LiveView-parity stream API for collections that should not live in server memory after delivery (BDR-0016). Declaration:
+LiveView-parity stream API for collections that should not live in server memory after delivery. Declaration:
 
 ```elixir
 stream :messages, dom_id: &"msg-#{&1.id}", limit: -100
@@ -175,7 +175,7 @@ Stream reload is application-driven via `ctx |> reload_stream(name)` (BDR-0017).
 
 LiveView-parity `assign_async`, `start_async`, `cancel_async`, `handle_async/3`, and `Arbor.AsyncResult`. Plus Arbor extensions:
 
-- `:timeout` option (BDR-0021): runtime-side timer kills the task on overdue; produces `failed: {:exit, :timeout}`.
+- `:timeout` option (Arbor extension; LV does not provide one): runtime-side timer kills the task on overdue; produces `failed: {:exit, :timeout}`.
 - `[:arbor, :async, ...]` telemetry events: `:start | :stop | :exception | :cancel | :lazy_discard`.
 - `handle_async/3` exceptions are caught; runtime survives (BDR-0020 — diverges from BDR-0003 let-it-crash for command/render handlers).
 
@@ -580,8 +580,8 @@ The MVP is done when all of the following are true:
 - `handle_info(msg, ctx)` shares the runtime mailbox with commands; no Arbor PubSub abstraction (BDR-0005).
 - Diff engine emits structural minimal RFC 6902 diff with no threshold (BDR-0014). Initial state is the first patch envelope's `replace` at path `""`.
 - No application-level resync command; recovery is reconnect (BDR-0015).
-- Stream API LV-parity; server forgets values (BDR-0016); reload is application-driven (BDR-0017); stream-only cycles emit envelopes (BDR-0018).
-- Async API LV-parity plus Arbor `:timeout` (BDR-0021); `start_async` same-name overwrites + lazy-discards (BDR-0019); `handle_async/3` exceptions caught (BDR-0020); telemetry events `[:arbor, :async, :*]` cover the lifecycle.
+- Stream API LV-parity; server forgets values; reload is application-driven (BDR-0017); stream-only cycles emit envelopes (BDR-0018).
+- Async API LV-parity plus an Arbor `:timeout` extension; `start_async` same-name overwrites + lazy-discards (BDR-0019); `handle_async/3` exceptions caught (BDR-0020); telemetry events `[:arbor, :async, :*]` cover the lifecycle.
 - `stream_async/4` composite works; `reload_stream` and `stream_async(reset: true)` are complementary (BDR-0022).
 - The system runs without CRDTs, offline sync, event sourcing, built-in PubSub, built-in persistence, slot composition, or `move`/`copy`/`test` JSON Patch ops.
 
