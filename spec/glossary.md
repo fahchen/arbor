@@ -33,3 +33,8 @@ Shared domain terminology for Arbor specifications.
 | Lifecycle | For child stores: `mount(ctx)` and `update(new_assigns, ctx)`, both required to return `{:ok, ctx}`. No per-child unmount/terminate. The root page store may additionally define `terminate(reason, ctx)`. |
 | Memoization | A child whose `ctx.assigns` map is reference-equal across render cycles skips its `update/2` and `render/1` invocations and reuses the previously resolved output. |
 | `AsyncResult` | A four-field struct (`loading`, `ok?`, `result`, `failed`) carrying the lifecycle of an async-loaded value; serializable through JSON Patch like any other field. Mirrors `Phoenix.LiveView.AsyncResult`. |
+| Stream slot | A named stream owned by one store, with metadata (`:dom_id` function, `:limit`) and a server-side dom_id index. Declared via `stream :name, opts`. |
+| Dom id | A binary identifier per stream item that the client uses to identify the item in its local materialization. Defaults to `"#{stream_name}-#{item.id}"`. |
+| Stream op | One entry in the envelope's `stream_ops` array: `configure`, `reset`, `insert`, or `delete`. Inserts carry `dom_id`, `at`, `limit`, `update_only`, `data`. Deletes carry `dom_id`. |
+| Pending stream ops | Ops accumulated by handler calls that have not yet been flushed to the wire. Flushed once per handler invocation; never carried across handlers. |
+| `reload_stream/2` | Store callback returning `{:ok, [item]}` for stream recovery. Invoked only when the application explicitly calls `ctx \|> reload_stream(name)`. The runtime never auto-invokes it. |
