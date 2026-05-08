@@ -3,7 +3,7 @@ id: BDR-0021
 title: :timeout option for assign_async/start_async is an Arbor extension over LV
 status: accepted
 date: 2026-05-08
-summary: LV does not provide a built-in async timeout. Arbor adds :timeout, implemented as a runtime-side timer (Process.send_after) that kills the task pid on fire and writes AsyncResult.failed(prior, {:exit, :timeout}).
+summary: LV does not provide a built-in async timeout. Arbor adds :timeout, implemented as a runtime-side timer (Process.send_after) that kills the task pid on fire and writes Arbor.AsyncResult.failed(prior, {:exit, :timeout}).
 ---
 
 ## Scope

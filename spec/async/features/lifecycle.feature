@@ -31,16 +31,16 @@ Feature: Async Task Lifecycle
 
     Scenario: Multi-key atomic write
       When the application calls assign_async(ctx, [:user, :org], fn -> {:ok, %{user: u, org: o}} end)
-      Then both keys are set to AsyncResult.loading([:user, :org]) immediately
+      Then both keys are set to Arbor.AsyncResult.loading([:user, :org]) immediately
       And on task completion both keys are updated atomically
 
     Scenario: User function returns invalid shape
       When the user function returns {:invalid, :shape}
-      Then the runtime raises ArgumentError inside the task and writes AsyncResult.failed(prior, {:exit, ...})
+      Then the runtime raises ArgumentError inside the task and writes Arbor.AsyncResult.failed(prior, {:exit, ...})
 
     Scenario: User function returns explicit error
       When the user function returns {:error, :unauthorized}
-      Then ctx.assigns.<key> becomes AsyncResult.failed(prior, {:error, :unauthorized})
+      Then ctx.assigns.<key> becomes Arbor.AsyncResult.failed(prior, {:error, :unauthorized})
 
   Rule: start_async routes results to handle_async; AsyncResult is not auto-written
 
@@ -69,13 +69,13 @@ Feature: Async Task Lifecycle
 
     Scenario: Cancel by AsyncResult sets failed before killing the task
       When the application calls cancel_async(ctx, %AsyncResult{loading: [:profile]} = ar, :user_navigated_away)
-      Then ctx.assigns.profile is updated to AsyncResult.failed(ar, {:exit, :user_navigated_away})
+      Then ctx.assigns.profile is updated to Arbor.AsyncResult.failed(ar, {:exit, :user_navigated_away})
       And the runtime kills the associated task pid
 
     Scenario: Cancel by key kills the task and lets DOWN drive the failed write
       When the application calls cancel_async(ctx, :profile, :user_navigated_away)
       Then the runtime kills the associated task pid
-      And the resulting :DOWN message triggers ctx.assigns.profile = AsyncResult.failed(prior, {:exit, :user_navigated_away})
+      And the resulting :DOWN message triggers ctx.assigns.profile = Arbor.AsyncResult.failed(prior, {:exit, :user_navigated_away})
 
   Rule: assign_async :reset cancels the prior task before re-emitting loading
 
@@ -89,12 +89,12 @@ Feature: Async Task Lifecycle
       Given the prior assign_async for [:user, :org] is still in flight
       When the application calls assign_async(ctx, [:user, :org], fun, reset: [:user])
       Then the prior task is cancelled
-      And :user re-emits AsyncResult.loading; :org preserves its prior loading metadata
+      And :user re-emits Arbor.AsyncResult.loading; :org preserves its prior loading metadata
 
     Scenario: No reset preserves prior result during reload
       Given ctx.assigns.profile is %AsyncResult{ok?: true, result: prior_data}
       When the application calls assign_async(ctx, :profile, fun) without :reset
-      Then ctx.assigns.profile becomes AsyncResult.loading(prior_async_result)
+      Then ctx.assigns.profile becomes Arbor.AsyncResult.loading(prior_async_result)
       And the prior result remains observable via the loading struct's preserved fields
 
   Rule: Tasks are linked to the page runtime; runtime exit kills tasks; default supervisor is Arbor.AsyncSupervisor
@@ -136,7 +136,7 @@ Feature: Async Task Lifecycle
       When the application calls assign_async(ctx, :profile, fun, timeout: 5_000)
       And the task does not complete within 5 seconds
       Then the runtime kills the task pid
-      And ctx.assigns.profile becomes AsyncResult.failed(prior, {:exit, :timeout})
+      And ctx.assigns.profile becomes Arbor.AsyncResult.failed(prior, {:exit, :timeout})
 
     Scenario: Task completes before timer fires
       When a task with timeout: 5_000 completes in 2 seconds
