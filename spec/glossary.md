@@ -11,7 +11,12 @@ Shared domain terminology for Arbor specifications.
 | Identity | The tuple `(parent_path, module, id)` that names a child store node within its parent. The `id` is constrained to a binary (string). |
 | Command envelope | The wire shape carrying `path`, `command`, and `payload` (no application-layer sequence number). |
 | Reply | The transport-level (Phoenix Channel ref-based) response to a command push; carries `status: "ok" \| "error"` and a `payload` map. |
-| Patch push | A separate transport push delivering JSON Patch operations (and stream operations) caused by a command, an async result, or a `handle_info` message. |
+| Patch push | A separate transport push delivering one patch envelope. |
+| Patch envelope | The wire shape `{type: "patch", base_version, version, ops, stream_ops}`. `ops` is an RFC 6902 array (`add`/`remove`/`replace` only). `stream_ops` is defined by streams/lifecycle. `version` is the post-application monotonic counter; `base_version` is `version - 1`. |
+| Diff engine | Runtime component that compares the previous and next resolved root render output and emits the structural minimal sequence of RFC 6902 ops. No threshold, no subtree-replace fallback, no special-case array strategy. |
+| JSON Pointer | RFC 6901 string syntax used for `path` values in JSON Patch ops; runtime relies on a library for encoding (including `~0`/`~1` escapes). |
+| Version counter | Monotonic integer per page runtime starting at `0` and incrementing per emitted patch envelope. Resets on reconnect (fresh runtime starts at 0). |
+| Initial state delivery | First patch envelope after a fresh mount carries `base_version: 0, version: 1, ops: [{op: "replace", path: "", value: <full root>}]`. No separate "snapshot" envelope type. |
 | Transport | The connecting layer (Phoenix Channel over WebSocket) responsible for delivery, ordering, and ref correlation. |
 | Hook | A function attached at a specific lifecycle stage on a store node via `attach_hook/4`; analogous to `Phoenix.LiveView.attach_hook/4`. Stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`. |
 | Middleware | A per-store-node plug-in module declared with the `middleware ...` macro; runs only for commands addressed to that node. |
