@@ -12,7 +12,7 @@ The `state do` declaration is the single source of truth for the wire shape, the
 
 ### Product statement
 
-Arbor lets developers model page state as a hierarchical tree of stateful stores, hosted in one BEAM process per connected page. Children are composed via explicit `child(...)` placeholders in `render/1`, identified by `(parent_path, module, id)`, and live and die with the parent's render output. Cross-cutting concerns (audit, logging, feature flags) attach via `attach_hook/4`, mirroring `Phoenix.LiveView.attach_hook/4`. PubSub is not built in: stores subscribe via `Phoenix.PubSub.subscribe/2` directly and react via `handle_info/2`. Persistence is not built in: applications implement save/load using existing hook and middleware extension points.
+Arbor lets developers model page state as a hierarchical tree of stateful stores, hosted in one BEAM process per connected page. Children are composed via explicit `child(...)` placeholders in `render/1`, identified by `(parent_path, module, id)`, and live and die with the parent's render output. Cross-cutting concerns (audit, logging, feature flags) attach via `attach_hook/4`, mirroring `Phoenix.LiveView.attach_hook/4`. PubSub is not built in: stores subscribe via `Phoenix.PubSub.subscribe/2` directly and react via `handle_info/2`. Persistence is not built in: applications implement save/load using existing hook and extension points.
 
 ### Goals
 
@@ -23,7 +23,7 @@ Arbor lets developers model page state as a hierarchical tree of stateful stores
 | Render contract | `render(ctx)` returns a value matching `state do`; `child(...)` placeholders are resolved bottom-up before validation/diffing. |
 | Explicit ownership | Parent passes assigns (data + functions) via `child(...)`; child can only mutate its own `ctx.assigns`. |
 | LV-aligned developer experience | Mount/update/render lifecycle, handle_info for messages, attach_hook for cross-cutting, AsyncResult for async, stream API for collections. |
-| Predictable side effects | Plug-like middleware with halting + ordered hooks; effects via ctx-pipe (BDR-0006). |
+| Predictable side effects | LV-style `attach_hook` with halting + ordered stages; effects via ctx-pipe (BDR-0006). |
 | Addressable mutations | Commands route by node path plus command name; outcome via Phoenix Channel ref reply (BDR-0001). |
 | Efficient replication | RFC 6902 JSON Patch, structural minimal diff with no threshold (BDR-0014). |
 | Stream support | LiveView-parity stream API; server forgets values, client owns materialization. |
@@ -42,7 +42,7 @@ Arbor lets developers model page state as a hierarchical tree of stateful stores
 | Templated UI composition (HEEx/JSX-style) | Render returns a typed JSON shape; layout belongs to the client. |
 | Slot composition | Children are placed by `child(...)`; slots are unnecessary. |
 | Built-in PubSub abstraction | Use `Phoenix.PubSub.subscribe/2` directly and `handle_info/2` (BDR-0005). |
-| Built-in persistence | Implement via hooks/middleware; no `Arbor.Persistence` behaviour, no bundled adapters (recorded in `spec/backlog.md`). |
+| Built-in persistence | Implement via hooks; no `Arbor.Persistence` behaviour, no bundled adapters (recorded in `spec/backlog.md`). |
 | Application-level resync command | Recovery is the reconnect path (BDR-0015). |
 | Subtree-replace patch fallback / threshold | Always emit minimal RFC 6902 ops (BDR-0014). |
 | Per-child unmount/terminate callback | Mirrors LV LiveComponent (BDR-0012). |
@@ -54,7 +54,7 @@ Arbor lets developers model page state as a hierarchical tree of stateful stores
 
 ### Store
 
-A runtime node identified by `(parent_path, module, id)`. The root page store is rooted at `[]`. A store can declare attrs, output state, commands, middleware, streams, async slots, and a render function. Identity persists across re-renders within the same parent; a child whose identity disappears is silently discarded (no callback). The root may define `terminate(reason, ctx)` mirroring `Phoenix.LiveView.terminate/2`.
+A runtime node identified by `(parent_path, module, id)`. The root page store is rooted at `[]`. A store can declare attrs, output state, commands, streams, async slots, and a render function. Cross-cutting and per-node concerns (auth, validation, logging, tracing) attach at runtime via `attach_hook(ctx, ...)` inside `mount/1` or any handler — there is no `middleware` macro (BDR-0004). Identity persists across re-renders within the same parent; a child whose identity disappears is silently discarded (no callback). The root may define `terminate(reason, ctx)` mirroring `Phoenix.LiveView.terminate/2`.
 
 ### `state do` — public output shape
 
@@ -145,13 +145,13 @@ def handle_callback(:product_selected, %{id: id}, ctx) do
 end
 ```
 
-### Middleware and `attach_hook`
+### `attach_hook` — sole extension primitive
 
-Per-store `middleware Module` declarations apply only to commands addressed to that node. Cross-cutting concerns attach at runtime via `attach_hook(ctx, id, stage, fun)` (BDR-0004). Stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`. Hook return: `{:cont, ctx}`, `{:halt, ctx}`, or `{:halt, reply, ctx}` (only on `:before_command`). Mirrors `Phoenix.LiveView.attach_hook/4`. Each store maintains its own hook table; child-attached hooks see only that node's events. `detach_hook/3` is a silent no-op when the hook is absent.
+All cross-cutting and per-node concerns use `attach_hook(ctx, id, stage, fun)` (BDR-0004). There is no `middleware` macro. Stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`. Hook return: `{:cont, ctx}`, `{:halt, ctx}`, or `{:halt, reply, ctx}` (only on `:before_command`). Mirrors `Phoenix.LiveView.attach_hook/4`. Each store maintains its own hook table; child-attached hooks see only that node's events. `detach_hook/3` is a silent no-op when the hook is absent.
 
-Schema validation is itself a middleware (`Arbor.Middleware.ValidateCommandSchema`), default-attached but replaceable (BDR-0007). Render-output validation (`Arbor.Middleware.ValidateRender`) is default-on in dev/test, telemetry-only opt-in for prod.
+Authors attach hooks inside `mount/1` for stable concerns and inside any handler for runtime-driven attachment. Built-in hooks (`Arbor.Hooks.ValidateCommandSchema` on `:before_command`, `Arbor.Hooks.ValidateRender` on `:after_render`) are attached by the runtime's mount path; authors may detach or replace them (BDR-0007). Render-output validation is default-on in dev/test, telemetry-only opt-in for prod.
 
-Pipeline order follows declaration / attachment order; the addressed store's `handle_command/3` dispatches after all `:before_command` middleware/hooks have continued; `:after_command` runs after the handler returns; the transport reply is delivered next; the patch push follows; effects fire last (BDR-0009).
+Pipeline order follows hook attachment order; the addressed store's `handle_command/3` dispatches after all `:before_command` hooks have continued; `:after_command` runs after the handler returns; the transport reply is delivered next; the patch push follows; effects fire last (BDR-0009).
 
 ### `handle_info/2` — server-side messages
 
@@ -228,12 +228,12 @@ A `state do` field whose type is another store's `state()` may be populated by e
 | Component | Responsibility |
 |-----------|----------------|
 | Page Runtime | One GenServer per connected page; owns the store tree, message loop, version counter, transport session. |
-| Store Metadata Registry | Compile-time declarations: `attr`, `state`, `command`, `middleware`, `stream`, `async`. |
+| Store Metadata Registry | Compile-time declarations: `attr`, `state`, `command`, `stream`, `async`. |
 | Render Resolver | Walks `render/1`'s return value and resolves `child(...)` placeholders bottom-up. |
-| Render Validator | Validates each store's resolved output via `Arbor.Middleware.ValidateRender`. |
+| Render Validator | Validates each store's resolved output via `Arbor.Hooks.ValidateRender`. |
 | Reconciler | Maintains `(parent_path, module, id)` identity; preserves `ctx.assigns` across cycles via reference equality memoization (BDR-0013). |
-| Command Router | Resolves `{path, command}` to a node via the store registry; runs schema validation and authorization middleware/hooks; dispatches `handle_command/3`. |
-| Middleware Runner | Executes ordered hooks around mount, command, render, terminate. |
+| Command Router | Resolves `{path, command}` to a node via the store registry; runs schema validation and authorization hooks; dispatches `handle_command/3`. |
+| Hook Runner | Executes ordered hooks around mount, command, render, terminate. |
 | Diff Engine | Produces RFC 6902 JSON Patch ops from previous to next resolved output. Pure structural minimal diff (BDR-0014). |
 | Stream Manager | Tracks per-store stream config and item_key index; accumulates `stream_ops` per cycle; drops values after flush. |
 | Async Supervisor | Per-runtime `Task.Supervisor`; tracks refs; routes results to `assign_async` writers, `handle_async/3`, or `stream_async`'s atomic AsyncResult-and-stream update. |
@@ -247,11 +247,10 @@ A `state do` field whose type is another store's `state()` may be populated by e
 
 ```
 client command (path + name + payload)
-  -> :before_command middleware/hooks (in declaration/attachment order)
-  -> schema validation (a middleware)
-  -> authorization (a middleware)
+  -> :before_command hooks (in attachment order; includes built-in
+     ValidateCommandSchema and any author-attached authorization hook)
   -> handle_command(name, payload, ctx)
-  -> :after_command middleware/hooks
+  -> :after_command hooks
   -> transport reply (ok or error category)
   -> patch push (if render output changed or stream ops queued)
   -> effects (broadcasts, etc.)
@@ -297,7 +296,7 @@ transport drops -> page runtime exits (1:1 binding, BDR-0003)
 
 `ops` uses RFC 6902 with op types `add | remove | replace` only. `path` values are RFC 6901 JSON Pointer strings. Reorders without `move` op produce per-index `replace` ops; that's accepted as-is. `stream_ops` carry `configure | reset | insert | delete` operations for stream-typed fields. An envelope is emitted whenever `ops` OR `stream_ops` is non-empty (BDR-0018). Empty cycles emit nothing.
 
-Error reply categories on the wire: `unknown_path | unknown_command | invalid_payload | unauthorized | middleware_halt`. Handler-controlled business failures use `{:reply, %{ok: false, error: ...}, ctx}` and arrive on the wire as `status: "ok"`.
+Error reply categories on the wire: `unknown_path | unknown_command | invalid_payload | unauthorized | hook_halt`. Handler-controlled business failures use `{:reply, %{ok: false, error: ...}, ctx}` and arrive on the wire as `status: "ok"`.
 
 ## Programming Model and API
 
@@ -311,7 +310,8 @@ Error reply categories on the wire: `unknown_path | unknown_command | invalid_pa
 | `state do ... end` | Declares the public output shape | Validated against `render/1` output |
 | `field name, type, opts` | One field in `state do` | Supports primitives, lists, nested state, `stream(T)`, `AsyncResult.of(T)`, native typespec unions |
 | `command name do payload ... end` | Declares command + payload schema | Runtime-validated |
-| `middleware Module` / `middleware {Module, opts}` | Per-store middleware | Runs only for that node's commands |
+| `attach_hook(ctx, id, stage, fun)` | Attach a lifecycle hook on a store node | Sole extension primitive (BDR-0004); replaces the prior `middleware` macro |
+| `detach_hook(ctx, id, stage)` | Remove a previously-attached hook | Silent no-op when absent |
 | `stream name, opts` | Declares stream slot | `:item_key` (function), `:limit` |
 | `async name, opts` | Declares named async slot | Optional sugar over `start_async` |
 | `mount(ctx)` | Initialize ctx.assigns | Returns `{:ok, ctx}` |
@@ -372,7 +372,7 @@ A handler raise in `handle_command/3` or `render/1` terminates the page runtime 
 
 ### Authorization
 
-Authorization is a middleware/hook that returns `{:halt, {:error, ...}}` to deny commands. The runtime delivers an error reply with `category: "unauthorized"` (BDR-0008). There is no silent-no-op downgrade.
+Authorization is a hook that returns `{:halt, {:error, ...}}` to deny commands. The runtime delivers an error reply with `category: "unauthorized"` (BDR-0008). There is no silent-no-op downgrade.
 
 ### System commands
 
@@ -401,14 +401,12 @@ defmodule MyApp.Stores.ProductPageStore do
   command :reload_products do
   end
 
-  middleware Arbor.Middleware.Logger
-  middleware Arbor.Middleware.ValidateRender
-
   def mount(ctx) do
     Phoenix.PubSub.subscribe(MyApp.PubSub, "user:#{ctx.assigns.current_user.id}")
     products = Catalog.list_products()
     {:ok,
      ctx
+     |> attach_hook(:logger, :before_command, &Arbor.Hooks.Logger.log/4)
      |> assign(:products, products)
      |> assign(:selected_product_id, nil)
      |> assign(:filters, %{query: "", status: "all"})}
@@ -556,9 +554,9 @@ export type ProductPageStoreCommands = {
 
 | Milestone | Deliverables | Effort | Timeline |
 |-----------|--------------|--------|----------|
-| M1: Runtime kernel + metadata | Page runtime GenServer; `use Arbor.Store` / `use Arbor.State`; metadata registry for `attr`/`state`/`command`/`middleware`/`subscribe`/`stream`/`async`; `ctx` struct with `assign`/`update_assign`/`invoke`. | High | Weeks 1–2 |
-| M2: Render contract + resolver | `child(...)` placeholder, render-output resolver, identity-preserving reconciler, render-output validation middleware, `mount`/`update`/`render` lifecycle, `handle_info/2`, root `terminate/2`. | High | Weeks 3–4 |
-| M3: Command pipeline | Path-based routing, payload schema validation middleware, attach_hook/detach_hook, authorization middleware, `handle_command/3`, `handle_callback/3`, transport reply contract, error category enum, system command namespace. | High | Weeks 5–6 |
+| M1: Runtime kernel + metadata | Page runtime GenServer; `use Arbor.Store` / `use Arbor.State`; metadata registry for `attr`/`state`/`command`/`stream`/`async`; `ctx` struct with `assign`/`update_assign`/`invoke`/`attach_hook`/`detach_hook`. | High | Weeks 1–2 |
+| M2: Render contract + resolver | `child(...)` placeholder, render-output resolver, identity-preserving reconciler, render-output validation hook, `mount`/`update`/`render` lifecycle, `handle_info/2`, root `terminate/2`. | High | Weeks 3–4 |
+| M3: Command pipeline | Path-based routing, payload schema validation hook, attach_hook/detach_hook, authorization hook, `handle_command/3`, `handle_callback/3`, transport reply contract, error category enum, system command namespace. | High | Weeks 5–6 |
 | M4: Replication + streams | RFC 6902 diff engine, patch envelope (`ops` + `stream_ops`), version counter, stream API (LV-parity: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`), `reload_stream/2`, reference WebSocket adapter. | High | Weeks 7–8 |
 | M5: Async lifecycle | `assign_async`, `start_async`, `cancel_async`, `handle_async/3`, `Arbor.AsyncResult`, `Task.Supervisor`, `:timeout` extension, `:reset` (incl subset list), ref-prune races, lazy-discard, `stream_async/4`. | High | Weeks 9–10 |
 | M6: Codegen + hardening | Elixir typespec emission, TypeScript codegen for state and command schemas (incl streams, AsyncResult, variants, composite types), telemetry events, devtools, trace buffer, docs, examples, benchmarks. | Medium | Weeks 11–12 |
@@ -570,12 +568,12 @@ Persistence is **not** an Arbor primitive (recorded in `spec/backlog.md`). Appli
 The MVP is done when all of the following are true:
 
 - A connected page runs as exactly one runtime process bound 1:1 to its transport session (BDR-0003).
-- A store can declare `attr`, `state`, `command`, `middleware`, `stream`, `async`. `attr` is compile-time only; values flow into `ctx.assigns` (BDR-0010).
+- A store can declare `attr`, `state`, `command`, `stream`, `async`. `attr` is compile-time only; values flow into `ctx.assigns` (BDR-0010). Hooks are runtime-attached via `attach_hook` (BDR-0004); there is no `middleware` macro.
 - `state do` is the public output shape; codegen produces matching Elixir typespecs and TypeScript types.
 - `render(ctx)` returns a value matching `state do`, with `child(...)` placeholders permitted; the resolver substitutes them bottom-up.
 - Identity is `(parent_path, module, id)`; child assigns survive identity-stable re-renders; disappear-then-reappear is a fresh mount (BDR-0011); `id` must be a string.
-- Commands route by `{path, command}`; payload validation, authorization, and arbitrary middleware run in declaration order. Handler returns `{:noreply, ctx}` or `{:reply, payload, ctx}` (BDR-0002).
-- Transport reply uses Phoenix Channel ref reply (BDR-0001). Outcome ordering is reply → patch → effects (BDR-0009). Auth failure is hard error (BDR-0008). Wire error categories: `unknown_path | unknown_command | invalid_payload | unauthorized | middleware_halt`.
+- Commands route by `{path, command}`; payload validation, authorization, and arbitrary `:before_command` hooks run in attachment order. Handler returns `{:noreply, ctx}` or `{:reply, payload, ctx}` (BDR-0002).
+- Transport reply uses Phoenix Channel ref reply (BDR-0001). Outcome ordering is reply → patch → effects (BDR-0009). Auth failure is hard error (BDR-0008). Wire error categories: `unknown_path | unknown_command | invalid_payload | unauthorized | hook_halt`.
 - `attach_hook/4`, `detach_hook/3` work at any node (root or child) for stages `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render` (BDR-0004).
 - `handle_info(msg, ctx)` shares the runtime mailbox with commands; no Arbor PubSub abstraction (BDR-0005).
 - Diff engine emits structural minimal RFC 6902 diff with no threshold (BDR-0014). Initial state is the first patch envelope's `replace` at path `""`.

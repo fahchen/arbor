@@ -74,7 +74,7 @@ Feature: Command Routing
         | command not declared on the store   | unknown_command  |
         | payload fails schema validation     | invalid_payload  |
         | authorization denied                | unauthorized     |
-        | a custom middleware halt with error | middleware_halt  |
+        | a custom hook halt with error | hook_halt  |
 
     Scenario: Handler-controlled business failures arrive as ok status
       Given the handler returns {:reply, %{ok: false, error: "out_of_stock"}, ctx}
@@ -85,8 +85,8 @@ Feature: Command Routing
 
   Rule: Authorization runs in the command pipeline and may halt before the handler runs
 
-    Scenario: Authorization middleware halts an unauthorized command
-      Given the addressed store declares an authorization middleware for ability "checkout"
+    Scenario: Authorization hook halts an unauthorized command
+      Given the addressed store attaches an authorization hook for ability "checkout" during mount
       And the policy denies "checkout" for the current actor
       When the client sends a command requiring "checkout"
       Then the handler does not run
@@ -171,19 +171,20 @@ Feature: Command Routing
       When the next queued command targets path ["notifications"]
       Then the runtime rejects the command with category "unknown_path"
 
-  Rule: Hooks and middleware run in declaration and attachment order
+  Rule: Hooks run in attachment order
 
-    Scenario: Per-store middleware order matches source declaration
-      Given a store declares middleware "ValidateCommandSchema" then "Authorize"
+    Scenario: Hook order matches the order they were attached
+      Given a store attaches a :before_command hook with id :validate then a :before_command hook with id :authorize during mount
       When the runtime executes a command on that store
-      Then "ValidateCommandSchema" runs before "Authorize"
-      And the handler runs after both middleware
+      Then :validate runs before :authorize
+      And the handler runs after both hooks
 
-    Scenario: A root-attached hook runs before per-store middleware
+    Scenario: A root-attached hook runs before a child-attached hook
       Given the root page store attaches a :before_command hook in mount
-      And the addressed child store declares its own per-node middleware
+      And the addressed child store also attaches its own :before_command hook in mount
       When the runtime executes a command on the child
-      Then the root hook runs before the child's per-node middleware
+      Then the root hook runs first
+      Then the child hook runs after the root hook
       And the handler runs last
 
   Rule: System commands occupy a reserved name prefix and share the main pipeline
@@ -203,7 +204,7 @@ Feature: Command Routing
     Scenario: Hook continues the pipeline
       Given a tracing :before_command hook that returns {:cont, ctx}
       When the runtime processes a command
-      Then the pipeline continues to the next middleware
+      Then the pipeline continues to the next hook
 
     Scenario: Hook halts without a reply
       Given a feature-flag gate hook that returns {:halt, ctx}

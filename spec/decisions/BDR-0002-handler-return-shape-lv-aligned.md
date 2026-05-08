@@ -17,7 +17,7 @@ Command handlers must report success and may carry a payload to the client. Earl
 
 ### Option A: LV-aligned, two return shapes
 
-`{:noreply, ctx}` and `{:reply, payload, ctx}`. Handler-side business failures encode as `{:reply, %{ok: false, error: ...}, ctx}` (status `ok` on the wire; the handler chose the shape). Middleware halts produce error replies via the pipeline. Crashes terminate the runtime (see BDR-0003).
+`{:noreply, ctx}` and `{:reply, payload, ctx}`. Handler-side business failures encode as `{:reply, %{ok: false, error: ...}, ctx}` (status `ok` on the wire; the handler chose the shape). Hook halts produce error replies via the pipeline. Crashes terminate the runtime (see BDR-0003).
 
 ### Option B: Three return shapes including `{:error, reason}`
 
@@ -34,7 +34,7 @@ Adopt Option A. `{:noreply, ctx}` and `{:reply, payload, ctx}`. Effects move to 
 ## Rejected Alternatives
 
 Option B was rejected because:
-- It creates two parallel error paths (handler return + middleware halt) that surface differently on the wire, increasing the surface area clients must understand.
+- It creates two parallel error paths (handler return + hook halt) that surface differently on the wire, increasing the surface area clients must understand.
 - Handler-side business failures are better expressed as semantically `ok` outcomes whose payload carries an `ok: false` flag — the request was processed; the business outcome was negative.
 - Following LiveView precisely lowers the cognitive cost for developers already familiar with `handle_event/3`.
 

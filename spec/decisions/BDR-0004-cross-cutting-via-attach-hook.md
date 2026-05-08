@@ -1,45 +1,47 @@
 ---
 id: BDR-0004
-title: Cross-cutting concerns attach via LV-style attach_hook; per-store middleware stays node-local
+title: All cross-cutting and per-node concerns use LV-style attach_hook; no separate middleware macro
 status: accepted
-date: 2026-05-08
-summary: Per-store `middleware` declarations apply only to the addressed node. Cross-node concerns use `attach_hook(ctx, id, stage, fun)` mirroring Phoenix.LiveView.attach_hook/4.
+date: 2026-05-09
+summary: Arbor exposes one extension primitive — `attach_hook(ctx, id, stage, fun)` mirroring `Phoenix.LiveView.attach_hook/4`. There is no `middleware` macro for declarative per-store concerns. Authors attach all hooks (auth, validation, logging, feature flags, etc.) inside `mount/1` (or other handlers) on the store node that should host them.
 ---
 
 **Feature**: domains/runtime/features/command-routing.feature
-**Rule**: Hooks and middleware run in declaration and attachment order
+**Rule**: Hooks run in attachment order
 **Rule**: Each store maintains its own hook table
 
 ## Context
 
-Cross-cutting concerns (audit logging, feature flags, rate limiting, tracing) must observe events across multiple store nodes without each node re-declaring middleware. The earlier PRD draft considered "parent middleware reaches descendants" semantics where a parent's `middleware` block ran for any command on its subtree.
+Arbor's earliest drafts proposed two extension primitives — a `middleware Module` macro for declarative per-store concerns (auth, validation, logging) and `attach_hook` for runtime / cross-cutting concerns. Both ran in declaration / attachment order, with the same halt/cont protocol. The pair felt natural in Phoenix terms (Plug pipelines + LiveView attach_hook), but on examination it offered no functional capability that `attach_hook` alone did not, and forced authors to learn two near-identical mechanisms.
 
-Phoenix LiveView solves this with `attach_hook/4` (`lifecycle.ex`): hooks register on the LV process at runtime, see all events for that process, and pattern-match to filter. LiveComponents support a subset of stages with their own hook tables.
+`Phoenix.LiveView` itself does not expose a `middleware` macro: LiveComponent has no equivalent at all, and the root LV uses `attach_hook` + `on_mount` only. Adopting LV-pure extension semantics in Arbor removes a concept the LV-aligned audience would otherwise have to learn for no behavior gain.
 
 ## Behaviours Considered
 
-### Option A: Per-store middleware + LV-style attach_hook
+### Option A: Drop the `middleware` macro; use `attach_hook` for everything (LV-pure)
 
-Each store's `middleware ...` declarations run only for commands addressed to that node. Cross-cutting code attaches hooks at the root page store (or any ancestor) via `attach_hook(ctx, id, stage, fun)`. Hook stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`. Returns `{:cont, ctx}`, `{:halt, ctx}`, or `{:halt, reply, ctx}` (last only on `:before_command`). Each store maintains its own hook table.
+Every cross-cutting or node-local concern is attached at runtime via `attach_hook(ctx, id, stage, fun)`. Authors call `attach_hook` inside `mount/1` (or any handler) on the store node that owns the concern. Per-node concerns hook on that node's table; cross-node concerns hook on the root page store and pattern-match by path. Schema validation and render-output validation are runtime-attached default hooks installed by the runtime's mount path; authors can detach or replace them.
 
-### Option B: Parent middleware reaches descendants
+### Option B: Keep both `middleware Module` (declarative, compile-time) and `attach_hook` (runtime)
 
-A parent's `middleware` block automatically runs for any command on its subtree. Composition is implicit; ordering walks root-to-target.
+Two parallel mechanisms. `middleware` is sugar for compile-time stable concerns; `attach_hook` for dynamic / cross-cutting.
 
-### Option C: Page-runtime-level only (no per-store hooks)
+### Option C: Keep `middleware` only; drop `attach_hook`
 
-All hooks attach at the root; per-store middleware exists only at the addressed node. Disallow `attach_hook` on child stores.
+Only declarative per-store middleware. Cross-node concerns must propagate via parent middleware traversal or root-only declarations. Strongly anti-LV.
 
 ## Decision
 
-Adopt Option A. Per-store middleware is node-local; cross-cutting concerns use `attach_hook`. Each store has its own hook table; child-attached hooks see only that node's events.
+Adopt Option A. Drop the `middleware` macro entirely. `attach_hook(ctx, id, stage, fun)` is the sole extension primitive. Each store maintains its own hook table; child-attached hooks see only that node's events. Hooks return `{:cont, ctx}`, `{:halt, ctx}`, or `{:halt, reply, ctx}` (last only on `:before_command`).
 
 ## Rejected Alternatives
 
 Option B was rejected because:
-- Implicit cross-node middleware behavior makes it hard to predict which middleware runs for a given command without walking the tree.
-- Function-call chains grow with tree depth, hurting performance predictability.
-- Parents would need to know about descendants' commands to filter usefully — leaks abstraction.
-- Pattern-matching inside an attached hook is more explicit than implicit ancestry traversal.
+- `middleware Module` and `attach_hook` overlap in capability; offering both forces authors to choose without functional payoff.
+- LV does not expose a `middleware` macro; aligning with LV reduces the learning curve for the dominant audience.
+- One mechanism is easier to document, test, and instrument with telemetry than two.
 
-Option C was rejected because LiveComponent precedent supports per-component hooks, and disallowing them would force boilerplate at the root for child-local concerns. Mirroring LV's split is more flexible and more familiar.
+Option C was rejected because:
+- Cross-node concerns (audit, feature flags) become awkward without a runtime-attach mechanism.
+- It would diverge from LV's hook-attached pattern.
+- Implicit propagation rules (parent middleware reaches descendants) are hard to predict and were considered in earlier drafts; rejecting them here for the same reason.

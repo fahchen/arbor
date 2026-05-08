@@ -166,7 +166,7 @@ Feature: Render Contract
       Then the first cycle drops the child node
       And the second cycle mounts a fresh node with new assigns
 
-  Rule: Render-output validation is run by middleware after child resolution
+  Rule: Render-output validation is run by the validate-render hook after child resolution
 
     Scenario: Invalid output is rejected before diffing
       Given a store declares field :title, String.t()
@@ -176,7 +176,7 @@ Feature: Render Contract
   Rule: Render-output validation is default-on in dev/test, telemetry-only in prod
 
     Scenario: Validation behaviour depends on environment
-      Given the page runtime middleware list configures Arbor.Middleware.ValidateRender for dev/test
+      Given the page runtime's :after_render hook list configures Arbor.Hooks.ValidateRender for dev/test
       When validation finds a shape mismatch in dev
       Then the runtime raises
       And in prod the same misshape is recorded as telemetry without raising
