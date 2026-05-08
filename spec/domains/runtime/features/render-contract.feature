@@ -166,6 +166,31 @@ Feature: Render Contract
       Then the first cycle drops the child node
       And the second cycle mounts a fresh node with new assigns
 
+  Rule: invoke/3 calls a parent-supplied function attr with the payload as its single argument
+
+    Scenario: Child calls a callback the parent passed via child(...)
+      Given the parent renders child(ChildStore, id: "x", on_select: <closure capturing parent's handle_callback>)
+      And the child reads ctx.assigns.on_select
+      When the child runs invoke(ctx, :on_select, %{id: "prod_1"})
+      Then the function at ctx.assigns.on_select is called with the single argument %{id: "prod_1"}
+      And the runtime applies the parent's resulting ctx update before the next render cycle
+      And invoke returns the child's ctx (chainable via |>)
+
+    Scenario: invoke on a missing callback raises
+      Given the child has no value at ctx.assigns.<callback_name>
+      When the child runs invoke(ctx, :missing, payload)
+      Then the runtime raises a "missing callback" error pointing at the offending call site
+
+  Rule: The parent receives upward callback invocations via handle_callback/3
+
+    Scenario: Parent updates its own assigns from a child callback
+      Given a parent declares handle_callback(:product_selected, payload, ctx)
+      When a child invokes that callback with payload %{id: "prod_1"}
+      Then the parent's handle_callback runs against the parent's ctx
+      And handle_callback returns {:noreply, updated_parent_ctx}
+      And the runtime stores updated_parent_ctx as the parent's new ctx
+      And the next render cycle observes the updated parent state and propagates updated assigns to children via update/2
+
   Rule: Render-output validation is run by the validate-render hook after child resolution
 
     Scenario: Invalid output is rejected before diffing

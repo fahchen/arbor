@@ -172,8 +172,16 @@ Feature: Async Task Lifecycle
 
     Scenario: Field declaration
       When a store declares field :profile, AsyncResult.of(UserProfileState.t())
-      Then codegen emits a TypeScript shape combining loading, ok?, result, failed
+      Then codegen emits a TypeScript shape combining loading, ok, result, failed
       And the runtime validator accepts %Arbor.AsyncResult{} or structurally-equivalent maps
+
+  Rule: AsyncResult serializes ok? as ok on the wire
+
+    Scenario: Wire shape strips the question mark
+      Given an Arbor.AsyncResult struct with fields loading, ok?, result, failed
+      When the runtime serializes it for the JSON Patch payload
+      Then the resulting JSON object uses keys "loading", "ok", "result", "failed"
+      And the TypeScript codegen target emits an object type with field name ok (no question mark, since TypeScript identifiers do not allow ?)
 
   Rule: User functions warned for ctx capture (LV-aligned)
 

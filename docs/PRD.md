@@ -488,7 +488,7 @@ defmodule MyApp.Stores.MessagesStore do
 
   def reload_stream(:messages, ctx), do: {:ok, Chat.recent(ctx.assigns.room_id, 50)}
 
-  def render(_ctx) do
+  def render(ctx) do
     %{messages: ctx.assigns.messages}
   end
 end
