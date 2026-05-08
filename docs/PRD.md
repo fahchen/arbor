@@ -439,7 +439,7 @@ defmodule MyApp.Stores.ProductPageStore do
       filters: child(FilterStore,
         id: "filters",
         filters: ctx.assigns.filters,
-        on_change: fn payload, _ctx -> handle_callback(:filters_changed, payload, ctx) end
+        on_change: fn payload -> handle_callback(:filters_changed, payload, ctx) end
       ),
       products:
         for product <- ctx.assigns.products do
@@ -561,7 +561,7 @@ export type ProductPageStoreCommands = {
 | M5: Async lifecycle | `assign_async`, `start_async`, `cancel_async`, `handle_async/3`, `Arbor.AsyncResult`, `Task.Supervisor`, `:timeout` extension, `:reset` (incl subset list), ref-prune races, lazy-discard, `stream_async/4`. | High | Weeks 9–10 |
 | M6: Codegen + hardening | Elixir typespec emission, TypeScript codegen for state and command schemas (incl streams, AsyncResult, variants, composite types), telemetry events, devtools, trace buffer, docs, examples, benchmarks. | Medium | Weeks 11–12 |
 
-Persistence is **not** an Arbor primitive (recorded in `spec/backlog.md`). Applications build snapshot save/load using `attach_hook` on `:before_mount` and `:after_command`.
+Persistence is **not** an Arbor primitive (recorded in `spec/backlog.md`). Applications load snapshots inside their own `mount/1` body and save via `attach_hook` on `:after_command`. Valid hook stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`.
 
 ## Acceptance Criteria
 
