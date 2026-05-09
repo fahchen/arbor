@@ -63,7 +63,10 @@ defmodule Arbor.Page.ServerTest do
     assert root_socket.parent_path == []
     assert root_socket.module == RootStore
     assert root_socket.assigns == %{__changed__: %{}, status: "mounted"}
-    refute Map.has_key?(root_socket.private, :hooks)
+
+    assert %{before_command: [%{id: Arbor.Hooks.ValidateCommandSchema}]} =
+             Arbor.Socket.get_private(root_socket, :hooks)
+
     assert version == 0
     assert transport == %{transport_pid: self()}
 
@@ -79,8 +82,13 @@ defmodule Arbor.Page.ServerTest do
     GenServer.stop(pid)
   end
 
-  test "default hooks include the validate :after_serialize entry in dev" do
+  test "default hooks include ValidateCommandSchema everywhere and ValidateToState in dev" do
     default_hooks = Application.get_env(:arbor, :default_hooks, [])
+
+    assert Enum.any?(default_hooks, fn
+             {Arbor.Hooks.ValidateCommandSchema, :before_command, _fun} -> true
+             _other -> false
+           end)
 
     if Mix.env() == :dev do
       assert Enum.any?(default_hooks, fn
@@ -88,7 +96,10 @@ defmodule Arbor.Page.ServerTest do
                _other -> false
              end)
     else
-      assert default_hooks == []
+      refute Enum.any?(default_hooks, fn
+               {Arbor.Hooks.ValidateToState, :after_serialize, _fun} -> true
+               _other -> false
+             end)
     end
   end
 
