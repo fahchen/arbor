@@ -24,3 +24,9 @@ arbor-*.tar
 
 /priv/plts/*.plt
 /priv/plts/*.plt.hash
+
+# Example app build artifacts (per-example)
+/examples/*/_build/
+/examples/*/deps/
+/examples/*/cover/
+/examples/*/priv/codegen/
