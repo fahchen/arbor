@@ -9,8 +9,8 @@ import Config
 default_hooks =
   if config_env() == :dev do
     [
-      {Arbor.Hooks.ValidateToState, :after_to_state,
-       &Arbor.Hooks.ValidateToState.after_to_state(:raise, &1, &2)}
+      {Arbor.Hooks.ValidateToState, :after_serialize,
+       &Arbor.Hooks.ValidateToState.after_serialize(:raise, &1, &2)}
     ]
   else
     []
