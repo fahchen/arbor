@@ -7,15 +7,13 @@ defmodule Arbor.DSL.Attr do
   @spec no_default() :: term()
   def no_default, do: @no_default
 
-  defmacro __using__(_opts) do
-    quote do
-      import unquote(__MODULE__), only: [attr: 2, attr: 3]
-      Module.register_attribute(__MODULE__, :arbor_attrs, accumulate: true)
-      @before_compile unquote(__MODULE__)
-    end
-  end
+  @doc """
+  Declares a parent-supplied assign and stores its reflection metadata.
 
-  @doc "Declares a parent-supplied assign and stores its reflection metadata."
+  Imported by `Arbor.Store`; metadata accumulates onto the `:__arbor_attrs__`
+  module attribute and is exposed via `__arbor__(:attrs)` by
+  `Arbor.Plugin.Reflection`.
+  """
   defmacro attr(name, type, opts \\ []) do
     required = Keyword.get(opts, :required, false)
     validate_required!(name, required)
@@ -36,19 +34,7 @@ defmodule Arbor.DSL.Attr do
       })
 
     quote do
-      @arbor_attrs unquote(metadata)
-    end
-  end
-
-  @doc false
-  defmacro __before_compile__(env) do
-    attrs =
-      env.module
-      |> Module.get_attribute(:arbor_attrs)
-      |> Enum.reverse()
-
-    quote do
-      def __arbor__(:attrs), do: unquote(Macro.escape(attrs))
+      @__arbor_attrs__ unquote(metadata)
     end
   end
 

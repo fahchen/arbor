@@ -4,7 +4,7 @@ defmodule Arbor.DSL.AttrTest do
   alias Arbor.DSL.Attr
 
   defmodule AttrFixture do
-    use Arbor.DSL.Attr
+    use Arbor.Store
 
     attr(:current_user, String.t(), required: true)
     attr(:selected, boolean(), default: false)
