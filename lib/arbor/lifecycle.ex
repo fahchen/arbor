@@ -12,11 +12,18 @@ defmodule Arbor.Lifecycle do
 
   @type hook_id :: term()
   @type hook_result :: {:cont, Socket.t()} | {:halt, Socket.t()} | {:halt, term(), Socket.t()}
-  @type hook_fun :: (term(), Socket.t() -> hook_result())
+  @type hook_fun() :: function()
   @type hook_entry :: %{id: hook_id(), fun: hook_fun()}
   @type hook_table :: %{optional(stage()) => [hook_entry()]}
 
   @stages [:before_command, :after_command, :handle_async, :handle_info, :after_to_state]
+  @stage_arity %{
+    before_command: 3,
+    after_command: 3,
+    handle_async: 3,
+    handle_info: 2,
+    after_to_state: 2
+  }
 
   @doc """
   Attaches a lifecycle hook for the given stage.
@@ -25,7 +32,7 @@ defmodule Arbor.Lifecycle do
 
       iex> socket = %Arbor.Socket{}
       iex> socket =
-      ...>   Arbor.Lifecycle.attach_hook(socket, :audit, :after_to_state, fn _ctx, socket ->
+      ...>   Arbor.Lifecycle.attach_hook(socket, :audit, :after_to_state, fn _output, socket ->
       ...>     {:cont, socket}
       ...>   end)
       iex> Arbor.Socket.get_private(socket, :hooks)[:after_to_state] |> length()
@@ -33,7 +40,8 @@ defmodule Arbor.Lifecycle do
   """
   @spec attach_hook(Socket.t(), hook_id(), stage(), hook_fun()) :: Socket.t()
   def attach_hook(%Socket{} = socket, id, stage, fun)
-      when stage in @stages and is_function(fun, 2) do
+      when stage in @stages and is_function(fun) do
+    validate_hook_arity!(stage, fun)
     hooks = hooks(socket)
     stage_hooks = Map.get(hooks, stage, [])
 
@@ -51,7 +59,7 @@ defmodule Arbor.Lifecycle do
   ## Examples
 
       iex> socket =
-      ...>   Arbor.Lifecycle.attach_hook(%Arbor.Socket{}, :audit, :after_to_state, fn _ctx, socket ->
+      ...>   Arbor.Lifecycle.attach_hook(%Arbor.Socket{}, :audit, :after_to_state, fn _output, socket ->
       ...>     {:cont, socket}
       ...>   end)
       iex> socket = Arbor.Lifecycle.detach_hook(socket, :audit, :after_to_state)
@@ -83,22 +91,22 @@ defmodule Arbor.Lifecycle do
   ## Examples
 
       iex> socket =
-      ...>   Arbor.Lifecycle.attach_hook(%Arbor.Socket{}, :mark, :after_to_state, fn _ctx, socket ->
+      ...>   Arbor.Lifecycle.attach_hook(%Arbor.Socket{}, :mark, :after_to_state, fn _output, socket ->
       ...>     {:cont, Arbor.Socket.assign(socket, :seen?, true)}
       ...>   end)
-      iex> {:cont, socket} = Arbor.Lifecycle.run_hooks(socket, :after_to_state, %{title: "Inbox"}, false)
+      iex> {:cont, socket} = Arbor.Lifecycle.run_hooks(socket, :after_to_state, [%{title: "Inbox"}], false)
       iex> socket.assigns.seen?
       true
   """
-  @spec run_hooks(Socket.t(), stage(), term(), boolean()) ::
+  @spec run_hooks(Socket.t(), stage(), list(), boolean()) ::
           {:cont, Socket.t()} | {:halt, Socket.t()} | {:halt, term(), Socket.t()}
-  def run_hooks(%Socket{} = socket, stage, ctx, halt_payloads_allowed?)
-      when stage in @stages and is_boolean(halt_payloads_allowed?) do
+  def run_hooks(%Socket{} = socket, stage, hook_args, halt_payloads_allowed?)
+      when stage in @stages and is_list(hook_args) and is_boolean(halt_payloads_allowed?) do
     socket
     |> hooks()
     |> Map.get(stage, [])
     |> Enum.reduce_while({:cont, socket}, fn %{fun: fun}, {:cont, current_socket} ->
-      case fun.(ctx, current_socket) do
+      case apply(fun, append_socket_arg(hook_args, current_socket)) do
         {:cont, %Socket{} = next_socket} ->
           {:cont, {:cont, next_socket}}
 
@@ -129,8 +137,45 @@ defmodule Arbor.Lifecycle do
   @spec stages() :: [stage()]
   def stages, do: @stages
 
+  @doc """
+  Returns the required hook function arity for a lifecycle stage.
+
+  ## Examples
+
+      iex> Arbor.Lifecycle.stage_arity(:before_command)
+      3
+      iex> Arbor.Lifecycle.stage_arity(:after_to_state)
+      2
+  """
+  @spec stage_arity(stage()) :: 2 | 3
+  def stage_arity(stage) when stage in @stages do
+    Map.fetch!(@stage_arity, stage)
+  end
+
+  def stage_arity(stage) do
+    raise ArgumentError, "unknown lifecycle stage: #{inspect(stage)}"
+  end
+
   @spec hooks(Socket.t()) :: hook_table()
   defp hooks(%Socket{private: private}), do: Map.get(private, :hooks, %{})
+
+  @spec validate_hook_arity!(stage(), function()) :: :ok
+  defp validate_hook_arity!(stage, fun) when is_function(fun) do
+    expected_arity = stage_arity(stage)
+    {:arity, actual_arity} = :erlang.fun_info(fun, :arity)
+
+    if actual_arity == expected_arity do
+      :ok
+    else
+      raise ArgumentError,
+            "expected fun arity #{expected_arity} for stage #{inspect(stage)}, got arity #{actual_arity}"
+    end
+  end
+
+  @spec append_socket_arg(list(), Socket.t()) :: list()
+  defp append_socket_arg(hook_args, %Socket{} = socket) when is_list(hook_args) do
+    Enum.reverse([socket | Enum.reverse(hook_args)])
+  end
 
   @spec put_hooks(Socket.t(), hook_table()) :: Socket.t()
   defp put_hooks(%Socket{private: private} = socket, hooks) do

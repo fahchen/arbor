@@ -81,7 +81,7 @@ defmodule Arbor.Resolver do
       resolve_value(raw_state, socket, registry, socket_path(socket), live_identities)
 
     next_socket =
-      case Lifecycle.run_hooks(socket, :after_to_state, resolved_state, false) do
+      case Lifecycle.run_hooks(socket, :after_to_state, [resolved_state], false) do
         {:cont, %Socket{} = hooked_socket} -> Socket.reset_changed(hooked_socket)
         {:halt, %Socket{} = hooked_socket} -> Socket.reset_changed(hooked_socket)
       end

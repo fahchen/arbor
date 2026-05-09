@@ -52,6 +52,7 @@ If the spec feels wrong, flag the discrepancy in the PR — never silently edit 
 - `socket.assigns.__changed__` records mutations as `%{key => true}`; `===` short-circuits no-op writes (BDR-0013)
 - `socket.private[:hooks]` is reserved for `Arbor.Lifecycle` — write via `Arbor.Socket.put_private/3`
 - Hook stages: `:before_command | :after_command | :handle_async | :handle_info | :after_to_state` (BDR-0004)
+- Hook fun arity is stage-dependent: `:before_command`/`:after_command`/`:handle_async` are arity 3, `:handle_info`/`:after_to_state` are arity 2
 - Hook return: `{:cont, socket} | {:halt, socket} | {:halt, reply, socket}`
 - Child identity is `{parent_path, module, id}`; `id` must be a binary (BDR-0011)
 - `Module.__arbor__/1` reflection keys: `:fields`, `:commands`, `:streams`, `:attrs`, `{:type, name}`

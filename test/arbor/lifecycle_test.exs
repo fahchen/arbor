@@ -15,9 +15,7 @@ defmodule Arbor.LifecycleTest do
   test "attach_hook registers hooks across all supported stages", %{socket: socket} do
     hooked_socket =
       Enum.reduce(Lifecycle.stages(), socket, fn stage, acc ->
-        Lifecycle.attach_hook(acc, {:id, stage}, stage, fn _ctx, current_socket ->
-          {:cont, current_socket}
-        end)
+        Lifecycle.attach_hook(acc, {:id, stage}, stage, hook_fun_for(stage))
       end)
 
     hooks = hooked_socket.private[:hooks]
@@ -32,10 +30,14 @@ defmodule Arbor.LifecycleTest do
   test "attach_hook preserves attachment order", %{socket: socket} do
     socket =
       socket
-      |> Lifecycle.attach_hook(:first, :before_command, fn _ctx, current_socket ->
+      |> Lifecycle.attach_hook(:first, :before_command, fn _command_name,
+                                                           _payload,
+                                                           current_socket ->
         {:cont, current_socket}
       end)
-      |> Lifecycle.attach_hook(:second, :before_command, fn _ctx, current_socket ->
+      |> Lifecycle.attach_hook(:second, :before_command, fn _command_name,
+                                                            _payload,
+                                                            current_socket ->
         {:cont, current_socket}
       end)
 
@@ -44,15 +46,30 @@ defmodule Arbor.LifecycleTest do
 
   test "re-attaching the same id on the same stage raises", %{socket: socket} do
     socket =
-      Lifecycle.attach_hook(socket, :audit, :before_command, fn _ctx, current_socket ->
+      Lifecycle.attach_hook(socket, :audit, :before_command, fn _command_name,
+                                                                _payload,
+                                                                current_socket ->
         {:cont, current_socket}
       end)
 
     assert_raise ArgumentError, ~r/hook :audit already attached/, fn ->
-      Lifecycle.attach_hook(socket, :audit, :before_command, fn _ctx, current_socket ->
+      Lifecycle.attach_hook(socket, :audit, :before_command, fn _command_name,
+                                                                _payload,
+                                                                current_socket ->
         {:cont, current_socket}
       end)
     end
+  end
+
+  test "attach_hook raises when the stage arity does not match", %{socket: socket} do
+    assert_raise ArgumentError,
+                 ~r/expected fun arity 3 for stage :before_command, got arity 2/,
+                 fn ->
+                   Lifecycle.attach_hook(socket, :bad, :before_command, fn _payload,
+                                                                           current_socket ->
+                     {:cont, current_socket}
+                   end)
+                 end
   end
 
   test "detach_hook silently no-ops when absent", %{socket: socket} do
@@ -62,31 +79,45 @@ defmodule Arbor.LifecycleTest do
   test "run_hooks iterates in order and returns the final socket", %{socket: socket} do
     socket =
       socket
-      |> Lifecycle.attach_hook(:first, :before_command, fn ctx, current_socket ->
+      |> Lifecycle.attach_hook(:first, :before_command, fn command_name,
+                                                           _payload,
+                                                           current_socket ->
         {:cont,
-         put_in(current_socket.assigns[:order], [ctx | current_socket.assigns[:order] || []])}
+         put_in(current_socket.assigns[:order], [
+           command_name | current_socket.assigns[:order] || []
+         ])}
       end)
-      |> Lifecycle.attach_hook(:second, :before_command, fn _ctx, current_socket ->
+      |> Lifecycle.attach_hook(:second, :before_command, fn _command_name,
+                                                            _payload,
+                                                            current_socket ->
         order = Enum.reverse(current_socket.assigns.order)
         next_order = Enum.reverse([:second | Enum.reverse(order)])
         {:cont, put_in(current_socket.assigns[:order], next_order)}
       end)
 
-    assert {:cont, final_socket} = Lifecycle.run_hooks(socket, :before_command, :first, false)
+    assert {:cont, final_socket} =
+             Lifecycle.run_hooks(socket, :before_command, [:first, %{id: 1}], false)
+
     assert final_socket.assigns.order == [:first, :second]
   end
 
   test "run_hooks short-circuits on {:halt, socket}", %{socket: socket} do
     socket =
       socket
-      |> Lifecycle.attach_hook(:halting, :before_command, fn _ctx, current_socket ->
+      |> Lifecycle.attach_hook(:halting, :before_command, fn _command_name,
+                                                             _payload,
+                                                             current_socket ->
         {:halt, put_in(current_socket.assigns[:halted], true)}
       end)
-      |> Lifecycle.attach_hook(:later, :before_command, fn _ctx, current_socket ->
+      |> Lifecycle.attach_hook(:later, :before_command, fn _command_name,
+                                                           _payload,
+                                                           current_socket ->
         {:cont, put_in(current_socket.assigns[:later], true)}
       end)
 
-    assert {:halt, final_socket} = Lifecycle.run_hooks(socket, :before_command, :ctx, false)
+    assert {:halt, final_socket} =
+             Lifecycle.run_hooks(socket, :before_command, [:rename, %{title: "Inbox"}], false)
+
     assert final_socket.assigns.halted
     refute Map.has_key?(final_socket.assigns, :later)
   end
@@ -95,22 +126,54 @@ defmodule Arbor.LifecycleTest do
     socket: socket
   } do
     socket =
-      Lifecycle.attach_hook(socket, :replying, :before_command, fn _ctx, current_socket ->
+      Lifecycle.attach_hook(socket, :replying, :before_command, fn _command_name,
+                                                                   _payload,
+                                                                   current_socket ->
         {:halt, %{ok: false}, current_socket}
       end)
 
     assert {:halt, %{ok: false}, ^socket} =
-             Lifecycle.run_hooks(socket, :before_command, :ctx, true)
+             Lifecycle.run_hooks(socket, :before_command, [:rename, %{title: "Inbox"}], true)
   end
 
   test "run_hooks raises when a halt payload is returned but not allowed", %{socket: socket} do
     socket =
-      Lifecycle.attach_hook(socket, :replying, :after_command, fn _ctx, current_socket ->
+      Lifecycle.attach_hook(socket, :replying, :after_command, fn _command_name,
+                                                                  _payload,
+                                                                  current_socket ->
         {:halt, %{ok: false}, current_socket}
       end)
 
     assert_raise ArgumentError, ~r/halt payloads are only allowed/, fn ->
-      Lifecycle.run_hooks(socket, :after_command, :ctx, false)
+      Lifecycle.run_hooks(socket, :after_command, [:rename, %{title: "Inbox"}], false)
     end
+  end
+
+  test "stage_arity returns the LiveView-aligned arity per stage" do
+    assert Lifecycle.stage_arity(:before_command) == 3
+    assert Lifecycle.stage_arity(:after_command) == 3
+    assert Lifecycle.stage_arity(:handle_async) == 3
+    assert Lifecycle.stage_arity(:handle_info) == 2
+    assert Lifecycle.stage_arity(:after_to_state) == 2
+  end
+
+  defp hook_fun_for(:before_command) do
+    fn _command_name, _payload, current_socket -> {:cont, current_socket} end
+  end
+
+  defp hook_fun_for(:after_command) do
+    fn _command_name, _payload, current_socket -> {:cont, current_socket} end
+  end
+
+  defp hook_fun_for(:handle_async) do
+    fn _name, _async_result, current_socket -> {:cont, current_socket} end
+  end
+
+  defp hook_fun_for(:handle_info) do
+    fn _message, current_socket -> {:cont, current_socket} end
+  end
+
+  defp hook_fun_for(:after_to_state) do
+    fn _resolved_output, current_socket -> {:cont, current_socket} end
   end
 end
