@@ -5,8 +5,8 @@ defmodule Arbor.Plugin.StateField do
 
   alias Arbor.Plugin.Normalize
 
-  @type field_definition :: Normalize.field_definition()
-  @type stream_definition :: %{
+  @type field_definition() :: Normalize.field_definition()
+  @type stream_definition() :: %{
           name: atom(),
           item_type: Macro.t(),
           item_key: Macro.t(),

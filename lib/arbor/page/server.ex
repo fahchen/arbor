@@ -14,7 +14,7 @@ defmodule Arbor.Page.Server do
   alias Arbor.Socket
   alias Arbor.Telemetry
 
-  @type start_arg :: {module(), map(), term()}
+  @type start_arg() :: {module(), map(), term()}
 
   @doc """
   Starts one page-scoped runtime for the given root store module.

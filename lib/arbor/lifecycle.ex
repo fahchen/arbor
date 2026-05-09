@@ -21,7 +21,7 @@ defmodule Arbor.Lifecycle do
 
   alias Arbor.Socket
 
-  @type stage ::
+  @type stage() ::
           :before_command
           | :after_command
           | :handle_async
@@ -29,11 +29,11 @@ defmodule Arbor.Lifecycle do
           | :after_to_state
           | :after_serialize
 
-  @type hook_id :: term()
-  @type hook_result :: {:cont, Socket.t()} | {:halt, Socket.t()} | {:halt, term(), Socket.t()}
+  @type hook_id() :: term()
+  @type hook_result() :: {:cont, Socket.t()} | {:halt, Socket.t()} | {:halt, term(), Socket.t()}
   @type hook_fun() :: function()
-  @type hook_entry :: %{id: hook_id(), fun: hook_fun()}
-  @type hook_table :: %{optional(stage()) => [hook_entry()]}
+  @type hook_entry() :: %{id: hook_id(), fun: hook_fun()}
+  @type hook_table() :: %{optional(stage()) => [hook_entry()]}
 
   @stages [
     :before_command,

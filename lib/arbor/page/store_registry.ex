@@ -5,7 +5,7 @@ defmodule Arbor.Page.StoreRegistry do
 
   alias Arbor.Page.StoreRegistry.Entry
 
-  @type identity_key :: {[atom() | String.t()], module(), String.t()}
+  @type identity_key() :: {[atom() | String.t()], module(), String.t()}
 
   typed_structor do
     field :entries, %{optional(identity_key()) => Entry.t()},

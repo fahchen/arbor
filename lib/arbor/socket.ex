@@ -4,13 +4,13 @@ defmodule Arbor.Socket do
   use TypedStructor
 
   @typedoc "Keys written into the assigns map."
-  @type assign_key :: term()
+  @type assign_key() :: term()
 
   @typedoc "Path segments identifying a store's parent path."
-  @type path_segment :: atom() | String.t()
+  @type path_segment() :: atom() | String.t()
 
   @typedoc "The private bookkeeping map carried by the socket."
-  @type private_key :: term()
+  @type private_key() :: term()
 
   typed_structor do
     field :assigns, map(),

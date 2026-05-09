@@ -1,7 +1,7 @@
 defmodule Arbor.Plugin.Normalize do
   @moduledoc false
 
-  @type field_definition :: %{name: atom(), type: Macro.t(), opts: keyword()}
+  @type field_definition() :: %{name: atom(), type: Macro.t(), opts: keyword()}
 
   @doc """
   Normalizes typed_structor's keyword-list field representation into the
