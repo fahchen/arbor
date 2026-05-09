@@ -98,7 +98,7 @@ Feature: stream_async
 
     Scenario: Composite typespec
       Given a store declares field :messages, AsyncResult.of(stream(MessageState.t()))
-      Then the runtime accepts the value as a four-field AsyncResult whose result is true once populated
+      Then the runtime accepts the value as a three-field AsyncResult (status, result, reason) whose result is true and status is :ok once populated
       And codegen emits a TypeScript composite shape combining AsyncResult and an items array
 
   Rule: Two refresh paths, by intent

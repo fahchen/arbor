@@ -411,8 +411,7 @@ defmodule MyApp.Stores.ProductPageStore do
     payload :id, String.t()
   end
 
-  command :reload_products do
-  end
+  command :reload_products
 
   def mount(socket) do
     Phoenix.PubSub.subscribe(MyApp.PubSub, "user:#{socket.assigns.current_user.id}")
@@ -483,8 +482,7 @@ defmodule MyApp.Stores.MessagesStore do
 
   stream :messages, item_key: &"msg-#{&1.id}", limit: -100
 
-  command :reload do
-  end
+  command :reload
 
   def mount(socket) do
     Phoenix.PubSub.subscribe(MyApp.PubSub, "room:#{socket.assigns.room_id}")
