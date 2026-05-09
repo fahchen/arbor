@@ -6,6 +6,7 @@ defmodule Arbor.MixProject do
       app: :arbor,
       version: "0.1.0",
       elixir: "~> 1.19",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       dialyzer: [
@@ -30,6 +31,9 @@ defmodule Arbor.MixProject do
       preferred_envs: [precommit: :test]
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
