@@ -10,7 +10,16 @@ defmodule Arbor.DSL.State do
         plugin(Arbor.Plugin.TypeSpec)
 
         import TypedStructor, except: [field: 2, field: 3]
-        import Arbor.DSL.State, only: [field: 2, field: 3, stream: 2, stream: 3]
+
+        import Arbor.DSL.State,
+          only: [
+            field: 2,
+            field: 3,
+            stream: 2,
+            stream: 3,
+            async_stream: 2,
+            async_stream: 3
+          ]
 
         unquote(block)
       end
@@ -50,6 +59,19 @@ defmodule Arbor.DSL.State do
       Arbor.DSL.State.field(
         unquote(name),
         stream(unquote(item_type)),
+        unquote(opts)
+      )
+    end
+  end
+
+  @doc false
+  @spec async_stream(atom(), Macro.t()) :: Macro.t()
+  @spec async_stream(atom(), Macro.t(), keyword()) :: Macro.t()
+  defmacro async_stream(name, item_type, opts \\ []) when is_atom(name) and is_list(opts) do
+    quote do
+      Arbor.DSL.State.field(
+        unquote(name),
+        Arbor.AsyncResult.of(stream(unquote(item_type))),
         unquote(opts)
       )
     end

@@ -78,10 +78,7 @@ defmodule Arbor.TestSupport.AsyncStreamStore do
   alias Arbor.TestSupport.MoneyState
 
   state do
-    # Top-level stream fields use `stream/3`. This composite field intentionally
-    # stays in the nested `stream(T)` type-marker form because it is wrapped by
-    # `AsyncResult.of(...)`, so `stream/3` does not apply here.
-    field(:loaded, Arbor.AsyncResult.of(stream(MoneyState.t())),
+    async_stream(:loaded, MoneyState.t(),
       item_key: &"loaded-#{&1.amount}",
       limit: -200
     )
@@ -306,7 +303,7 @@ defmodule Arbor.CompileTimeDslTest do
       assert {:stream, _meta, [_inner]} = ExampleStore.__arbor__(:type, :events)
     end
 
-    test "top-level streams use stream/3; nested-in-AsyncResult streams use the stream(T) type marker" do
+    test "async_stream/3 expands to AsyncResult.of(stream(T))" do
       assert {{:., _dot, [{:__aliases__, _alias, [:Arbor, :AsyncResult]}, :of]}, _call,
               [{:stream, _stream_meta, [_inner]}]} =
                AsyncStreamStore.__arbor__(:type, :loaded)
