@@ -9,6 +9,7 @@ defmodule Arbor.Store do
       import Arbor.DSL.Command, only: [command: 1, command: 2]
       import Arbor.DSL.State, only: [state: 1]
       import Arbor.DSL.Attr, only: [attr: 2, attr: 3]
+      import Arbor.Child, only: [child: 2]
 
       Module.register_attribute(__MODULE__, :__arbor_fields__, accumulate: false)
       Module.register_attribute(__MODULE__, :__arbor_commands__, accumulate: true)
