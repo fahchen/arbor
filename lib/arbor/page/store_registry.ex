@@ -8,7 +8,10 @@ defmodule Arbor.Page.StoreRegistry do
   @type identity_key :: {[atom() | String.t()], module(), String.t()}
 
   typed_structor do
-    field(:entries, %{optional(identity_key()) => Entry.t()}, default: %{})
+    field :entries, %{optional(identity_key()) => Entry.t()},
+      default: %{},
+      doc:
+        "Map of identity tuples `{parent_path, module, id}` to mounted store node entries. Updated after each render+reconcile cycle and consulted for command path resolution."
   end
 
   @spec new() :: t()

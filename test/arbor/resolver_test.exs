@@ -13,7 +13,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:user_name, String.t())
+      field :user_name, String.t()
     end
 
     def to_state(socket) do
@@ -25,7 +25,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:header, HeaderStore.state())
+      field :header, HeaderStore.state()
     end
 
     def to_state(_socket) do
@@ -37,7 +37,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:header, HeaderStore.state())
+      field :header, HeaderStore.state()
     end
 
     def to_state(socket) do
@@ -49,7 +49,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:title, String.t())
+      field :title, String.t()
     end
 
     def mount(socket) do
@@ -65,8 +65,8 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:label, String.t())
-      field(:preserved, String.t())
+      field :label, String.t()
+      field :preserved, String.t()
     end
 
     def mount(socket) do
@@ -83,7 +83,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:items, list(ListChildStore.state()))
+      field :items, list(ListChildStore.state())
     end
 
     def to_state(socket) do
@@ -100,7 +100,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:version, String.t())
+      field :version, String.t()
     end
 
     def mount(socket) do
@@ -117,7 +117,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:version, String.t())
+      field :version, String.t()
     end
 
     def mount(socket) do
@@ -134,7 +134,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:filters, map())
+      field :filters, map()
     end
 
     def to_state(socket) do
@@ -149,7 +149,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:value, String.t())
+      field :value, String.t()
     end
 
     def to_state(socket) do
@@ -161,7 +161,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:items, list(DuplicateChildStore.state()))
+      field :items, list(DuplicateChildStore.state())
     end
 
     def to_state(_socket) do
@@ -178,7 +178,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:title, String.t())
+      field :title, String.t()
     end
 
     def to_state(socket) do
@@ -190,7 +190,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:child, DefaultUpdateChildStore.state())
+      field :child, DefaultUpdateChildStore.state()
     end
 
     def to_state(socket) do
@@ -202,7 +202,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:child, map() | nil)
+      field :child, map() | nil
     end
 
     def to_state(socket) do
@@ -214,7 +214,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:child, map() | nil)
+      field :child, map() | nil
     end
 
     def to_state(socket) do
@@ -230,7 +230,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:title, String.t())
+      field :title, String.t()
     end
 
     def mount(socket) do
@@ -253,8 +253,8 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:child, MemoChildStore.state())
-      field(:sibling_field, integer())
+      field :child, MemoChildStore.state()
+      field :sibling_field, integer()
     end
 
     def to_state(socket) do
@@ -274,7 +274,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:value, String.t())
+      field :value, String.t()
     end
 
     def mount(_socket) do
@@ -290,7 +290,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:value, String.t())
+      field :value, String.t()
     end
 
     def mount(socket) do
@@ -310,7 +310,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:child, map())
+      field :child, map()
     end
 
     def to_state(socket) do
@@ -322,7 +322,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:value, String.t())
+      field :value, String.t()
     end
 
     def to_state(_socket) do
@@ -334,7 +334,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field(:child, map())
+      field :child, map()
     end
 
     def to_state(_socket) do

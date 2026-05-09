@@ -15,7 +15,7 @@ defmodule Arbor.Page.ServerTest do
     use Arbor.Store
 
     state do
-      field(:status, String.t())
+      field :status, String.t()
     end
 
     def mount(socket) do
@@ -31,7 +31,7 @@ defmodule Arbor.Page.ServerTest do
     use Arbor.Store
 
     state do
-      field(:status, String.t())
+      field :status, String.t()
     end
 
     def mount(socket) do

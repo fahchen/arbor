@@ -13,14 +13,44 @@ defmodule Arbor.Socket do
   @type private_key :: term()
 
   typed_structor do
-    field(:assigns, map(), default: %{})
-    field(:id, String.t() | nil, default: nil)
-    field(:parent_path, [path_segment()], default: [])
-    field(:module, module() | nil, default: nil)
-    field(:endpoint, module() | nil, default: nil)
-    field(:topic, String.t() | nil, default: nil)
-    field(:transport_pid, pid() | nil, default: nil)
-    field(:private, map(), default: %{})
+    field :assigns, map(),
+      default: %{},
+      doc:
+        "Single state container holding parent-supplied attrs and store-internal values together. The only field `to_state/1` reads from. Mirrors `Phoenix.LiveView.Socket.assigns`."
+
+    field :id, String.t() | nil,
+      default: nil,
+      doc:
+        "Store node id within its parent. Combined with `parent_path` and `module` forms the runtime identity tuple. Must be a binary string at the resolver."
+
+    field :parent_path, [path_segment()],
+      default: [],
+      doc:
+        "Ordered path from the root to this node's parent. Combined with `module` and `id` forms the runtime identity used for memoization and command routing."
+
+    field :module, module() | nil,
+      default: nil,
+      doc:
+        "The store module owning this node. Read-only; set at mount and preserved across re-renders within identity-stable cycles."
+
+    field :endpoint, module() | nil,
+      default: nil,
+      doc:
+        "Phoenix endpoint module. Provided so hooks and helpers can broadcast or push outside the standard envelope flow when needed."
+
+    field :topic, String.t() | nil,
+      default: nil,
+      doc: "Phoenix Channel topic for the connected page session."
+
+    field :transport_pid, pid() | nil,
+      default: nil,
+      doc:
+        "Pid of the Phoenix Channel process bound 1:1 to this page runtime (BDR-0003). Termination of the transport pid terminates the page server."
+
+    field :private, map(),
+      default: %{},
+      doc:
+        "Reserved for runtime bookkeeping (hook table at `:hooks`, async ref tracking, pending stream ops). Do not read or write directly; use `get_private/3` and `put_private/3`."
   end
 
   @doc "Assigns a single key on the socket and tracks it in `__changed__` when the value changes."

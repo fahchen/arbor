@@ -10,7 +10,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     use Arbor.State
 
     state do
-      field(:amount, integer())
+      field :amount, integer()
     end
   end
 
@@ -20,8 +20,8 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     use Arbor.Store
 
     state do
-      field(:user_name, String.t())
-      field(:avatar_url, String.t() | nil)
+      field :user_name, String.t()
+      field :avatar_url, String.t() | nil
     end
   end
 
@@ -31,7 +31,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     use Arbor.Store
 
     state do
-      field(:title, String.t())
+      field :title, String.t()
     end
   end
 
@@ -41,7 +41,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     use Arbor.Store
 
     state do
-      field(:handler, map())
+      field :handler, map()
     end
   end
 
@@ -51,7 +51,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     use Arbor.Store
 
     state do
-      field(:avatar_url, String.t() | nil)
+      field :avatar_url, String.t() | nil
     end
   end
 
@@ -61,7 +61,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     use Arbor.Store
 
     state do
-      field(:status, %{type: :active} | %{type: :paused, value: integer()})
+      field :status, %{type: :active} | %{type: :paused, value: integer()}
     end
   end
 
@@ -73,7 +73,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     alias Arbor.Hooks.ValidateToStateTest.HeaderStore
 
     state do
-      field(:header, HeaderStore.state())
+      field :header, HeaderStore.state()
     end
   end
 

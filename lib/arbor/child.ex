@@ -6,9 +6,19 @@ defmodule Arbor.Child do
   @type assigns_map() :: map()
 
   typed_structor do
-    field(:module, module(), enforce: true)
-    field(:id, String.t() | nil, default: nil)
-    field(:assigns, assigns_map(), default: %{})
+    field :module, module(),
+      enforce: true,
+      doc: "Child store module to mount or update at this position."
+
+    field :id, String.t() | nil,
+      default: nil,
+      doc:
+        "Child node id (must be a binary). Combined with `parent_path` and `module` forms the runtime identity tuple."
+
+    field :assigns, assigns_map(),
+      default: %{},
+      doc:
+        "Parent-supplied assigns flowed into the child via `child(Module, id: ..., key: value, ...)`. The keys here form the child's consumed-key set used for memoization (BDR-0013)."
   end
 
   @doc """
