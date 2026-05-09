@@ -12,7 +12,7 @@ The `state do` declaration is the single source of truth for the wire shape, the
 
 ### Product statement
 
-Arbor lets developers model page state as a hierarchical tree of stateful stores, hosted in one BEAM process per connected page. Children are composed via explicit `child(...)` placeholders in `state/1`, identified by `(parent_path, module, id)`, and live and die with the parent's render output. Cross-cutting concerns (audit, logging, feature flags) attach via `attach_hook/4`, mirroring `Phoenix.LiveView.attach_hook/4`. PubSub is not built in: stores subscribe via `Phoenix.PubSub.subscribe/2` directly and react via `handle_info/2`. Persistence is not built in: applications implement save/load using existing hook and extension points.
+Arbor lets developers model page state as a hierarchical tree of stateful stores, hosted in one BEAM process per connected page. Children are composed via explicit `child(...)` placeholders in `to_state/1`, identified by `(parent_path, module, id)`, and live and die with the parent's render output. Cross-cutting concerns (audit, logging, feature flags) attach via `attach_hook/4`, mirroring `Phoenix.LiveView.attach_hook/4`. PubSub is not built in: stores subscribe via `Phoenix.PubSub.subscribe/2` directly and react via `handle_info/2`. Persistence is not built in: applications implement save/load using existing hook and extension points.
 
 ### Goals
 
@@ -20,7 +20,7 @@ Arbor lets developers model page state as a hierarchical tree of stateful stores
 |------|----------|
 | Single-process consistency | One runtime process per connected page (1:1 with transport). |
 | Public/private state split via shape, not namespace | `state do` declares the public render-output shape; `socket.assigns` is the single internal state container (BDR-0010). |
-| Render contract | `state(socket)` returns a value matching `state do`; `child(...)` placeholders are resolved bottom-up before validation/diffing. |
+| Render contract | `to_state(socket)` returns a value matching `state do`; `child(...)` placeholders are resolved bottom-up before validation/diffing. |
 | Explicit ownership | Parent passes assigns (data + functions) via `child(...)`; child can only mutate its own `socket.assigns`. |
 | LV-aligned developer experience | Mount/update/render lifecycle, handle_info for messages, attach_hook for cross-cutting, AsyncResult for async, stream API for collections. |
 | Predictable side effects | LV-style `attach_hook` with halting + ordered stages; effects via socket-pipe (BDR-0006). |
@@ -58,7 +58,7 @@ A runtime node identified by `(parent_path, module, id)`. The root page store is
 
 ### `state do` — public output shape
 
-`state do` declares the value `state/1` returns. It is the single source of truth for typespecs, TypeScript codegen, and render-output validation. Field types include primitives, `list(...)`, `map()`, nested `Arbor.State` modules, references to other stores' `state()`, native Elixir typespec unions for variants, `stream(T)` markers (streams/lifecycle), and `AsyncResult.of(T)` markers (async/lifecycle).
+`state do` declares the value `to_state/1` returns. It is the single source of truth for typespecs, TypeScript codegen, and render-output validation. Field types include primitives, `list(...)`, `map()`, nested `Arbor.State` modules, references to other stores' `state()`, native Elixir typespec unions for variants, `stream(T)` markers (streams/lifecycle), and `AsyncResult.of(T)` markers (async/lifecycle).
 
 ```elixir
 state do
@@ -94,12 +94,12 @@ attr :selected, boolean(), default: false
 attr :on_select, (%{id: String.t()} -> any()), required: true
 ```
 
-### `state/1` and `child(...)`
+### `to_state/1` and `child(...)`
 
-`state(socket)` returns a value matching `state do`. Child stores are composed via `child(Module, id: ..., assign_key: value, ...)`, a render-time placeholder that the runtime resolves by mounting/updating the child node and substituting its render output:
+`to_state(socket)` returns a value matching `state do`. Child stores are composed via `child(Module, id: ..., assign_key: value, ...)`, a render-time placeholder that the runtime resolves by mounting/updating the child node and substituting its render output:
 
 ```elixir
-def state(socket) do
+def to_state(socket) do
   %{
     cart: child(CartStore, id: "cart", cart_id: socket.assigns.cart_id),
     notifications: child(NotificationStore, id: "notifications")
@@ -107,7 +107,7 @@ def state(socket) do
 end
 ```
 
-A child's `id` must be a string; numeric ids must be `to_string/1`'d. Duplicate `(parent_path, module, id)` in one render output raises during reconcile. A child that disappears from `state/1` is unmounted; reappearance produces a fresh mount with no preserved assigns (BDR-0011).
+A child's `id` must be a string; numeric ids must be `to_string/1`'d. Duplicate `(parent_path, module, id)` in one render output raises during reconcile. A child that disappears from `to_state/1` is unmounted; reappearance produces a fresh mount with no preserved assigns (BDR-0011).
 
 ### Command
 
@@ -137,19 +137,24 @@ def handle_command(:select, _, socket) do
 end
 ```
 
-The parent receives the call in `handle_callback/3`:
+The parent supplies the closure inline through `child(...)`. The closure runs in the parent's lexical scope, so it can update parent state directly. There is no separate `handle_callback` dispatcher:
 
 ```elixir
-def handle_callback(:product_selected, %{id: id}, socket) do
-  {:noreply, assign(socket, :selected_product_id, id)}
-end
+child(ProductCardStore,
+  id: product.id,
+  product: product,
+  on_select: fn %{id: id} ->
+    # runs in the parent's frame; mutates parent state through closure
+    send(self(), {:product_selected, id})
+  end
+)
 ```
 
 ### `attach_hook` — sole extension primitive
 
-All cross-cutting and per-node concerns use `attach_hook(socket, id, stage, fun)` (BDR-0004). There is no `middleware` macro. Stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_state`. Hook return: `{:cont, socket}`, `{:halt, socket}`, or `{:halt, reply, socket}` (only on `:before_command`). Mirrors `Phoenix.LiveView.attach_hook/4`. Each store maintains its own hook table; child-attached hooks see only that node's events. `detach_hook/3` is a silent no-op when the hook is absent.
+All cross-cutting and per-node concerns use `attach_hook(socket, id, stage, fun)` (BDR-0004). There is no `middleware` macro. Stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`. Hook return: `{:cont, socket}`, `{:halt, socket}`, or `{:halt, reply, socket}` (only on `:before_command`). Mirrors `Phoenix.LiveView.attach_hook/4`. Each store maintains its own hook table; child-attached hooks see only that node's events. `detach_hook/3` is a silent no-op when the hook is absent.
 
-Authors attach hooks inside `mount/1` for stable concerns and inside any handler for runtime-driven attachment. Built-in hooks (`Arbor.Hooks.ValidateCommandSchema` on `:before_command`, `Arbor.Hooks.ValidateState` on `:after_state`) are attached by the runtime's mount path; authors may detach or replace them (BDR-0007). Render-output validation is default-on in dev/test, telemetry-only opt-in for prod.
+Authors attach hooks inside `mount/1` for stable concerns and inside any handler for runtime-driven attachment. Built-in hooks (`Arbor.Hooks.ValidateCommandSchema` on `:before_command`, `Arbor.Hooks.ValidateRender` on `:after_render`) are attached by the runtime's mount path; authors may detach or replace them (BDR-0007). Render-output validation is default-on in dev/test, telemetry-only opt-in for prod.
 
 Pipeline order follows hook attachment order; the addressed store's `handle_command/3` dispatches after all `:before_command` hooks have continued; `:after_command` runs after the handler returns; the transport reply is delivered next; the patch push follows; effects fire last (BDR-0009).
 
@@ -229,8 +234,8 @@ A `state do` field whose type is another store's `state()` may be populated by e
 |-----------|----------------|
 | Page Runtime | One GenServer per connected page; owns the store tree, message loop, version counter, transport session. |
 | Store Metadata Registry | Compile-time declarations: `attr`, `state`, `command`, `stream`, `async`. |
-| State Resolver | Walks `state/1`'s return value and resolves `child(...)` placeholders bottom-up. |
-| State Validator | Validates each store's resolved output via `Arbor.Hooks.ValidateState`. |
+| Render Resolver | Walks `to_state/1`'s return value and resolves `child(...)` placeholders bottom-up. |
+| Render Validator | Validates each store's resolved output via `Arbor.Hooks.ValidateRender`. |
 | Reconciler | Maintains `(parent_path, module, id)` identity; preserves `socket.assigns` across cycles via reference equality memoization (BDR-0013). |
 | Command Router | Resolves `{path, command}` to a node via the store registry; runs schema validation and authorization hooks; dispatches `handle_command/3`. |
 | Hook Runner | Executes ordered hooks around mount, command, render, terminate. |
@@ -296,7 +301,7 @@ transport drops -> page runtime exits (1:1 binding, BDR-0003)
 
 `ops` uses RFC 6902 with op types `add | remove | replace` only. `path` values are RFC 6901 JSON Pointer strings. Reorders without `move` op produce per-index `replace` ops; that's accepted as-is. `stream_ops` carry `configure | reset | insert | delete` operations for stream-typed fields. An envelope is emitted whenever `ops` OR `stream_ops` is non-empty (BDR-0018). Empty cycles emit nothing.
 
-Error reply categories on the wire: `unknown_path | unknown_command | invalid_payload | unauthorized | hook_halt`. Handler-controlled business failures use `{:reply, %{ok: false, error: ...}, socket}` and arrive on the wire as `status: "ok"`.
+There is no wire enum of error categories. Malformed or impossible commands (unknown path, undeclared command, schema-failing payload) raise inside the runtime; the page process exits per let-it-crash; the transport drops; the client reconnects (mirrors LV's `phx-event` semantics). Graceful denials and business failures travel as `{:halt, payload, socket}` from a hook or `{:reply, payload, socket}` from a handler — both arrive on the wire with channel status `:ok` and the application inspects the payload (e.g., an `ok: false` flag) to distinguish.
 
 ## Programming Model and API
 
@@ -307,7 +312,7 @@ Error reply categories on the wire: `unknown_path | unknown_command | invalid_pa
 | `use Arbor.Store` | Marks a module as a store | Required |
 | `use Arbor.State` | Marks a module as a reusable state object type | Required for `Arbor.State` modules |
 | `attr name, type, opts` | Declares parent-supplied assign (data or function) | Compile-time only; values flow into `socket.assigns` |
-| `state do ... end` | Declares the public output shape | Validated against `state/1` output |
+| `state do ... end` | Declares the public output shape | Validated against `to_state/1` output |
 | `field name, type, opts` | One field in `state do` | Supports primitives, lists, nested state, `stream(T)`, `AsyncResult.of(T)`, native typespec unions |
 | `command name do payload ... end` | Declares command + payload schema | Runtime-validated |
 | `attach_hook(socket, id, stage, fun)` | Attach a lifecycle hook on a store node | Sole extension primitive (BDR-0004); replaces the prior `middleware` macro |
@@ -317,12 +322,11 @@ Error reply categories on the wire: `unknown_path | unknown_command | invalid_pa
 | `mount(socket)` | Initialize socket.assigns | Returns `{:ok, socket}` |
 | `update(new_assigns, socket)` | React to attr changes | Returns `{:ok, socket}`; default merges new_assigns |
 | `handle_command(name, payload, socket)` | Client command handler | Returns `{:noreply, socket}` or `{:reply, payload, socket}` |
-| `handle_callback(name, payload, socket)` | Upward callback handler | Returns `{:noreply, socket}` |
-| `handle_info(msg, socket)` | Server-side message handler | Returns `{:noreply, socket}` |
+| `handle_info(msg, socket)` | Server-side message handler (also receives upward callback effects via `send/2`) | Returns `{:noreply, socket}` |
 | `handle_async(name, result, socket)` | Async task completion handler | Returns `{:noreply, socket}` |
 | `reload_stream(name, socket)` | Stream reload data source | Returns `{:ok, [item]}` |
 | `terminate(reason, socket)` | Root page store termination | Optional |
-| `state(socket)` | Produce the public output shape | Required |
+| `to_state(socket)` | Produce the public output shape | Required |
 
 ### `socket` API
 
@@ -344,18 +348,18 @@ Error reply categories on the wire: `unknown_path | unknown_command | invalid_pa
 ### Render contract — runtime rules
 
 1. `state do` defines the resolved output shape.
-2. `state(socket)` returns a value structurally matching that shape, with `child(...)` placeholders permitted at any depth where another store's `state()` (or a structurally-equivalent map) is expected.
+2. `to_state(socket)` returns a value structurally matching that shape, with `child(...)` placeholders permitted at any depth where another store's `state()` (or a structurally-equivalent map) is expected.
 3. The runtime resolves `child(...)` placeholders bottom-up before validation and diffing.
 4. Render-output validation runs per store; default-on in dev/test.
 5. JSON Patch is generated from the previous to the next resolved root output.
 6. Internal implementation state lives in `socket.assigns`, the database, async tasks, etc. Only the resolved render output reaches the client.
 7. `child(Module, id: ..., ...)` reuses the existing child node when `(parent_path, Module, id)` matches; otherwise a fresh child is mounted. A removed `child(...)` triggers no callback (BDR-0012).
-8. `state/1` must be free of observable side effects; the runtime may invoke it more than once per state change.
-9. A `state/1` exception terminates the page runtime (let-it-crash, BDR-0003); reconnect mounts fresh.
+8. `to_state/1` must be free of observable side effects; the runtime may invoke it more than once per state change.
+9. A `to_state/1` exception terminates the page runtime (let-it-crash, BDR-0003); reconnect mounts fresh.
 
 ### Handler contract
 
-`handle_command/3`, `handle_callback/3`, `handle_info/2`, `handle_async/3` return:
+`handle_command/3`, `handle_info/2`, `handle_async/3` return:
 
 - `{:noreply, socket}` — no reply payload (handle_command emits empty ok reply; others emit no reply at all).
 - `{:reply, payload, socket}` — only valid for `handle_command/3` and root-level `:before_command` hook halts. Other handlers raise on `:reply` returns.
@@ -368,11 +372,11 @@ def handle_command(:checkout, params, socket) do
 end
 ```
 
-A handler raise in `handle_command/3` or `state/1` terminates the page runtime (BDR-0003). A handler raise in `handle_async/3` is caught and recorded as `[:arbor, :async, :exception]`; the runtime continues (BDR-0020).
+A handler raise in `handle_command/3` or `to_state/1` terminates the page runtime (BDR-0003). A handler raise in `handle_async/3` is caught and recorded as `[:arbor, :async, :exception]`; the runtime continues (BDR-0020).
 
 ### Authorization
 
-Authorization is a hook that returns `{:halt, {:error, ...}}` to deny commands. The runtime delivers an error reply with `category: "unauthorized"` (BDR-0008). There is no silent-no-op downgrade.
+Authorization is a `:before_command` hook that returns `{:halt, %{ok: false, reason: "unauthorized", ...}, socket}` to deny a command. The transport reply has channel status `:ok` and the payload carries the explicit denial flag (BDR-0008). There is no silent-ok downgrade and no wire-level error category — denials are graceful business outcomes, while malformed commands let the runtime crash.
 
 ### System commands
 
@@ -421,7 +425,7 @@ defmodule MyApp.Stores.ProductPageStore do
     {:noreply, assign(socket, :products, products)}
   end
 
-  def handle_callback(:filters_changed, filters, socket) do
+  def handle_info({:filters_changed, filters}, socket) do
     products = Catalog.list_products(filters)
     {:noreply,
      socket
@@ -429,17 +433,17 @@ defmodule MyApp.Stores.ProductPageStore do
      |> assign(:products, products)}
   end
 
-  def handle_info({:notification, payload}, socket) do
+  def handle_info({:notification, _payload}, socket) do
     {:noreply, update_assign(socket, :unread_count, &(&1 + 1))}
   end
 
-  def state(socket) do
+  def to_state(socket) do
     %{
       header: child(HeaderStore, id: "header", current_user: socket.assigns.current_user),
       filters: child(FilterStore,
         id: "filters",
         filters: socket.assigns.filters,
-        on_change: fn payload -> handle_callback(:filters_changed, payload, socket) end
+        on_change: fn payload -> send(self(), {:filters_changed, payload}) end
       ),
       products:
         for product <- socket.assigns.products do
@@ -488,7 +492,7 @@ defmodule MyApp.Stores.MessagesStore do
 
   def reload_stream(:messages, socket), do: {:ok, Chat.recent(socket.assigns.room_id, 50)}
 
-  def state(socket) do
+  def to_state(socket) do
     %{messages: socket.assigns.messages}
   end
 end
@@ -556,12 +560,12 @@ export type ProductPageStoreCommands = {
 |-----------|--------------|--------|----------|
 | M1: Runtime kernel + metadata | Page runtime GenServer; `use Arbor.Store` / `use Arbor.State`; metadata registry for `attr`/`state`/`command`/`stream`/`async`; `socket` struct with `assign`/`update_assign`/`invoke`/`attach_hook`/`detach_hook`. | High | Weeks 1–2 |
 | M2: Render contract + resolver | `child(...)` placeholder, render-output resolver, identity-preserving reconciler, render-output validation hook, `mount`/`update`/`render` lifecycle, `handle_info/2`, root `terminate/2`. | High | Weeks 3–4 |
-| M3: Command pipeline | Path-based routing, payload schema validation hook, attach_hook/detach_hook, authorization hook, `handle_command/3`, `handle_callback/3`, transport reply contract, error category enum, system command namespace. | High | Weeks 5–6 |
+| M3: Command pipeline | Path-based routing, payload schema validation hook, attach_hook/detach_hook, authorization hook, `handle_command/3`, transport reply contract, let-it-crash for malformed commands, system command namespace. | High | Weeks 5–6 |
 | M4: Replication + streams | RFC 6902 diff engine, patch envelope (`ops` + `stream_ops`), version counter, stream API (LV-parity: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`), `reload_stream/2`, reference WebSocket adapter. | High | Weeks 7–8 |
 | M5: Async lifecycle | `assign_async`, `start_async`, `cancel_async`, `handle_async/3`, `Arbor.AsyncResult`, `Task.Supervisor`, `:timeout` extension, `:reset` (incl subset list), ref-prune races, lazy-discard, `stream_async/4`. | High | Weeks 9–10 |
 | M6: Codegen + hardening | Elixir typespec emission, TypeScript codegen for state and command schemas (incl streams, AsyncResult, variants, composite types), telemetry events, devtools, trace buffer, docs, examples, benchmarks. | Medium | Weeks 11–12 |
 
-Persistence is **not** an Arbor primitive (recorded in `spec/backlog.md`). Applications load snapshots inside their own `mount/1` body and save via `attach_hook` on `:after_command`. Valid hook stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_state`.
+Persistence is **not** an Arbor primitive (recorded in `spec/backlog.md`). Applications load snapshots inside their own `mount/1` body and save via `attach_hook` on `:after_command`. Valid hook stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`.
 
 ## Acceptance Criteria
 
@@ -570,11 +574,11 @@ The MVP is done when all of the following are true:
 - A connected page runs as exactly one runtime process bound 1:1 to its transport session (BDR-0003).
 - A store can declare `attr`, `state`, `command`, `stream`, `async`. `attr` is compile-time only; values flow into `socket.assigns` (BDR-0010). Hooks are runtime-attached via `attach_hook` (BDR-0004); there is no `middleware` macro.
 - `state do` is the public output shape; codegen produces matching Elixir typespecs and TypeScript types.
-- `state(socket)` returns a value matching `state do`, with `child(...)` placeholders permitted; the resolver substitutes them bottom-up.
+- `to_state(socket)` returns a value matching `state do`, with `child(...)` placeholders permitted; the resolver substitutes them bottom-up.
 - Identity is `(parent_path, module, id)`; child assigns survive identity-stable re-renders; disappear-then-reappear is a fresh mount (BDR-0011); `id` must be a string.
 - Commands route by `{path, command}`; payload validation, authorization, and arbitrary `:before_command` hooks run in attachment order. Handler returns `{:noreply, socket}` or `{:reply, payload, socket}` (BDR-0002).
-- Transport reply uses Phoenix Channel ref reply (BDR-0001). Outcome ordering is reply → patch → effects (BDR-0009). Auth failure is hard error (BDR-0008). Wire error categories: `unknown_path | unknown_command | invalid_payload | unauthorized | hook_halt`.
-- `attach_hook/4`, `detach_hook/3` work at any node (root or child) for stages `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_state` (BDR-0004).
+- Transport reply uses Phoenix Channel ref reply (BDR-0001). Outcome ordering is reply → patch → effects (BDR-0009). Malformed or impossible commands crash the page runtime per let-it-crash (LV-aligned); graceful denials use `{:halt, payload, socket}` with channel status `:ok` (BDR-0008).
+- `attach_hook/4`, `detach_hook/3` work at any node (root or child) for stages `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render` (BDR-0004).
 - `handle_info(msg, socket)` shares the runtime mailbox with commands; no Arbor PubSub abstraction (BDR-0005).
 - Diff engine emits structural minimal RFC 6902 diff with no threshold (BDR-0014). Initial state is the first patch envelope's `replace` at path `""`.
 - No application-level resync command; recovery is reconnect (BDR-0015).

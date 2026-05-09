@@ -11,7 +11,7 @@ summary: A raise in handle_async/3 is caught by the runtime, recorded as [:arbor
 
 ## Context
 
-BDR-0003 established let-it-crash semantics for command handlers and `state/1`: a raise terminates the page runtime; the supervisor restarts; reconnect re-mounts from scratch. This is appropriate for synchronous user-driven flows where the client can immediately retry or perceive the disruption.
+BDR-0003 established let-it-crash semantics for command handlers and `to_state/1`: a raise terminates the page runtime; the supervisor restarts; reconnect re-mounts from scratch. This is appropriate for synchronous user-driven flows where the client can immediately retry or perceive the disruption.
 
 `handle_async/3` runs at unpredictable times — whenever an in-flight task's result arrives. A bug in `handle_async/3` (e.g., a `KeyError` against a `result` shape that the database has just returned) would, under let-it-crash, kill the page on every async completion. Long-lived pages with steady background work would face perpetual restart loops; the user would see a flapping UI.
 

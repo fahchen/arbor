@@ -27,22 +27,22 @@ Feature: Command Routing
       When the client sends a command targeting path ["products", "prod_123"] with name "select"
       Then the runtime dispatches the command to the matching product card store's handler
 
-  Rule: A path that does not resolve to a mounted store is rejected without invoking any handler
+  Rule: A path that does not resolve to a mounted store crashes the runtime
 
     Scenario: Path no longer present after a render cycle
       Given the most recent render cycle no longer mounts a child at path ["notifications"]
       When the client sends a command targeting path ["notifications"] with name "mark_all_read"
-      Then no handler runs
-      And the client receives an error reply with category "unknown_path"
-      And no patch push follows
+      Then the runtime raises (LV-aligned: malformed events crash)
+      And the page runtime exits
+      And the client transport drops; the next reconnect mounts a fresh runtime
 
-  Rule: A store rejects commands it has not declared
+  Rule: A command name not declared by the addressed store crashes the runtime
 
     Scenario: Command name absent from the addressed store's declarations
       Given the addressed store declares only the command "select"
       When the client sends a command with name "delete" to that store
-      Then no handler runs
-      And the client receives an error reply with category "unknown_command"
+      Then the runtime raises (no matching handle_command clause)
+      And the page runtime exits per let-it-crash semantics
 
   Rule: A command's payload is validated against the declared schema before the handler runs
 
@@ -55,53 +55,28 @@ Feature: Command Routing
     Scenario: Payload violates a declared field type
       Given the store declares "change_query" with payload field "query" typed as string
       When the client sends a command with payload {"query": 42}
-      Then payload validation fails before any handler runs
-      And the client receives an error reply with category "invalid_payload"
-      And the error reply lists the failing field path "/query"
+      Then the schema-validation hook raises before any handler runs
+      And the page runtime exits per let-it-crash semantics
 
-  Rule: An error reply uses a discrete category enum plus structured detail
-
-    Scenario Outline: Error categories surfaced on the wire
-      Given a command that is rejected for reason <reason>
-      When the runtime emits the error reply
-      Then the reply status is "error"
-      And the reply payload includes a category equal to "<category>"
-      And the reply payload includes structured detail describing <reason>
-
-      Examples:
-        | reason                              | category         |
-        | path not in the store registry      | unknown_path     |
-        | command not declared on the store   | unknown_command  |
-        | payload fails schema validation     | invalid_payload  |
-        | authorization denied                | unauthorized     |
-        | a custom hook halt with error | hook_halt  |
-
-    Scenario: Handler-controlled business failures arrive as ok status
-      Given the handler returns {:reply, %{ok: false, error: "out_of_stock"}, socket}
-      When the runtime delivers the outcome
-      Then the reply status is "ok"
-      And the reply payload contains {"ok": false, "error": "out_of_stock"}
-      And the reply payload does not include an error category
-
-  Rule: Authorization runs in the command pipeline and may halt before the handler runs
+  Rule: Authorization halts emit a graceful reply payload, not a wire error
 
     Scenario: Authorization hook halts an unauthorized command
-      Given the addressed store attaches an authorization hook for ability "checkout" during mount
-      And the policy denies "checkout" for the current actor
-      When the client sends a command requiring "checkout"
+      Given the addressed store attaches a :before_command hook that returns {:halt, %{ok: false, reason: "unauthorized"}, socket}
+      And the policy denies the command for the current actor
+      When the client sends the command
       Then the handler does not run
       And no state mutation is committed
       And no patch push follows
-      And the client receives an error reply with category "unauthorized"
+      And the transport reply is delivered with channel status :ok and payload %{ok: false, reason: "unauthorized"}
 
-  Rule: Authorization failure always produces a hard error reply with no silent downgrade
+  Rule: A handler may signal business failures via the same reply mechanism
 
-    Scenario: Denied command never returns ok
-      Given a denied command from an unauthorized actor
-      When the runtime emits the outcome
-      Then the reply status is "error"
-      And the reply payload category is "unauthorized"
-      And the runtime does not return a synthetic ok no-op
+    Scenario: Handler-controlled business failures arrive as ok status with ok: false
+      Given the handler returns {:reply, %{ok: false, error: "out_of_stock"}, socket}
+      When the runtime delivers the outcome
+      Then the channel reply has status :ok
+      And the reply payload is %{ok: false, error: "out_of_stock"}
+      And the client distinguishes business-failure from success by inspecting the payload's ok flag
 
   Rule: A successful handler returns either {:noreply, socket} or {:reply, payload, socket}
 
@@ -169,7 +144,7 @@ Feature: Command Routing
       Given an earlier command unmounted the child at path ["notifications"]
       And the registry has been updated by that command's render cycle
       When the next queued command targets path ["notifications"]
-      Then the runtime rejects the command with category "unknown_path"
+      Then the runtime raises and the page runtime exits per let-it-crash
 
   Rule: Hooks run in attachment order
 
@@ -252,7 +227,7 @@ Feature: Command Routing
 
     Scenario: Rejected command surfaces the rejection category in the stop event
       When the runtime rejects a command for an unauthorized actor
-      Then the stop telemetry event metadata includes status "error" and error_category "unauthorized"
+      Then the stop telemetry event metadata includes status "ok" and ok: false in the reply payload (auth denials are graceful halts, not wire-level errors)
       And no separate "rejected" event is emitted
 
     Scenario: Handler crash emits an exception event

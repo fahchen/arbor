@@ -701,9 +701,9 @@
     <h2><span class="num">01</span>What is Arbor</h2>
     <p class="lede">Phoenix LiveView taught us that a page can be a single, server-owned process. Arbor takes that lesson and reshapes it for typed, headless clients: instead of a tree of HTML, a tree of <em>stores</em> — each declaring the slice of JSON it owns — speaks to whatever rendering surface the client provides.</p>
 
-    <p>One <strong>BEAM process per connected page</strong> hosts a dynamic tree of stateful stores. Each store declares the public shape of its render output via a <code>state do</code> block. The runtime composes children explicitly through <code>child(...)</code> placeholders, validates every resolved render against the declared shape, computes the structural minimal RFC&nbsp;6902 diff against the prior cycle, and ships the patch to the client over a Phoenix Channel.</p>
+    <p>One <strong>BEAM process per connected page</strong> hosts a dynamic tree of stateful stores. Each store declares the public shape of its render output in a <em>state block</em> (<code>state do … end</code>). The runtime composes children explicitly through <code>child(...)</code> placeholders, validates every resolved render against the declared shape, computes the structural minimal RFC&nbsp;6902 diff against the prior cycle, and ships the patch to the client over a Phoenix Channel.</p>
 
-    <p>The client is given two artefacts: the patch envelope, and a code-generated TypeScript type matching the store's <code>state do</code>. There is no HTML, no DOM, no opinion about what the client paints — only typed JSON moving in two directions over a single duplex channel.</p>
+    <p>The client is given two artefacts: the patch envelope, and a code-generated TypeScript type matching the store's state block. There is no HTML, no DOM, no opinion about what the client paints — only typed JSON moving in two directions over a single duplex channel.</p>
 
     <aside class="sidenote">
       <strong>Why typed JSON?</strong> The same page can drive a web SPA, a mobile native, or a headless test harness. The wire is the contract; the renderer is the application's choice.
@@ -712,14 +712,14 @@
     <div class="callout" data-label="At a glance">
       <p><strong>Server</strong> · One process per page · Owns assigns &amp; identity · Typed render output · Hooks for cross-cutting · No PubSub or persistence baked in.</p>
       <p><strong>Wire</strong> · Phoenix Channel ref-replies for command outcomes · Separate patch pushes carrying RFC&nbsp;6902 ops + stream-ops · Versioned · No application-level resync.</p>
-      <p><strong>Client</strong> · Receives initial state via a single <code>replace</code> at root path · Applies subsequent ops in order · Owns stream materialization · TypeScript types generated from <code>state do</code>.</p>
+      <p><strong>Client</strong> · Receives initial state via a single <code>replace</code> at root path · Applies subsequent ops in order · Owns stream materialization · TypeScript types generated from the state block.</p>
     </div>
   </section>
 
   <!-- ============= 2. MENTAL ============= -->
   <section id="mental">
     <h2><span class="num">02</span>Mental model</h2>
-    <p>A page is a <em>tree of stores</em>. Each node owns a slice of the wire shape; children are placed explicitly by the parent's <code>state/1</code>; identity is the tuple <code>(parent_path, module, id)</code>.</p>
+    <p>A page is a <em>tree of stores</em>. Each node owns a slice of the wire shape; children are placed explicitly by the parent's <code>to_state/1</code>; identity is the tuple <code>(parent_path, module, id)</code>.</p>
 
     <figure class="figure">
       <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Arbor store tree">
@@ -781,7 +781,7 @@
     <h3>One map, two roles</h3>
     <p>A single <code>socket.assigns</code> map (LV-aligned, see <a href="https://hexdocs.pm/phoenix/1.8.7/Phoenix.Socket.html#module-socket-fields">Phoenix.Socket fields</a>) holds parent-supplied values <em>and</em> store-internal state. The <code>attr</code> macro is a compile-time annotation: it enforces required parents at the parent's <code>child(...)</code> call site, and contributes to typespec and TypeScript codegen — but at runtime everything flows into <code>socket.assigns</code>.</p>
 
-    <p>The public shape — what the client sees — is a separate concern declared by <strong>the state block</strong> (<code>state do … end</code>). The <code>state/1</code> function projects <code>socket.assigns</code> into that shape; nothing else reaches the wire. Whenever <code>assigns</code> change, the runtime re-runs <code>state/1</code> and diffs the result against the previous output.</p>
+    <p>The public shape — what the client sees — is a separate concern declared by <strong>the state block</strong> (<code>state do … end</code>). The <code>to_state/1</code> function projects <code>socket.assigns</code> into that shape; nothing else reaches the wire. Whenever <code>assigns</code> change, the runtime re-runs <code>to_state/1</code> and diffs the result against the previous output.</p>
 
     <p class="pull">
       “The state block declares the public output shape. <code>socket.assigns</code> is the private workshop. The same contract drives validation, JSON Patch diffing, Elixir typespecs, and TypeScript codegen.”
@@ -811,7 +811,9 @@
     <span class="tk-fn">field</span>  <span class="tk-atom">:composer_text</span>, <span class="tk-mod">String</span>.t()
     <span class="tk-fn">field</span>  <span class="tk-atom">:error</span>,         <span class="tk-mod">String</span>.t() | <span class="tk-atom">nil</span>
     <span class="tk-fn">field</span>  <span class="tk-atom">:status</span>,        %{type: <span class="tk-atom">:live</span>} | %{type: <span class="tk-atom">:paused</span>, reason: <span class="tk-mod">String</span>.t()}
-    <span class="tk-fn">stream</span> <span class="tk-atom">:messages</span>,      <span class="tk-mod">MessageState</span>.t(), item_key: <span class="tk-kw">&amp;</span><span class="tk-str">"msg-#{&amp;1.id}"</span>, limit: <span class="tk-num">-200</span>
+    <span class="tk-cmt"># item_key receives the item being inserted (&amp;1 = a MessageState struct)
+    # and returns its wire-stable key.</span>
+    <span class="tk-fn">stream</span> <span class="tk-atom">:messages</span>, <span class="tk-mod">MessageState</span>.t(), item_key: <span class="tk-kw">&amp;</span><span class="tk-str">"msg-#{&amp;1.id}"</span>, limit: <span class="tk-num">-200</span>
   <span class="tk-kw">end</span>
 
   <span class="tk-cmt"># Client-callable commands. The payload block is optional —
@@ -885,11 +887,11 @@
       <thead><tr><th>Macro / call</th><th>Role</th></tr></thead>
       <tbody>
         <tr><td><code>attr</code></td><td>Compile-time declaration of a parent-supplied assign. Validates required at parent's <code>child(...)</code> call site; informs typespec and codegen. <strong>No runtime namespace</strong> — values land in <code>socket.assigns</code>.</td></tr>
-        <tr><td><code>state do · field</code></td><td>The public output shape. Drives the validation hook, the diff target, and both Elixir and TypeScript types.</td></tr>
+        <tr><td>state block · <code>field</code></td><td>The public output shape. Drives the validation hook, the diff target, and both Elixir and TypeScript types.</td></tr>
         <tr><td><code>command</code></td><td>Client-callable command and its payload schema. A built-in hook validates payloads on <code>:before_command</code>.</td></tr>
         <tr><td><code>stream</code></td><td>Stream slot. Configures <code>:item_key</code> and <code>:limit</code>. The server retains only an ordered set of item keys after flush.</td></tr>
         <tr><td><code>attach_hook</code></td><td>The sole extension primitive. Attach at any node, in any handler, on any of the five stages.</td></tr>
-        <tr><td><code>state(socket)</code></td><td>Returns a value matching <code>state do</code>. May contain <code>child(...)</code> placeholders the runtime resolves bottom-up.</td></tr>
+        <tr><td><code>to_state(socket)</code></td><td>Returns a value matching the state block. May contain <code>child(...)</code> placeholders the runtime resolves bottom-up.</td></tr>
       </tbody>
     </table>
   </section>
@@ -990,13 +992,20 @@
       <tbody>
         <tr><td><code>mount/1</code></td><td><code>(socket)</code></td><td><code>{:ok, socket}</code></td></tr>
         <tr><td><code>update/2</code></td><td><code>(new_assigns, socket)</code></td><td><code>{:ok, socket}</code></td></tr>
-        <tr><td><code>state/1</code></td><td><code>(socket)</code></td><td>state map matching the state block</td></tr>
+        <tr><td><code>to_state/1</code></td><td><code>(socket)</code></td><td>state map matching the state block</td></tr>
         <tr><td><code>handle_command/3</code></td><td><code>(name, payload, socket)</code></td><td><code>{:noreply, socket}</code> · <code>{:reply, payload, socket}</code></td></tr>
-        <tr><td><code>handle_callback/3</code></td><td><code>(name, payload, socket)</code></td><td><code>{:noreply, socket}</code></td></tr>
         <tr><td><code>handle_info/2</code></td><td><code>(message, socket)</code></td><td><code>{:noreply, socket}</code></td></tr>
         <tr><td><code>handle_async/3</code></td><td><code>(name, result, socket)</code></td><td><code>{:noreply, socket}</code></td></tr>
-        <tr><td><code>reload_stream/2</code></td><td><code>(name, socket)</code></td><td><code>{:ok, [item]}</code></td></tr>
         <tr><td><code>terminate/2</code> <span class="pill">root only</span></td><td><code>(reason, socket)</code></td><td><code>term</code></td></tr>
+      </tbody>
+    </table>
+    <p>Children invoke parent-supplied callbacks by calling <code>invoke(socket, :name, payload)</code>; the value at <code>socket.assigns.<em>name</em></code> is just an inline closure the parent passed through <code>child(...)</code>. There is no separate <code>handle_callback</code> dispatcher — pattern-match on the closure body itself.</p>
+
+    <p><em>Optional data-source callbacks</em> (not part of the lifecycle, called only when the application invokes the matching helper):</p>
+    <table>
+      <thead><tr><th>Callback</th><th>Signature</th><th>Returns</th><th>Triggered by</th></tr></thead>
+      <tbody>
+        <tr><td><code>reload_stream/2</code></td><td><code>(name, socket)</code></td><td><code>{:ok, [item]}</code></td><td><code>reload_stream(socket, name)</code></td></tr>
       </tbody>
     </table>
 
@@ -1008,7 +1017,7 @@
         <tr><td><code>:after_command</code></td><td><code>(name, reply, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
         <tr><td><code>:handle_async</code></td><td><code>(name, result, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
         <tr><td><code>:handle_info</code></td><td><code>(message, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
-        <tr><td><code>:after_state</code></td><td><code>(state_output, socket)</code></td><td><code>socket</code> (read-only stage; LV-aligned with <code>:after_render</code>)</td></tr>
+        <tr><td><code>:after_render</code></td><td><code>(state_output, socket)</code></td><td><code>socket</code> (read-only stage; LV-aligned)</td></tr>
       </tbody>
     </table>
 
@@ -1018,23 +1027,20 @@
   socket
   |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:audit</span>,      <span class="tk-atom">:before_command</span>, <span class="tk-kw">&amp;</span><span class="tk-mod">Audit</span>.<span class="tk-fn">log</span>/<span class="tk-num">3</span>)
   |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:rate_limit</span>, <span class="tk-atom">:before_command</span>, <span class="tk-kw">&amp;</span><span class="tk-mod">RateLimit</span>.<span class="tk-fn">check</span>/<span class="tk-num">3</span>)
-  |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:trace</span>,      <span class="tk-atom">:after_state</span>,    <span class="tk-kw">&amp;</span><span class="tk-mod">Trace</span>.<span class="tk-fn">snapshot</span>/<span class="tk-num">2</span>)
+  |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:trace</span>,      <span class="tk-atom">:after_render</span>,    <span class="tk-kw">&amp;</span><span class="tk-mod">Trace</span>.<span class="tk-fn">snapshot</span>/<span class="tk-num">2</span>)
   |&gt; <span class="tk-kw">then</span>(<span class="tk-kw">&amp;</span>{<span class="tk-atom">:ok</span>, <span class="tk-kw">&amp;1</span>})
 <span class="tk-kw">end</span>
 </code></pre>
 
-    <h3>Wire error categories</h3>
-    <p>The reply on a rejected command carries one of five categories. There is no silent denial: an unauthorized command is always a hard error.</p>
-    <table>
-      <thead><tr><th>category</th><th>cause</th></tr></thead>
-      <tbody>
-        <tr><td><code>unknown_path</code></td><td>The store registry does not contain the addressed node.</td></tr>
-        <tr><td><code>unknown_command</code></td><td>The addressed store does not declare this command.</td></tr>
-        <tr><td><code>invalid_payload</code></td><td>The payload fails the declared schema; detail lists per-field errors.</td></tr>
-        <tr><td><code>unauthorized</code></td><td>An authorization hook halted with <code>{:halt, {:error, :unauthorized}}</code>.</td></tr>
-        <tr><td><code>hook_halt</code></td><td>Any other hook halt with <code>{:halt, {:error, _}}</code>; detail fields chosen by the hook.</td></tr>
-      </tbody>
-    </table>
+    <h3>Errors crash; the client reconnects</h3>
+    <p>Arbor mirrors LiveView's let-it-crash posture for malformed or impossible commands. Unknown paths, undeclared commands, schema-failing payloads, and any other "the runtime cannot service this request" condition raise inside the runtime; the page process exits; the supervisor restarts a fresh runtime; the transport drops; the client reconnects and replays its initial state from the new mount. There is no wire enum of error categories — the runtime never produces a structured error reply for these cases.</p>
+
+    <p>Authorization and graceful denials live in <em>hook</em> halts, not crashes. A <code>:before_command</code> hook may return <code>{:halt, %{ok: false, reason: "unauthorized"}, socket}</code>; the transport reply carries that payload with channel status <code>:ok</code>, and the client decides how to surface it. The handler is skipped; no patch ships.</p>
+
+    <p class="pull">
+      “If LiveView would crash, Arbor crashes. If the application has a graceful answer, it returns it as a hook reply. The wire stays narrow: <code>:ok</code> with a payload, or the connection drops.”
+      <cite>— Mirrors BDR-0003 let-it-crash semantics</cite>
+    </p>
   </section>
 
   <!-- ============= 5. STREAMS ============= -->
@@ -1162,11 +1168,19 @@ socket |&gt; <span class="tk-fn">stream_async</span>(<span class="tk-atom">:mess
 </code></pre>
 
     <h3>Reply (server → client, ref-correlated)</h3>
-    <pre data-lang="json"><code>{ "status": "ok",   "payload": {} }
-{ "status": "error", "payload": {
-    "category": "invalid_payload",
-    "errors":  [{ "path": "/query", "message": "is required" }]
-  } }
+    <pre data-lang="json"><code><span class="tk-cmt">// Successful command, no payload from the handler.</span>
+{ "status": "ok", "payload": {} }
+
+<span class="tk-cmt">// Successful command, handler returned a payload via {:reply, payload, socket}.</span>
+{ "status": "ok", "payload": { "order_id": "ord_42" } }
+
+<span class="tk-cmt">// Auth (or any other) hook halt — graceful denial. status stays "ok"; the
+// payload's ok flag tells the client.</span>
+{ "status": "ok", "payload": { "ok": false, "reason": "unauthorized" } }
+
+<span class="tk-cmt">// Malformed command (unknown path / undeclared command / schema fail) does
+// NOT produce a structured reply — the runtime crashes and the channel drops.
+// The client reconnects and re-mounts.</span>
 </code></pre>
 
     <h3>Patch push (server → client)</h3>

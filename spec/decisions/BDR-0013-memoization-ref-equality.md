@@ -3,13 +3,13 @@ id: BDR-0013
 title: Child memoization uses socket.assigns map reference equality
 status: accepted
 date: 2026-05-08
-summary: A child skips update/2 and state/1 when its socket.assigns map is reference-equal to the previous cycle's. Reused maps short-circuit; structurally-equal but distinct maps re-render.
+summary: A child skips update/2 and to_state/1 when its socket.assigns map is reference-equal to the previous cycle's. Reused maps short-circuit; structurally-equal but distinct maps re-render.
 ---
 
 ## Scope
 
 **Feature**: domains/runtime/features/render-contract.feature
-**Rule**: A child whose socket.assigns is reference-equal to last cycle skips update/2 and state/1
+**Rule**: A child whose socket.assigns is reference-equal to last cycle skips update/2 and to_state/1
 
 ## Reason
 
