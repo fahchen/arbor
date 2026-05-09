@@ -5,7 +5,6 @@ defmodule Arbor.Page.Server do
 
   require Logger
 
-  alias Arbor.Hooks.ValidateToState
   alias Arbor.Lifecycle
   alias Arbor.Page.Server.State
   alias Arbor.Page.StoreRegistry
@@ -48,7 +47,7 @@ defmodule Arbor.Page.Server do
         transport_pid: transport_pid
       }
       |> Socket.assign(Map.new(params))
-      |> Lifecycle.attach_hook(ValidateToState, :after_to_state, &ValidateToState.run/2)
+      |> attach_default_hooks()
       |> Reconciler.mount_store()
 
     store_registry =
@@ -94,5 +93,14 @@ defmodule Arbor.Page.Server do
 
     Logger.error("page server terminating for #{inspect(root_module)} reason=#{inspect(reason)}")
     :ok
+  end
+
+  @spec attach_default_hooks(Socket.t()) :: Socket.t()
+  defp attach_default_hooks(%Socket{} = socket) do
+    :arbor
+    |> Application.get_env(:default_hooks, [])
+    |> Enum.reduce(socket, fn {id, stage, fun}, acc ->
+      Lifecycle.attach_hook(acc, id, stage, fun)
+    end)
   end
 end
