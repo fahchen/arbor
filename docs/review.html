@@ -787,6 +787,21 @@
       “The state block declares the public output shape. <code>socket.assigns</code> is the private workshop. The same contract drives validation, JSON Patch diffing, Elixir typespecs, and TypeScript codegen.”
       <cite>— Glossary, <em>state block</em> entry</cite>
     </p>
+
+    <h3>Socket fields</h3>
+    <p>Arbor's <code>socket</code> mirrors <a href="https://hexdocs.pm/phoenix/1.8.7/Phoenix.Socket.html#module-socket-fields"><code>Phoenix.Socket</code></a>'s shape so handlers, hooks, and helpers all read the same struct. The fields a store author touches most:</p>
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>assigns</code></td><td><code>map()</code></td><td>The single state container. Holds parent-supplied values (declared via <code>attr</code>) and store-internal values (set in <code>mount/1</code> and handlers). The only field <code>to_state/1</code> reads from.</td></tr>
+        <tr><td><code>id</code></td><td><code>String.t()</code></td><td>The store node's id within its parent (the second component of the identity tuple). For the root page store, this is the page identifier; for children it's the value passed through <code>child(Module, id: ..., ...)</code>.</td></tr>
+        <tr><td><code>parent_path</code></td><td><code>[atom() \| String.t()]</code></td><td>Ordered path from the root to this node's parent. Combined with <code>module</code> and <code>id</code> forms the runtime identity used for memoization and command routing.</td></tr>
+        <tr><td><code>module</code></td><td><code>module()</code></td><td>The store module owning this node. Read-only.</td></tr>
+        <tr><td><code>endpoint</code> · <code>topic</code> · <code>transport_pid</code></td><td><code>module()</code> · <code>String.t()</code> · <code>pid()</code></td><td>Phoenix Channel scaffolding for this session. Read-only; provided so hooks and helpers can broadcast or push outside the standard envelope flow when needed.</td></tr>
+        <tr><td><code>private</code></td><td><code>map()</code></td><td>Reserved for runtime bookkeeping (hook table, async ref tracking, pending stream ops). Do not read or write directly; use the corresponding helpers (<code>attach_hook/4</code>, <code>stream_insert/4</code>, etc.).</td></tr>
+      </tbody>
+    </table>
+    <p>Helpers like <code>assign/2,3</code>, <code>update_assign/3</code>, <code>attach_hook/4</code>, <code>stream/4</code>, <code>assign_async/3,4</code>, <code>start_async/3,4</code>, <code>cancel_async/2,3</code>, and <code>stream_async/4</code> all take a socket as the first argument and return a new socket — chainable with <code>|&gt;</code>.</p>
   </section>
 
   <!-- ============= 3. DSL ============= -->
@@ -811,8 +826,9 @@
     <span class="tk-fn">field</span>  <span class="tk-atom">:composer_text</span>, <span class="tk-mod">String</span>.t()
     <span class="tk-fn">field</span>  <span class="tk-atom">:error</span>,         <span class="tk-mod">String</span>.t() | <span class="tk-atom">nil</span>
     <span class="tk-fn">field</span>  <span class="tk-atom">:status</span>,        %{type: <span class="tk-atom">:live</span>} | %{type: <span class="tk-atom">:paused</span>, reason: <span class="tk-mod">String</span>.t()}
-    <span class="tk-cmt"># item_key receives the item being inserted (&amp;1 = a MessageState struct)
-    # and returns its wire-stable key.</span>
+    <span class="tk-cmt"># item_key may be a 1-arity fn (item) or a 2-arity fn (item, socket).
+    # Use the 2-arity form when the key depends on store state — e.g.,
+    # &"msg-#{&amp;2.assigns.room_id}-#{&amp;1.id}".</span>
     <span class="tk-fn">stream</span> <span class="tk-atom">:messages</span>, <span class="tk-mod">MessageState</span>.t(), item_key: <span class="tk-kw">&amp;</span><span class="tk-str">"msg-#{&amp;1.id}"</span>, limit: <span class="tk-num">-200</span>
   <span class="tk-kw">end</span>
 
@@ -862,9 +878,6 @@
           socket
           |&gt; <span class="tk-fn">stream_insert</span>(<span class="tk-atom">:messages</span>, msg, at: <span class="tk-num">0</span>, limit: <span class="tk-num">-200</span>)
           |&gt; <span class="tk-fn">update_assign</span>(<span class="tk-atom">:unread_count</span>, <span class="tk-kw">&amp;</span>(<span class="tk-kw">&amp;1</span> + <span class="tk-num">1</span>))}
-
-  <span class="tk-kw">def</span> <span class="tk-fn">reload_stream</span>(<span class="tk-atom">:messages</span>, socket),
-    <span class="tk-kw">do:</span> {<span class="tk-atom">:ok</span>, <span class="tk-mod">Chat</span>.<span class="tk-fn">recent</span>(socket.assigns.room_id, <span class="tk-num">50</span>)}
 
   <span class="tk-cmt"># The state function — re-run after every assigns change; its
   # return value is diffed against the prior output to produce the patch.</span>
@@ -1001,14 +1014,6 @@
     </table>
     <p>Children invoke parent-supplied callbacks by calling <code>invoke(socket, :name, payload)</code>; the value at <code>socket.assigns.<em>name</em></code> is just an inline closure the parent passed through <code>child(...)</code>. There is no separate <code>handle_callback</code> dispatcher — pattern-match on the closure body itself.</p>
 
-    <p><em>Optional data-source callbacks</em> (not part of the lifecycle, called only when the application invokes the matching helper):</p>
-    <table>
-      <thead><tr><th>Callback</th><th>Signature</th><th>Returns</th><th>Triggered by</th></tr></thead>
-      <tbody>
-        <tr><td><code>reload_stream/2</code></td><td><code>(name, socket)</code></td><td><code>{:ok, [item]}</code></td><td><code>reload_stream(socket, name)</code></td></tr>
-      </tbody>
-    </table>
-
     <h4>Hooks — attached at runtime via <code>attach_hook(socket, id, stage, fun)</code></h4>
     <table>
       <thead><tr><th>Stage</th><th>Signature</th><th>Returns</th></tr></thead>
@@ -1017,7 +1022,7 @@
         <tr><td><code>:after_command</code></td><td><code>(name, reply, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
         <tr><td><code>:handle_async</code></td><td><code>(name, result, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
         <tr><td><code>:handle_info</code></td><td><code>(message, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
-        <tr><td><code>:after_render</code></td><td><code>(state_output, socket)</code></td><td><code>socket</code> (read-only stage; LV-aligned)</td></tr>
+        <tr><td><code>:after_to_state</code></td><td><code>(state_output, socket)</code></td><td><code>socket</code> (read-only stage; LV-aligned)</td></tr>
       </tbody>
     </table>
 
@@ -1027,7 +1032,7 @@
   socket
   |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:audit</span>,      <span class="tk-atom">:before_command</span>, <span class="tk-kw">&amp;</span><span class="tk-mod">Audit</span>.<span class="tk-fn">log</span>/<span class="tk-num">3</span>)
   |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:rate_limit</span>, <span class="tk-atom">:before_command</span>, <span class="tk-kw">&amp;</span><span class="tk-mod">RateLimit</span>.<span class="tk-fn">check</span>/<span class="tk-num">3</span>)
-  |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:trace</span>,      <span class="tk-atom">:after_render</span>,    <span class="tk-kw">&amp;</span><span class="tk-mod">Trace</span>.<span class="tk-fn">snapshot</span>/<span class="tk-num">2</span>)
+  |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:trace</span>,      <span class="tk-atom">:after_to_state</span>,    <span class="tk-kw">&amp;</span><span class="tk-mod">Trace</span>.<span class="tk-fn">snapshot</span>/<span class="tk-num">2</span>)
   |&gt; <span class="tk-kw">then</span>(<span class="tk-kw">&amp;</span>{<span class="tk-atom">:ok</span>, <span class="tk-kw">&amp;1</span>})
 <span class="tk-kw">end</span>
 </code></pre>
@@ -1074,7 +1079,7 @@
           <text x="80" y="40" text-anchor="middle">insert · delete · reset · configure</text>
         </g>
       </svg>
-      <div class="figure-caption">FIG.3 — Recovery is application-driven via <code>socket |&gt; reload_stream(:name)</code>; the runtime never auto-invokes.</div>
+      <div class="figure-caption">FIG.3 — Recovery is application-driven: call <code>stream(socket, :name, fresh_items, reset: true)</code> with items in hand, or <code>stream_async(socket, :name, fun, reset: true)</code> for an async re-fetch with a loading flash.</div>
     </figure>
 
     <h3>The full LiveView API surface</h3>
@@ -1094,44 +1099,42 @@
 
 <span class="tk-cmt"># Delete by a precomputed item_key, when the item itself isn't on hand.</span>
 <span class="tk-fn">stream_delete_by_item_key</span>(socket :: t(), name :: <span class="tk-fn">atom</span>() | <span class="tk-mod">String</span>.t(), item_key :: <span class="tk-mod">String</span>.t()) :: t()
-
-<span class="tk-cmt"># Application-driven refresh — invokes the store's reload_stream/2 callback,
-# emits stream_ops {reset + bulk insert} without re-emitting an AsyncResult.loading.</span>
-<span class="tk-fn">reload_stream</span>(socket :: t(), name :: <span class="tk-fn">atom</span>() | <span class="tk-mod">String</span>.t()) :: t()
 </code></pre>
+
+    <p>To refresh a stream's contents, call <code>stream(socket, name, fresh_items, reset: true)</code> directly with items already in hand — or, if you need a loading flash while an async fetch runs, use <code>stream_async(socket, name, fun, reset: true)</code>. There is no dedicated reload primitive (see BDR-0022).</p>
   </section>
 
   <!-- ============= 6. ASYNC ============= -->
   <section id="async">
     <h2><span class="num">06</span>Async &amp; AsyncResult</h2>
-    <p>Background work flows through three primitives borrowed from LiveView, plus one Arbor extension. Every async value on the wire is an <code>AsyncResult</code> — a four-field struct that captures loading, ok, and failed states explicitly.</p>
+    <p>Background work flows through three primitives borrowed from LiveView, plus one Arbor extension. Every async value on the wire is an <code>AsyncResult</code> — a three-field struct keyed on a <code>status</code> enum (<code>:loading | :ok | :failed</code>); pattern-match on the status to drive the UI.</p>
 
     <figure class="figure">
       <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AsyncResult states">
-        <text class="title" x="20" y="26">AsyncResult — three states, one struct</text>
+        <text class="title" x="20" y="26">AsyncResult — one status enum, three branches</text>
         <g transform="translate(20,60)">
           <rect width="200" height="100" rx="3" class="fill-paper stroke" stroke-width="1"/>
           <text class="label" x="100" y="22" text-anchor="middle">loading</text>
-          <text x="100" y="48" text-anchor="middle">{loading: true,</text>
-          <text x="100" y="62" text-anchor="middle"> ok?: false, result: nil,</text>
-          <text x="100" y="76" text-anchor="middle"> failed: nil}</text>
+          <text x="100" y="48" text-anchor="middle">{status: :loading,</text>
+          <text x="100" y="62" text-anchor="middle"> result: prior or nil,</text>
+          <text x="100" y="76" text-anchor="middle"> reason: nil}</text>
         </g>
         <g transform="translate(260,60)">
           <rect width="200" height="100" rx="3" class="fill-paper stroke-accent" stroke-width="1.5"/>
           <text class="label" x="100" y="22" text-anchor="middle">ok</text>
-          <text x="100" y="48" text-anchor="middle">{loading: nil,</text>
-          <text x="100" y="62" text-anchor="middle"> ok?: true, result: val,</text>
-          <text x="100" y="76" text-anchor="middle"> failed: nil}</text>
+          <text x="100" y="48" text-anchor="middle">{status: :ok,</text>
+          <text x="100" y="62" text-anchor="middle"> result: value,</text>
+          <text x="100" y="76" text-anchor="middle"> reason: nil}</text>
         </g>
         <g transform="translate(500,60)">
           <rect width="200" height="100" rx="3" class="fill-paper stroke" stroke-width="1"/>
           <text class="label" x="100" y="22" text-anchor="middle">failed</text>
-          <text x="100" y="48" text-anchor="middle">{loading: nil,</text>
-          <text x="100" y="62" text-anchor="middle"> ok?: false, result: nil,</text>
-          <text x="100" y="76" text-anchor="middle"> failed: {:exit, reason}}</text>
+          <text x="100" y="48" text-anchor="middle">{status: :failed,</text>
+          <text x="100" y="62" text-anchor="middle"> result: prior or nil,</text>
+          <text x="100" y="76" text-anchor="middle"> reason: {:exit, term}}</text>
         </g>
       </svg>
-      <div class="figure-caption">FIG.4 — On the wire, <code>ok?</code> serialises as <code>ok</code> (TypeScript identifier rules forbid <code>?</code>).</div>
+      <div class="figure-caption">FIG.4 — Single <code>status</code> field replaces LV's <code>loading</code>/<code>ok?</code>/<code>failed</code> trio. <code>result</code> persists across <code>:loading</code> and <code>:failed</code> for stale-while-loading UX. TypeScript codegen produces a discriminated union keyed on <code>status</code>.</div>
     </figure>
 
     <pre data-lang="elixir"><code><span class="tk-cmt"># Variant 1 — assign_async writes the AsyncResult to socket.assigns automatically.</span>

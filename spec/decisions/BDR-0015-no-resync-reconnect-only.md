@@ -21,4 +21,4 @@ Earlier discovery drafts proposed an `arbor:request_resync` system command that 
 
 Together these mean a mid-session version gap simply cannot arise under the current model. Adding a resync command surfaces wire complexity, a server-side handler, and a client-side gap-detection loop with no triggering scenario. Loss recovery is identical to first connect: client tears down the transport, reconnects, gets a fresh mount, and the first patch envelope (`base_version: 0, version: 1, ops: [{replace path "" value root}]`) restores known-good state.
 
-Stream-content recovery (a real concern, since the server forgets stream item values) is handled separately by `streams/lifecycle`'s `reload_stream/2` callback within the standard envelope flow, not via a resync command.
+Stream-content recovery (a real concern, since the server forgets stream item values) is handled separately: the application calls `stream(socket, name, fresh_items, reset: true)` directly (or `stream_async(reset: true)` for an async re-fetch) within the standard envelope flow, not via a resync command (BDR-0022).

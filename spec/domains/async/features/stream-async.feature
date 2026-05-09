@@ -41,9 +41,9 @@ Feature: stream_async
 
     Scenario: Single envelope captures both transitions
       When the task completes successfully with items [msg1, msg2]
-      Then the next envelope contains JSON Patch ops at /messages/ok and /messages/loading reflecting AsyncResult transitions
+      Then the next envelope contains JSON Patch ops at /messages/status and /messages/result reflecting AsyncResult transitions
       And the same envelope contains stream_ops with insert ops for each item
-      And socket.assigns.messages.result is true (Arbor.AsyncResult.ok flag)
+      And socket.assigns.messages is %AsyncResult{status: :ok, result: true, reason: nil} (status flag, not the items themselves — items live in the stream)
 
   Rule: Failure leaves the stream contents untouched
 
@@ -101,19 +101,19 @@ Feature: stream_async
       Then the runtime accepts the value as a four-field AsyncResult whose result is true once populated
       And codegen emits a TypeScript composite shape combining AsyncResult and an items array
 
-  Rule: reload_stream and stream_async serve complementary recovery paths
+  Rule: Two refresh paths, by intent
 
-    Scenario: reload_stream silently refreshes without loading flash
-      Given socket.assigns.messages is %AsyncResult{ok?: true, result: true}
-      When the application calls reload_stream(socket, :messages)
-      Then the runtime invokes reload_stream/2 to fetch new items
-      And the resulting envelope contains stream_ops with reset and inserts
-      And socket.assigns.messages remains %AsyncResult{ok?: true, result: true}
+    Scenario: Silent refresh — stream/4 with reset: true and items already in hand
+      Given socket.assigns.messages is %AsyncResult{status: :ok, result: true, reason: nil}
+      And the application has freshly-fetched items
+      When the application calls stream(socket, :messages, fresh_items, reset: true)
+      Then the resulting envelope contains stream_ops with reset and inserts
+      And socket.assigns.messages remains %AsyncResult{status: :ok, result: true, reason: nil}
       And the client sees no loading flash
 
     Scenario: stream_async(reset: true) explicitly resets the loading indicator
-      Given socket.assigns.messages is %AsyncResult{ok?: true, result: true}
+      Given socket.assigns.messages is %AsyncResult{status: :ok, result: true, reason: nil}
       When the application calls stream_async(socket, :messages, fun, reset: true)
-      Then socket.assigns.messages re-emits Arbor.AsyncResult.loading()
+      Then socket.assigns.messages re-emits %AsyncResult{status: :loading, ...} (preserving the prior result)
       And the client UI may show a loading indicator while the task runs
       And the task's result populates the stream as in a fresh load

@@ -155,15 +155,11 @@ Feature: Streams Lifecycle
       And the client materializer drops local stream state for that path
       And the runtime does not emit a separate reset op for the disappeared stream
 
-  Rule: Stream reload is application-driven via socket |> reload_stream(name)
+  Rule: There is no dedicated reload mechanism — refresh via stream/4 with reset: true
 
-    Scenario: Application requests a reload
-      Given a store implements reload_stream(:messages, socket) returning {:ok, items}
-      When a handler calls reload_stream(socket, :messages)
-      Then the runtime invokes the store's reload_stream callback
-      And the envelope's stream_ops contain a reset followed by one insert per returned item
-
-    Scenario: Runtime never auto-invokes reload_stream
-      Given the runtime is in any state (mount, command, async, info, reconnect)
-      Then the runtime does not auto-invoke reload_stream/2
-      And reload happens only when the application calls the helper
+    Scenario: Application has fresh items and re-seeds silently
+      Given socket.assigns has the freshly fetched items in hand
+      When the handler calls stream(socket, :messages, items, reset: true)
+      Then the resulting envelope's stream_ops contain a reset followed by one insert per item
+      And no AsyncResult is touched
+      And the client sees no loading flash

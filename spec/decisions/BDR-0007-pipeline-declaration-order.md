@@ -3,7 +3,7 @@ id: BDR-0007
 title: Pipeline order follows hook attachment order; schema validation is itself a runtime-attached hook
 status: accepted
 date: 2026-05-09
-summary: No fixed magic order. Hooks run in attachment order. The runtime attaches built-in hooks (e.g., `Arbor.Hooks.ValidateCommandSchema` at `:before_command`, `Arbor.Hooks.ValidateRender` at `:after_render`) by default during mount; authors may detach or replace them. There is no separate `middleware` macro (see BDR-0004).
+summary: No fixed magic order. Hooks run in attachment order. The runtime attaches built-in hooks (e.g., `Arbor.Hooks.ValidateCommandSchema` at `:before_command`, `Arbor.Hooks.ValidateToState` at `:after_to_state`) by default during mount; authors may detach or replace them. There is no separate `middleware` macro (see BDR-0004).
 ---
 
 ## Scope

@@ -2,25 +2,26 @@
 Feature: Async Task Lifecycle
   As a store author
   I want to launch background tasks whose results integrate with socket.assigns and the wire shape via Arbor.AsyncResult
-  So that long-running work runs off the runtime mailbox and clients see explicit loading, ok, and failed states
+  So that long-running work runs off the runtime mailbox and clients can pattern-match on a status enum (:loading | :ok | :failed)
 
   Background:
     Given a connected client
     And a page runtime mounted on the client's transport session
 
-  Rule: Arbor.AsyncResult is a four-field struct mirroring Phoenix.LiveView.AsyncResult
+  Rule: Arbor.AsyncResult is a three-field struct keyed on a status enum
 
     Scenario: Loading default
       When code calls Arbor.AsyncResult.loading()
-      Then the struct has loading: true, ok?: false, result: nil, failed: nil
+      Then the struct is %{status: :loading, result: nil, reason: nil}
 
-    Scenario: Ok preserves prior loading semantics
+    Scenario: Ok with a value
       When code calls Arbor.AsyncResult.ok(prior, value)
-      Then the struct has ok?: true, result: value, loading: nil, failed: nil
+      Then the struct is %{status: :ok, result: value, reason: nil}
 
-    Scenario: Failed preserves prior loading semantics
+    Scenario: Failed preserves the prior result for stale-while-failed UX
+      Given a prior result of "snapshot"
       When code calls Arbor.AsyncResult.failed(prior, {:error, reason})
-      Then the struct has failed: {:error, reason}, loading: nil
+      Then the struct is %{status: :failed, result: "snapshot", reason: {:error, reason}}
 
   Rule: assign_async writes loading synchronously and resolves to ok or failed when the task completes
 
@@ -68,7 +69,7 @@ Feature: Async Task Lifecycle
   Rule: cancel_async actively terminates a task and writes failed when called via AsyncResult variant
 
     Scenario: Cancel by AsyncResult sets failed before killing the task
-      When the application calls cancel_async(socket, %AsyncResult{loading: [:profile]} = ar, :user_navigated_away)
+      When the application calls cancel_async(socket, %AsyncResult{status: :loading} = ar, :user_navigated_away)
       Then socket.assigns.profile is updated to Arbor.AsyncResult.failed(ar, {:exit, :user_navigated_away})
       And the runtime kills the associated task pid
 
@@ -92,10 +93,10 @@ Feature: Async Task Lifecycle
       And :user re-emits Arbor.AsyncResult.loading; :org preserves its prior loading metadata
 
     Scenario: No reset preserves prior result during reload
-      Given socket.assigns.profile is %AsyncResult{ok?: true, result: prior_data}
+      Given socket.assigns.profile is %AsyncResult{status: :ok, result: prior_data}
       When the application calls assign_async(socket, :profile, fun) without :reset
-      Then socket.assigns.profile becomes Arbor.AsyncResult.loading(prior_async_result)
-      And the prior result remains observable via the loading struct's preserved fields
+      Then socket.assigns.profile becomes %AsyncResult{status: :loading, result: prior_data, reason: nil}
+      And the prior result stays visible to the client until the new task completes
 
   Rule: Tasks are linked to the page runtime; runtime exit kills tasks; default supervisor is Arbor.AsyncSupervisor
 
@@ -145,19 +146,19 @@ Feature: Async Task Lifecycle
 
   Rule: Result classification on the wire AsyncResult is deterministic
 
-    Scenario Outline: Failure event mapping
+    Scenario Outline: Status enum mapping
       Given a task encounters <event>
       Then socket.assigns.<key> is updated to <terminal_state>
 
       Examples:
-        | event                                      | terminal_state                        |
-        | user fun returns {:ok, val}                | ok?: true, result: val                |
-        | user fun returns {:error, reason}          | failed: {:error, reason}              |
-        | task raises an exception                   | failed: {:exit, {reason, stacktrace}} |
-        | task throws                                | failed: {:exit, {{:nocatch, ...}, stacktrace}} |
-        | task process exits with reason r          | failed: {:exit, r}                    |
-        | timeout fires                              | failed: {:exit, :timeout}             |
-        | cancel_async with reason r                 | failed: {:exit, r}                    |
+        | event                                      | terminal_state                                           |
+        | user fun returns {:ok, val}                | status: :ok, result: val, reason: nil                    |
+        | user fun returns {:error, reason}          | status: :failed, result: prior_or_nil, reason: {:error, reason} |
+        | task raises an exception                   | status: :failed, reason: {:exit, {reason, stacktrace}}   |
+        | task throws                                | status: :failed, reason: {:exit, {{:nocatch, ...}, st}}  |
+        | task process exits with reason r           | status: :failed, reason: {:exit, r}                      |
+        | timeout fires                              | status: :failed, reason: {:exit, :timeout}               |
+        | cancel_async with reason r                 | status: :failed, reason: {:exit, r}                      |
 
   Rule: A store node disappearing does not actively cancel its async tasks; results are lazily discarded
 
@@ -172,16 +173,16 @@ Feature: Async Task Lifecycle
 
     Scenario: Field declaration
       When a store declares field :profile, AsyncResult.of(UserProfileState.t())
-      Then codegen emits a TypeScript shape combining loading, ok, result, failed
+      Then codegen emits a discriminated-union TypeScript shape keyed on status (:loading | :ok | :failed)
       And the runtime validator accepts %Arbor.AsyncResult{} or structurally-equivalent maps
 
-  Rule: AsyncResult serializes ok? as ok on the wire
+  Rule: AsyncResult serializes the status atom as a string on the wire
 
-    Scenario: Wire shape strips the question mark
-      Given an Arbor.AsyncResult struct with fields loading, ok?, result, failed
+    Scenario: Wire shape uses string-coerced status
+      Given an Arbor.AsyncResult struct with fields status, result, reason
       When the runtime serializes it for the JSON Patch payload
-      Then the resulting JSON object uses keys "loading", "ok", "result", "failed"
-      And the TypeScript codegen target emits an object type with field name ok (no question mark, since TypeScript identifiers do not allow ?)
+      Then the resulting JSON object uses keys "status", "result", "reason"
+      And the status atom (:loading | :ok | :failed) becomes the string ("loading" | "ok" | "failed")
 
   Rule: User functions warned for socket capture (LV-aligned)
 
@@ -225,5 +226,5 @@ Feature: Async Task Lifecycle
     Scenario: Mount calls assign_async
       Given mount(socket) calls assign_async(socket, :profile, fun)
       When the first patch envelope is emitted
-      Then the value at /profile in the initial replace is %{loading: [:profile], ok?: false, result: nil, failed: nil}
-      And a subsequent envelope's ops update /profile/ok and /profile/result on completion
+      Then the value at /profile in the initial replace is %{status: "loading", result: null, reason: null}
+      And a subsequent envelope's ops update /profile/status and /profile/result on completion

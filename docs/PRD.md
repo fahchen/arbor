@@ -80,9 +80,20 @@ export type CartStoreState = {
 }
 ```
 
-### `socket.assigns` — single state container
+### Socket fields
 
-`socket.assigns` holds both parent-passed values (declared via `attr`) and store-internal values (set in `mount/1` and handlers). There is no `socket.attrs` namespace (BDR-0010). Function-valued attrs (callbacks) live in `socket.assigns` like any other value.
+Arbor's `socket` mirrors [`Phoenix.Socket`](https://hexdocs.pm/phoenix/1.8.7/Phoenix.Socket.html#module-socket-fields)'s shape so handlers, hooks, and helpers all read the same struct.
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `assigns` | `map()` | Single state container. Parent-supplied values (declared via `attr`) and store-internal values (set in `mount/1` and handlers) live together. The only field `to_state/1` reads from. There is no `socket.attrs` namespace (BDR-0010). Function-valued attrs live here like any other value. |
+| `id` | `String.t()` | The store node's id within its parent (second component of the identity tuple). |
+| `parent_path` | `[atom() \| String.t()]` | Ordered path from the root to this node's parent. Combined with `module` and `id` forms the runtime identity used for memoization and command routing. |
+| `module` | `module()` | The store module owning this node. Read-only. |
+| `endpoint`, `topic`, `transport_pid` | Phoenix Channel scaffolding | Provided so hooks and helpers can broadcast or push outside the standard envelope flow when needed. Read-only. |
+| `private` | `map()` | Reserved for runtime bookkeeping (hook table, async ref tracking, pending stream ops). Do not read or write directly; use the corresponding helpers. |
+
+Helpers like `assign/2,3`, `update_assign/3`, `attach_hook/4`, `stream/4`, `assign_async/3,4`, `start_async/3,4`, `cancel_async/2,3`, and `stream_async/4` all take a socket as the first argument and return a new socket — chainable with `|>`.
 
 ### `attr` — compile-time annotation
 
@@ -152,9 +163,9 @@ child(ProductCardStore,
 
 ### `attach_hook` — sole extension primitive
 
-All cross-cutting and per-node concerns use `attach_hook(socket, id, stage, fun)` (BDR-0004). There is no `middleware` macro. Stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`. Hook return: `{:cont, socket}`, `{:halt, socket}`, or `{:halt, reply, socket}` (only on `:before_command`). Mirrors `Phoenix.LiveView.attach_hook/4`. Each store maintains its own hook table; child-attached hooks see only that node's events. `detach_hook/3` is a silent no-op when the hook is absent.
+All cross-cutting and per-node concerns use `attach_hook(socket, id, stage, fun)` (BDR-0004). There is no `middleware` macro. Stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_to_state`. Hook return: `{:cont, socket}`, `{:halt, socket}`, or `{:halt, reply, socket}` (only on `:before_command`). Mirrors `Phoenix.LiveView.attach_hook/4`. Each store maintains its own hook table; child-attached hooks see only that node's events. `detach_hook/3` is a silent no-op when the hook is absent.
 
-Authors attach hooks inside `mount/1` for stable concerns and inside any handler for runtime-driven attachment. Built-in hooks (`Arbor.Hooks.ValidateCommandSchema` on `:before_command`, `Arbor.Hooks.ValidateRender` on `:after_render`) are attached by the runtime's mount path; authors may detach or replace them (BDR-0007). Render-output validation is default-on in dev/test, telemetry-only opt-in for prod.
+Authors attach hooks inside `mount/1` for stable concerns and inside any handler for runtime-driven attachment. Built-in hooks (`Arbor.Hooks.ValidateCommandSchema` on `:before_command`, `Arbor.Hooks.ValidateToState` on `:after_to_state`) are attached by the runtime's mount path; authors may detach or replace them (BDR-0007). Render-output validation is default-on in dev/test, telemetry-only opt-in for prod.
 
 Pipeline order follows hook attachment order; the addressed store's `handle_command/3` dispatches after all `:before_command` hooks have continued; `:after_command` runs after the handler returns; the transport reply is delivered next; the patch push follows; effects fire last (BDR-0009).
 
@@ -174,7 +185,7 @@ Operations are socket-pipe helpers: `stream/4`, `stream_configure/3`, `stream_in
 
 Stream-typed fields appear in `state do` as `field :name, stream(T)` and are opaque to JSON Patch. They render as `[]` in the initial-state envelope; subsequent envelopes' `ops` never touch their paths; stream content flows through `stream_ops` only. Cycles with non-empty `stream_ops` always emit an envelope, even when JSON Patch ops are empty (BDR-0018).
 
-Stream reload is application-driven via `socket |> reload_stream(name)` (BDR-0017). The runtime invokes the store's `reload_stream(name, socket)` callback to fetch fresh items and emits `reset` + bulk inserts. The runtime never auto-invokes `reload_stream/2`.
+There is no dedicated reload mechanism. To refresh a stream the application calls `stream(socket, name, fresh_items, reset: true)` directly (the runtime emits a `reset` op followed by per-item inserts in the same envelope). When the refresh involves an async fetch, use `stream_async(socket, name, fun, reset: true)` — see below for the loading-flash variant (BDR-0022).
 
 ### Async tasks
 
@@ -198,7 +209,7 @@ A child store that disappears does not actively cancel its async tasks; results 
 
 Composite of async lifecycle and stream API. User fun returns `{:ok, enumerable}`, `{:ok, enumerable, stream_opts}`, or `{:error, reason}`. On success, runtime atomically writes `AsyncResult.ok(prior, true)` to the assign and seeds the stream with the returned items. The state field type is composite: `field :messages, AsyncResult.of(stream(MessageState.t()))`.
 
-`reload_stream` and `stream_async(reset: true)` are complementary recovery paths (BDR-0022): `reload_stream` is silent refresh (no loading flash); `stream_async(reset: true)` re-emits the loading state.
+Refresh paths (BDR-0022): silent refresh uses `stream(reset: true)` with items already in hand; loading-flash refresh uses `stream_async(reset: true)` to re-run an async fetch and re-emit the AsyncResult `:loading` state until the new result arrives.
 
 ### `Arbor.State` modules
 
@@ -235,7 +246,7 @@ A `state do` field whose type is another store's `state()` may be populated by e
 | Page Runtime | One GenServer per connected page; owns the store tree, message loop, version counter, transport session. |
 | Store Metadata Registry | Compile-time declarations: `attr`, `state`, `command`, `stream`, `async`. |
 | Render Resolver | Walks `to_state/1`'s return value and resolves `child(...)` placeholders bottom-up. |
-| Render Validator | Validates each store's resolved output via `Arbor.Hooks.ValidateRender`. |
+| Render Validator | Validates each store's resolved output via `Arbor.Hooks.ValidateToState`. |
 | Reconciler | Maintains `(parent_path, module, id)` identity; preserves `socket.assigns` across cycles via reference equality memoization (BDR-0013). |
 | Command Router | Resolves `{path, command}` to a node via the store registry; runs schema validation and authorization hooks; dispatches `handle_command/3`. |
 | Hook Runner | Executes ordered hooks around mount, command, render, terminate. |
@@ -324,7 +335,6 @@ There is no wire enum of error categories. Malformed or impossible commands (unk
 | `handle_command(name, payload, socket)` | Client command handler | Returns `{:noreply, socket}` or `{:reply, payload, socket}` |
 | `handle_info(msg, socket)` | Server-side message handler (also receives upward callback effects via `send/2`) | Returns `{:noreply, socket}` |
 | `handle_async(name, result, socket)` | Async task completion handler | Returns `{:noreply, socket}` |
-| `reload_stream(name, socket)` | Stream reload data source | Returns `{:ok, [item]}` |
 | `terminate(reason, socket)` | Root page store termination | Optional |
 | `to_state(socket)` | Produce the public output shape | Required |
 
@@ -343,7 +353,6 @@ There is no wire enum of error categories. Malformed or impossible commands (unk
 | `cancel_async(socket, name_or_key, reason)` | Cancel an in-flight task |
 | `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3` | Stream API (LV-parity) |
 | `stream_async(socket, name, fun, opts)` | Composite async + stream |
-| `reload_stream(socket, name)` | Trigger stream reload via callback |
 
 ### Render contract — runtime rules
 
@@ -483,14 +492,13 @@ defmodule MyApp.Stores.MessagesStore do
   end
 
   def handle_command(:reload, _, socket) do
-    {:noreply, reload_stream(socket, :messages)}
+    items = Chat.recent(socket.assigns.room_id, 50)
+    {:noreply, stream(socket, :messages, items, reset: true)}
   end
 
   def handle_info({:message_received, msg}, socket) do
     {:noreply, stream_insert(socket, :messages, msg, at: 0, limit: -100)}
   end
-
-  def reload_stream(:messages, socket), do: {:ok, Chat.recent(socket.assigns.room_id, 50)}
 
   def to_state(socket) do
     %{messages: socket.assigns.messages}
@@ -541,12 +549,10 @@ export type ProductPageStoreState = {
   notifications: NotificationStoreState
 }
 
-export type AsyncResult<T> = {
-  loading: unknown | null
-  ok: boolean
-  result: T | null
-  failed: unknown | null
-}
+export type AsyncResult<T> =
+  | { status: "loading"; result: T | null; reason: null }
+  | { status: "ok"; result: T; reason: null }
+  | { status: "failed"; result: T | null; reason: unknown }
 
 export type ProductPageStoreCommands = {
   select_product: { id: string }
@@ -561,11 +567,11 @@ export type ProductPageStoreCommands = {
 | M1: Runtime kernel + metadata | Page runtime GenServer; `use Arbor.Store` / `use Arbor.State`; metadata registry for `attr`/`state`/`command`/`stream`/`async`; `socket` struct with `assign`/`update_assign`/`invoke`/`attach_hook`/`detach_hook`. | High | Weeks 1–2 |
 | M2: Render contract + resolver | `child(...)` placeholder, render-output resolver, identity-preserving reconciler, render-output validation hook, `mount`/`update`/`render` lifecycle, `handle_info/2`, root `terminate/2`. | High | Weeks 3–4 |
 | M3: Command pipeline | Path-based routing, payload schema validation hook, attach_hook/detach_hook, authorization hook, `handle_command/3`, transport reply contract, let-it-crash for malformed commands, system command namespace. | High | Weeks 5–6 |
-| M4: Replication + streams | RFC 6902 diff engine, patch envelope (`ops` + `stream_ops`), version counter, stream API (LV-parity: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`), `reload_stream/2`, reference WebSocket adapter. | High | Weeks 7–8 |
+| M4: Replication + streams | RFC 6902 diff engine, patch envelope (`ops` + `stream_ops`), version counter, stream API (LV-parity: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`), reference WebSocket adapter. | High | Weeks 7–8 |
 | M5: Async lifecycle | `assign_async`, `start_async`, `cancel_async`, `handle_async/3`, `Arbor.AsyncResult`, `Task.Supervisor`, `:timeout` extension, `:reset` (incl subset list), ref-prune races, lazy-discard, `stream_async/4`. | High | Weeks 9–10 |
 | M6: Codegen + hardening | Elixir typespec emission, TypeScript codegen for state and command schemas (incl streams, AsyncResult, variants, composite types), telemetry events, devtools, trace buffer, docs, examples, benchmarks. | Medium | Weeks 11–12 |
 
-Persistence is **not** an Arbor primitive (recorded in `spec/backlog.md`). Applications load snapshots inside their own `mount/1` body and save via `attach_hook` on `:after_command`. Valid hook stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`.
+Persistence is **not** an Arbor primitive (recorded in `spec/backlog.md`). Applications load snapshots inside their own `mount/1` body and save via `attach_hook` on `:after_command`. Valid hook stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_to_state`.
 
 ## Acceptance Criteria
 
@@ -578,13 +584,13 @@ The MVP is done when all of the following are true:
 - Identity is `(parent_path, module, id)`; child assigns survive identity-stable re-renders; disappear-then-reappear is a fresh mount (BDR-0011); `id` must be a string.
 - Commands route by `{path, command}`; payload validation, authorization, and arbitrary `:before_command` hooks run in attachment order. Handler returns `{:noreply, socket}` or `{:reply, payload, socket}` (BDR-0002).
 - Transport reply uses Phoenix Channel ref reply (BDR-0001). Outcome ordering is reply → patch → effects (BDR-0009). Malformed or impossible commands crash the page runtime per let-it-crash (LV-aligned); graceful denials use `{:halt, payload, socket}` with channel status `:ok` (BDR-0008).
-- `attach_hook/4`, `detach_hook/3` work at any node (root or child) for stages `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render` (BDR-0004).
+- `attach_hook/4`, `detach_hook/3` work at any node (root or child) for stages `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_to_state` (BDR-0004).
 - `handle_info(msg, socket)` shares the runtime mailbox with commands; no Arbor PubSub abstraction (BDR-0005).
 - Diff engine emits structural minimal RFC 6902 diff with no threshold (BDR-0014). Initial state is the first patch envelope's `replace` at path `""`.
 - No application-level resync command; recovery is reconnect (BDR-0015).
 - Stream API LV-parity; server forgets values; reload is application-driven (BDR-0017); stream-only cycles emit envelopes (BDR-0018).
 - Async API LV-parity plus an Arbor `:timeout` extension; `start_async` same-name overwrites + lazy-discards (BDR-0019); `handle_async/3` exceptions caught (BDR-0020); telemetry events `[:arbor, :async, :*]` cover the lifecycle.
-- `stream_async/4` composite works; `reload_stream` and `stream_async(reset: true)` are complementary (BDR-0022).
+- `stream_async/4` composite works; `stream(reset: true)` and `stream_async(reset: true)` cover silent and loading-flash refresh respectively (BDR-0022).
 - The system runs without CRDTs, offline sync, event sourcing, built-in PubSub, built-in persistence, slot composition, or `move`/`copy`/`test` JSON Patch ops.
 
 ## Risks and Trade-offs
@@ -595,7 +601,7 @@ The MVP is done when all of the following are true:
 | Render-output validation cost in prod | Default off in prod (telemetry-only opt-in). |
 | Reorders without `move` op produce many ops | Accepted as-is (BDR-0014). Future optimization can add `move` op support if measured. |
 | `handle_async/3` divergence from let-it-crash | Documented as BDR-0020; surface via `[:arbor, :async, :exception]`. |
-| Stream client drift after disconnect | Reconnect rebuilds full state; `reload_stream/2` covers in-session refresh. |
+| Stream client drift after disconnect | Reconnect rebuilds full state; `stream(reset: true)` covers in-session refresh. |
 | Async orphan tasks | Linked to runtime; runtime termination kills tasks; `cancel_async` for explicit. |
 | `attr` macro is compile-time but parents pass via `child(...)` | Required-presence check at parent's `child(...)` build site; missing required attr raises during render. |
 | TypeScript codegen drift | Codegen runs on every compile in dev; CI check fails build when TS output differs from committed artifacts. |

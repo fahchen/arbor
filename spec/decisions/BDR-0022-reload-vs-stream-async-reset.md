@@ -1,46 +1,26 @@
 ---
 id: BDR-0022
-title: reload_stream and stream_async(reset: true) are complementary recovery paths with distinct UX semantics
+title: Refresh primitives — stream/4 with reset: true (silent) vs stream_async/4 with reset: true (with loading flash)
 status: accepted
-date: 2026-05-08
-summary: reload_stream/2 silently refreshes a stream's contents without touching the AsyncResult; stream_async(reset: true) re-emits the loading state. Authors choose based on whether a loading flash is desired.
+date: 2026-05-09
+summary: Arbor exposes no dedicated reload mechanism (no `reload_stream` helper, no `reload_stream/2` callback). To refresh a stream's contents the application calls `stream(socket, name, fresh_items, reset: true)` directly (silent — AsyncResult untouched) or, when a loading indicator is desired, re-runs `stream_async(socket, name, fun, reset: true)` (re-emits AsyncResult.loading then re-seeds on completion).
 ---
 
+## Scope
+
+**Feature**: domains/streams/features/lifecycle.feature
 **Feature**: domains/async/features/stream-async.feature
-**Rule**: reload_stream and stream_async serve complementary recovery paths
+**Rule**: Refresh paths — silent vs. loading-flash
 
-## Context
+## Reason
 
-Once a stream slot has been populated (typically via `stream_async`), the application may want to refresh its contents — e.g., after a webhook signals new data, after a user clicks "refresh", or after a stale window expires. Two scenarios drive different UX:
+A separate `reload_stream/2` callback would add a third path (alongside `stream/4` and `stream_async/4`) without giving the application any new capability. Both refresh patterns are already expressible:
 
-1. **Silent refresh**: the user is already looking at the data and just wants it updated. A loading spinner would feel like regression. The application wants the items replaced under the existing UI.
+- **Silent refresh**: the application has fresh items in hand (from a webhook, a user click, an external query) and calls `stream(socket, name, fresh_items, reset: true)`. The stream slot is cleared and re-seeded; `AsyncResult` (if any) stays at `:ok`. No loading flash.
+- **Refresh with loading flash**: the application calls `stream_async(socket, name, fun, reset: true)`. The runtime cancels the prior async task, sets the AsyncResult to `:loading` (preserving the prior result for stale-while-loading UX), and re-seeds the stream when the task completes.
 
-2. **Explicit reload**: the user actively requested a reload (e.g., navigating to a different filter), and the loading state is expected feedback.
-
-Without distinguishing these, every refresh would either always flash the loading state (annoying) or never flash it (impossible to express "I'm intentionally reloading from scratch").
-
-## Behaviours Considered
-
-### Option A: Two complementary APIs with distinct semantics
-- `reload_stream(socket, name)` invokes the store's `reload_stream/2` callback, emits stream `reset + inserts`, leaves `AsyncResult` untouched. UX: silent refresh.
-- `stream_async(socket, name, fun, reset: true)` cancels the prior task, re-emits `Arbor.AsyncResult.loading()`, runs the new task, populates the stream on completion. UX: loading flash.
-
-Authors choose based on the desired UX. Both paths share the same wire format for stream content.
-
-### Option B: Only `stream_async(reset: true)`; drop `reload_stream/2`
-Every refresh re-emits loading. Simpler API surface. Loses the silent-refresh affordance.
-
-### Option C: Only `reload_stream/2`; drop the AsyncResult-flash variant
-Authors emit AsyncResult transitions manually if they want a loading flash. More boilerplate; less ergonomic.
-
-## Decision
-
-Adopt Option A. Both APIs coexist with documented complementary roles.
+Both forms compose with the standard stream and async APIs and need no special primitives. Authors who want a "refresh now" handler simply pattern-match in their own `handle_command` or `handle_info` and call the appropriate helper. The runtime has no auto-invocation surface — recovery is the reconnect path (BDR-0015) for runtime restart, and explicit application calls otherwise.
 
 ## Rejected Alternatives
 
-Option B was rejected because the silent-refresh UX is common (auto-refresh on visibility change, websocket-pushed updates) and forcing a loading flash for those flows feels regressive.
-
-Option C was rejected because the explicit-reload UX is also common and authors should not have to write `assign(socket, :foo, Arbor.AsyncResult.loading()) |> stream_async(...)` boilerplate.
-
-The runtime documents both paths and recommends `reload_stream/2` for periodic/silent refreshes and `stream_async(reset: true)` for user-initiated reloads.
+A dedicated `reload_stream/2` callback paired with a `reload_stream(socket, name)` helper was considered and removed. It added a callback name to learn, an envelope shape to document, and a third refresh path with no capability gain over `stream(reset: true)`. Removing it shrinks the API surface by one callback and one helper.

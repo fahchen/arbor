@@ -180,7 +180,7 @@ Feature: Render Contract
       When the child runs invoke(socket, :missing, payload)
       Then the runtime raises a "missing callback" error pointing at the offending call site
 
-  Rule: Render-output validation is run by the validate-render hook after child resolution
+  Rule: Render-output validation is run by the to_state validation hook after child resolution
 
     Scenario: Invalid output is rejected before diffing
       Given a store declares field :title, String.t()
@@ -190,7 +190,7 @@ Feature: Render Contract
   Rule: Render-output validation is default-on in dev/test, telemetry-only in prod
 
     Scenario: Validation behaviour depends on environment
-      Given the page runtime's :after_render hook list configures Arbor.Hooks.ValidateRender for dev/test
+      Given the page runtime's :after_to_state hook list configures Arbor.Hooks.ValidateToState for dev/test
       When validation finds a shape mismatch in dev
       Then the runtime raises
       And in prod the same misshape is recorded as telemetry without raising
