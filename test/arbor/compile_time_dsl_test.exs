@@ -78,7 +78,7 @@ defmodule Arbor.TestSupport.AsyncStreamStore do
   alias Arbor.TestSupport.MoneyState
 
   state do
-    async_stream(:loaded, MoneyState.t(),
+    stream_async(:loaded, MoneyState.t(),
       item_key: &"loaded-#{&1.amount}",
       limit: -200
     )
@@ -303,7 +303,7 @@ defmodule Arbor.CompileTimeDslTest do
       assert {:stream, _meta, [_inner]} = ExampleStore.__arbor__(:type, :events)
     end
 
-    test "async_stream/3 expands to AsyncResult.of(stream(T))" do
+    test "stream_async/3 expands to AsyncResult.of(stream(T))" do
       assert {{:., _dot, [{:__aliases__, _alias, [:Arbor, :AsyncResult]}, :of]}, _call,
               [{:stream, _stream_meta, [_inner]}]} =
                AsyncStreamStore.__arbor__(:type, :loaded)

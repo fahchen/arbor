@@ -17,8 +17,8 @@ defmodule Arbor.DSL.State do
             field: 3,
             stream: 2,
             stream: 3,
-            async_stream: 2,
-            async_stream: 3
+            stream_async: 2,
+            stream_async: 3
           ]
 
         unquote(block)
@@ -65,9 +65,9 @@ defmodule Arbor.DSL.State do
   end
 
   @doc false
-  @spec async_stream(atom(), Macro.t()) :: Macro.t()
-  @spec async_stream(atom(), Macro.t(), keyword()) :: Macro.t()
-  defmacro async_stream(name, item_type, opts \\ []) when is_atom(name) and is_list(opts) do
+  @spec stream_async(atom(), Macro.t()) :: Macro.t()
+  @spec stream_async(atom(), Macro.t(), keyword()) :: Macro.t()
+  defmacro stream_async(name, item_type, opts \\ []) when is_atom(name) and is_list(opts) do
     quote do
       Arbor.DSL.State.field(
         unquote(name),
