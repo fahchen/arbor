@@ -1,4 +1,4 @@
-defmodule Arbor.PageRuntime.State do
+defmodule Arbor.PageServer.State do
   @moduledoc false
 
   use TypedStructor

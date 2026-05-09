@@ -1,15 +1,15 @@
-defmodule Arbor.PageRuntimeTest do
+defmodule Arbor.PageServerTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.PageRuntime
-  alias Arbor.PageRuntime.State
+  alias Arbor.PageServer
+  alias Arbor.PageServer.State
   alias Arbor.StoreRegistry
 
   defmodule RootStore do
   end
 
   test "page runtime init builds a root socket and inserts it into the registry" do
-    assert {:ok, pid} = PageRuntime.start_link({RootStore, %{}, %{transport_pid: self()}})
+    assert {:ok, pid} = PageServer.start_link({RootStore, %{}, %{transport_pid: self()}})
     assert %State{} = :sys.get_state(pid)
 
     %State{

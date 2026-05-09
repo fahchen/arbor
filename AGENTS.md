@@ -50,7 +50,7 @@ If the spec feels wrong, flag the discrepancy in the PR — never silently edit 
 
 - `%Arbor.Socket{}` field shape: `assigns`, `id`, `parent_path`, `module`, `endpoint`, `topic`, `transport_pid`, `private`. Mirrors `Phoenix.Socket`
 - `socket.assigns.__changed__` records mutations as `%{key => true}`; `===` short-circuits no-op writes (BDR-0013)
-- `socket.private[:hooks]` is reserved for `Arbor.Hook` — write via `Arbor.Socket.put_private/3`
+- `socket.private[:hooks]` is reserved for `Arbor.Lifecycle` — write via `Arbor.Socket.put_private/3`
 - Hook stages: `:before_command | :after_command | :handle_async | :handle_info | :after_to_state` (BDR-0004)
 - Hook return: `{:cont, socket} | {:halt, socket} | {:halt, reply, socket}`
 - Child identity is `{parent_path, module, id}`; `id` must be a binary (BDR-0011)

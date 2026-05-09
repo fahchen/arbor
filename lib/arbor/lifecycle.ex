@@ -1,5 +1,5 @@
-defmodule Arbor.Hook do
-  @moduledoc "Socket hook helpers for Arbor runtime stages."
+defmodule Arbor.Lifecycle do
+  @moduledoc "Lifecycle hook helpers for Arbor runtime stages. Mirrors `Phoenix.LiveView.Lifecycle`."
 
   alias Arbor.Socket
 

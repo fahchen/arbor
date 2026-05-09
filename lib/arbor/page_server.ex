@@ -1,11 +1,11 @@
-defmodule Arbor.PageRuntime do
-  @moduledoc "Page-scoped Arbor runtime process skeleton."
+defmodule Arbor.PageServer do
+  @moduledoc "Page-scoped Arbor runtime GenServer. Hosts the store tree for one connected client session."
 
   use GenServer
 
   require Logger
 
-  alias Arbor.PageRuntime.State
+  alias Arbor.PageServer.State
   alias Arbor.Socket
   alias Arbor.StoreRegistry
   alias Arbor.StoreRegistry.Entry
@@ -49,14 +49,14 @@ defmodule Arbor.PageRuntime do
   @impl GenServer
   @spec handle_info({:EXIT, pid(), term()}, State.t()) :: {:stop, term(), State.t()}
   def handle_info({:EXIT, pid, reason}, %State{} = state) do
-    Logger.error("page runtime linked process exited: #{inspect(pid)} reason=#{inspect(reason)}")
+    Logger.error("page server linked process exited: #{inspect(pid)} reason=#{inspect(reason)}")
     {:stop, reason, state}
   end
 
   @impl GenServer
   @spec terminate(term(), State.t()) :: :ok
   def terminate(reason, %State{root_module: root_module}) do
-    Logger.error("page runtime terminating for #{inspect(root_module)} reason=#{inspect(reason)}")
+    Logger.error("page server terminating for #{inspect(root_module)} reason=#{inspect(reason)}")
     :ok
   end
 end
