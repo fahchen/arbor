@@ -23,6 +23,7 @@ defmodule Arbor.DSL.State do
         plugin(Arbor.Plugin.StateField)
         plugin(Arbor.Plugin.Reflection)
         plugin(Arbor.Plugin.TypeSpec)
+        plugin(Arbor.Plugin.TypeScript)
 
         import TypedStructor, except: [field: 2, field: 3]
 
