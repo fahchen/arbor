@@ -24,11 +24,24 @@ defprotocol Arbor.Wire do
       %{"title" => "Inbox", "status" => "paused"}
   """
 
-  @fallback_to_any true
-
   @doc "Returns the wire-shape representation of `value`."
   @spec to_wire(t()) :: term()
   def to_wire(value)
+
+  @doc false
+  defmacro __deriving__(module, _options) do
+    quote do
+      defimpl Arbor.Wire, for: unquote(module) do
+        def to_wire(struct) do
+          struct
+          |> Map.from_struct()
+          |> Map.new(fn {key, value} ->
+            {Arbor.Wire.Encoder.key_to_wire(key), Arbor.Wire.to_wire(value)}
+          end)
+        end
+      end
+    end
+  end
 end
 
 defimpl Arbor.Wire, for: Atom do
@@ -67,34 +80,6 @@ defimpl Arbor.Wire, for: Arbor.Child do
     raise ArgumentError,
           "Arbor.Wire.to_wire/1 received an unresolved child placeholder: #{inspect(child)}. " <>
             "Resolver must substitute child(...) sentinels before serialization."
-  end
-end
-
-defimpl Arbor.Wire, for: Any do
-  defmacro __deriving__(module, _struct, _options) do
-    quote do
-      defimpl Arbor.Wire, for: unquote(module) do
-        def to_wire(struct) do
-          struct
-          |> Map.from_struct()
-          |> Map.new(fn {key, value} ->
-            {Arbor.Wire.Encoder.key_to_wire(key), Arbor.Wire.to_wire(value)}
-          end)
-        end
-      end
-    end
-  end
-
-  def to_wire(%_struct{} = value) do
-    raise Protocol.UndefinedError,
-      protocol: Arbor.Wire,
-      value: value,
-      description:
-        "add `@derive Arbor.Wire` to the struct module or define a custom `defimpl Arbor.Wire`"
-  end
-
-  def to_wire(value) do
-    raise Protocol.UndefinedError, protocol: Arbor.Wire, value: value
   end
 end
 

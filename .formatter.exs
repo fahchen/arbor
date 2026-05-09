@@ -12,6 +12,8 @@
     payload: 3,
     state: 1,
     stream: 2,
-    stream: 3
+    stream: 3,
+    stream_async: 2,
+    stream_async: 3
   ]
 ]
