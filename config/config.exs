@@ -25,3 +25,7 @@ state_validation_hooks =
   end
 
 config :arbor, :default_hooks, [command_schema_hook | state_validation_hooks]
+
+if File.exists?(Path.join(__DIR__, "#{config_env()}.exs")) do
+  import_config "#{config_env()}.exs"
+end
