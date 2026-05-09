@@ -106,7 +106,8 @@ defmodule Arbor.Lifecycle do
     |> hooks()
     |> Map.get(stage, [])
     |> Enum.reduce_while({:cont, socket}, fn %{fun: fun}, {:cont, current_socket} ->
-      case apply(fun, append_socket_arg(hook_args, current_socket)) do
+      # credo:disable-for-next-line Credo.Check.Refactor.AppendSingleItem
+      case apply(fun, hook_args ++ [current_socket]) do
         {:cont, %Socket{} = next_socket} ->
           {:cont, {:cont, next_socket}}
 
@@ -170,11 +171,6 @@ defmodule Arbor.Lifecycle do
       raise ArgumentError,
             "expected fun arity #{expected_arity} for stage #{inspect(stage)}, got arity #{actual_arity}"
     end
-  end
-
-  @spec append_socket_arg(list(), Socket.t()) :: list()
-  defp append_socket_arg(hook_args, %Socket{} = socket) when is_list(hook_args) do
-    Enum.reverse([socket | Enum.reverse(hook_args)])
   end
 
   @spec put_hooks(Socket.t(), hook_table()) :: Socket.t()
