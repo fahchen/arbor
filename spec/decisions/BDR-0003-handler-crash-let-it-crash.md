@@ -41,7 +41,7 @@ Adopt Option A. No try/rescue. No grace window. No buffering. Reconnect → fres
 
 Option B was rejected because:
 - Carrying state through an exception creates a class of subtle bugs where invariants silently degrade.
-- Exception classes that *should* be recoverable belong in handler-controlled `{:reply, %{ok: false, ...}, ctx}` returns (see BDR-0002), not in runtime defense.
+- Exception classes that *should* be recoverable belong in handler-controlled `{:reply, %{ok: false, ...}, socket}` returns (see BDR-0002), not in runtime defense.
 - BEAM's process model exists to localize crashes; bypassing it is anti-idiomatic.
 
 Option C was rejected because per-node state-machine bookkeeping doubles complexity for a marginal recovery gain; clients must still resync after a node disable, so a full restart is cleaner.

@@ -15,16 +15,16 @@ Feature: Render Contract
       Then the runtime exposes an Elixir typespec equivalent to %{status: String.t()}
       And the codegen produces TypeScript shape { status: string }
 
-  Rule: render(ctx) returns a value matching the state shape, with child(...) placeholders allowed
+  Rule: state(socket) returns a value matching the state shape, with child(...) placeholders allowed
 
     Scenario: Render output uses child placeholders for nested store fields
       Given a store declares field "header" typed as HeaderStore.state()
-      When render(ctx) returns %{header: child(HeaderStore, id: "header", current_user: u)}
+      When state(socket) returns %{header: child(HeaderStore, id: "header", current_user: u)}
       Then the resolver substitutes the child's render output into the header field
 
     Scenario: Render output uses raw maps for nested store types
       Given a store declares field "header" typed as HeaderStore.state()
-      When render(ctx) returns %{header: %{user_name: "Alice", avatar_url: nil}}
+      When state(socket) returns %{header: %{user_name: "Alice", avatar_url: nil}}
       Then validation accepts the raw map as long as it conforms to HeaderStore.state()
       And no child store node is mounted for the header field
 
@@ -67,18 +67,18 @@ Feature: Render Contract
       Then the runtime rejects the placeholder
       And the developer is expected to call to_string/1 on numeric ids
 
-  Rule: Lifecycle for child stores is mount(ctx) and update(new_assigns, ctx); no per-child unmount callback
+  Rule: Lifecycle for child stores is mount(socket) and update(new_assigns, socket); no per-child unmount callback
 
     Scenario: First appearance triggers mount and render
       Given a child identity that does not yet exist
       When the parent's render emits a child(...) placeholder for that identity
-      Then mount(ctx) runs once
-      And render(ctx) runs after mount
+      Then mount(socket) runs once
+      And state(socket) runs after mount
 
     Scenario: Subsequent parent re-renders trigger update
       Given a mounted child receives the same identity in a later parent render with new parent-passed assigns
-      Then update(new_assigns, ctx) runs
-      And render(ctx) runs after update returns {:ok, ctx}
+      Then update(new_assigns, socket) runs
+      And state(socket) runs after update returns {:ok, socket}
 
     Scenario: Disappearance silently discards the node
       Given a mounted child node
@@ -87,20 +87,20 @@ Feature: Render Contract
       And any async tasks the node had spawned continue running
       And their results, when they arrive, are lazy-discarded with [:arbor, :async, :lazy_discard] telemetry
 
-  Rule: The root page store may define terminate(reason, ctx)
+  Rule: The root page store may define terminate(reason, socket)
 
     Scenario: Root terminate fires on runtime exit
-      Given the root page store implements terminate(reason, ctx)
+      Given the root page store implements terminate(reason, socket)
       When the page runtime exits with reason :shutdown
-      Then terminate(:shutdown, ctx) is invoked before the runtime fully terminates
+      Then terminate(:shutdown, socket) is invoked before the runtime fully terminates
 
-  Rule: A store may omit update/2; the default merges new_assigns into ctx.assigns
+  Rule: A store may omit update/2; the default merges new_assigns into socket.assigns
 
     Scenario: Implicit merge in absence of update/2
       Given a store does not define update/2
       When the parent re-renders with new parent-passed assigns
-      Then the runtime merges new_assigns into ctx.assigns automatically
-      And render(ctx) runs against the merged assigns
+      Then the runtime merges new_assigns into socket.assigns automatically
+      And state(socket) runs against the merged assigns
 
   Rule: attr declares a parent-supplied assign with required, type, and default options
 
@@ -112,25 +112,25 @@ Feature: Render Contract
     Scenario: Default value applies when the parent omits a non-required attr
       Given a child store declares attr :selected, boolean(), default: false
       When the parent renders child(ChildStore, id: "x", product: p) without selected
-      Then the child's ctx.assigns.selected is false
+      Then the child's socket.assigns.selected is false
 
     Scenario: Function-valued attr is invocable from the child
-      Given the child declares attr :on_select, function(%{id: String.t()}, any()), required: true
-      When the child invokes ctx.assigns.on_select.(%{id: ctx.assigns.product.id})
+      Given the child declares attr :on_select, (%{id: String.t()} -> any()), required: true
+      When the child invokes socket.assigns.on_select.(%{id: socket.assigns.product.id})
       Then the function returns its result to the child
 
   Rule: Function references must not appear in the resolved render output
 
     Scenario: Render that surfaces a function reference is rejected
-      Given a buggy render returns %{handler: ctx.assigns.on_select}
+      Given a buggy render returns %{handler: socket.assigns.on_select}
       When validation runs on the resolved output
       Then validation raises and identifies the offending field path
 
   Rule: A re-render of the root tree is triggered after each mutating callback
 
-    Scenario Outline: Callbacks that mutate ctx trigger a root render
+    Scenario Outline: Callbacks that mutate socket trigger a root render
       Given the runtime processes a <callback>
-      When the callback returns with a new ctx
+      When the callback returns with a new socket
       Then the runtime walks the tree from the root and resolves placeholders
       And validation and the diff engine see the updated output
 
@@ -142,21 +142,21 @@ Feature: Render Contract
         | handle_async    |
         | handle_info     |
 
-  Rule: A child whose ctx.assigns is reference-equal to last cycle skips update/2 and render/1
+  Rule: A child whose socket.assigns is reference-equal to last cycle skips update/2 and state/1
 
     Scenario: Unrelated sibling re-renders without re-rendering this child
-      Given a sibling's command mutates only the sibling's ctx.assigns
-      And this child's ctx.assigns reference is unchanged from the previous cycle
+      Given a sibling's command mutates only the sibling's socket.assigns
+      And this child's socket.assigns reference is unchanged from the previous cycle
       When the runtime walks the tree
       Then this child's update/2 is not invoked
-      And this child's render/1 is not invoked
+      And this child's state/1 is not invoked
       And the previously resolved output for this child is reused
 
     Scenario: A no-op write breaks ref equality and forces re-render
-      Given a handler writes the same value to the same assigns key (e.g., assign(ctx, :status, ctx.assigns.status))
+      Given a handler writes the same value to the same assigns key (e.g., assign(socket, :status, socket.assigns.status))
       When the runtime walks the tree
       Then the assigns map reference has changed
-      And update/2 and render/1 run for that child even though the value is semantically unchanged
+      And update/2 and state/1 run for that child even though the value is semantically unchanged
 
   Rule: A disappeared child is unmounted; reappearance is a fresh mount with no preserved assigns
 
@@ -170,25 +170,25 @@ Feature: Render Contract
 
     Scenario: Child calls a callback the parent passed via child(...)
       Given the parent renders child(ChildStore, id: "x", on_select: <closure capturing parent's handle_callback>)
-      And the child reads ctx.assigns.on_select
-      When the child runs invoke(ctx, :on_select, %{id: "prod_1"})
-      Then the function at ctx.assigns.on_select is called with the single argument %{id: "prod_1"}
-      And the runtime applies the parent's resulting ctx update before the next render cycle
-      And invoke returns the child's ctx (chainable via |>)
+      And the child reads socket.assigns.on_select
+      When the child runs invoke(socket, :on_select, %{id: "prod_1"})
+      Then the function at socket.assigns.on_select is called with the single argument %{id: "prod_1"}
+      And the runtime applies the parent's resulting socket update before the next render cycle
+      And invoke returns the child's socket (chainable via |>)
 
     Scenario: invoke on a missing callback raises
-      Given the child has no value at ctx.assigns.<callback_name>
-      When the child runs invoke(ctx, :missing, payload)
+      Given the child has no value at socket.assigns.<callback_name>
+      When the child runs invoke(socket, :missing, payload)
       Then the runtime raises a "missing callback" error pointing at the offending call site
 
   Rule: The parent receives upward callback invocations via handle_callback/3
 
     Scenario: Parent updates its own assigns from a child callback
-      Given a parent declares handle_callback(:product_selected, payload, ctx)
+      Given a parent declares handle_callback(:product_selected, payload, socket)
       When a child invokes that callback with payload %{id: "prod_1"}
-      Then the parent's handle_callback runs against the parent's ctx
+      Then the parent's handle_callback runs against the parent's socket
       And handle_callback returns {:noreply, updated_parent_ctx}
-      And the runtime stores updated_parent_ctx as the parent's new ctx
+      And the runtime stores updated_parent_ctx as the parent's new socket
       And the next render cycle observes the updated parent state and propagates updated assigns to children via update/2
 
   Rule: Render-output validation is run by the validate-render hook after child resolution
@@ -201,15 +201,15 @@ Feature: Render Contract
   Rule: Render-output validation is default-on in dev/test, telemetry-only in prod
 
     Scenario: Validation behaviour depends on environment
-      Given the page runtime's :after_render hook list configures Arbor.Hooks.ValidateRender for dev/test
+      Given the page runtime's :after_state hook list configures Arbor.Hooks.ValidateState for dev/test
       When validation finds a shape mismatch in dev
       Then the runtime raises
       And in prod the same misshape is recorded as telemetry without raising
 
-  Rule: A render/1 exception terminates the page runtime
+  Rule: A state/1 exception terminates the page runtime
 
     Scenario: Render raise crashes the runtime
-      When render/1 raises a KeyError
+      When state/1 raises a KeyError
       Then the page runtime exits
       And the supervisor restarts a fresh runtime
       And the next reconnect re-runs mount/1 from scratch
@@ -221,14 +221,14 @@ Feature: Render Contract
       Then MoneyState has no commands, no attr, no lifecycle, no runtime identity
       And child(MoneyState, id: ...) is rejected
 
-  Rule: render/1 must be free of observable side effects
+  Rule: state/1 must be free of observable side effects
 
     Scenario: Database writes inside render are a contract violation
-      Given a render/1 implementation calls Repo.insert!/1
+      Given a state/1 implementation calls Repo.insert!/1
       Then the implementation violates the contract
-      And the runtime is permitted to invoke render/1 multiple times for diagnostic or telemetry purposes
+      And the runtime is permitted to invoke state/1 multiple times for diagnostic or telemetry purposes
 
-  Rule: mount/1 and update/2 must return {:ok, ctx}; non-conforming returns raise
+  Rule: mount/1 and update/2 must return {:ok, socket}; non-conforming returns raise
 
     Scenario: Returning {:error, reason} from mount raises
       Given mount/1 returns {:error, :db_unavailable}
@@ -266,7 +266,7 @@ Feature: Render Contract
   Rule: child/2 is a plain function returning a sentinel; the runtime acts on it only when it appears in render output
 
     Scenario: child(...) called inside mount has no effect
-      Given mount/1 calls assign(ctx, :tmp, child(SomeStore, id: "x"))
+      Given mount/1 calls assign(socket, :tmp, child(SomeStore, id: "x"))
       Then the runtime does not raise or warn
-      And the sentinel sits in ctx.assigns.tmp as inert data
-      And no child node is mounted unless that value reaches render/1's output later
+      And the sentinel sits in socket.assigns.tmp as inert data
+      And no child node is mounted unless that value reaches state/1's output later

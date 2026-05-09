@@ -37,10 +37,10 @@ Feature: Streams Lifecycle
       Then the wire envelope emits stream content via stream_ops
       And the JSON Patch ops never touch /messages
 
-  Rule: ctx-pipe stream API mirrors Phoenix.LiveView
+  Rule: socket-pipe stream API mirrors Phoenix.LiveView
 
     Scenario Outline: API surface
-      When the application calls <call> on ctx
+      When the application calls <call> on socket
       Then the runtime queues a corresponding pending op in the named stream
 
       Examples:
@@ -96,7 +96,7 @@ Feature: Streams Lifecycle
   Rule: Initial state delivery splits stream fields between ops and stream_ops
 
     Scenario: Mount-time seed
-      Given mount/1 calls stream(ctx, :messages, [%Msg{id: 1}, %Msg{id: 2}])
+      Given mount/1 calls stream(socket, :messages, [%Msg{id: 1}, %Msg{id: 2}])
       When the first patch envelope is emitted
       Then the envelope's ops contain a single replace at path "" whose value has messages: []
       And the envelope's stream_ops contain one insert per seed item in seed order
@@ -104,11 +104,11 @@ Feature: Streams Lifecycle
   Rule: Stream-only render cycles still emit envelopes
 
     Scenario: A handler that only modifies a stream
-      When a handler calls stream_insert(:messages, msg) and otherwise leaves ctx.assigns unchanged
+      When a handler calls stream_insert(:messages, msg) and otherwise leaves socket.assigns unchanged
       Then the runtime emits one envelope with ops: [] and stream_ops: [<the insert>]
 
     Scenario: A render cycle with no changes at all emits nothing
-      When a handler returns ctx unchanged and queues no stream ops
+      When a handler returns socket unchanged and queues no stream ops
       Then the runtime emits no envelope
 
   Rule: A patch envelope is one logical update; stream_ops apply in array order after ops
@@ -155,11 +155,11 @@ Feature: Streams Lifecycle
       And the client materializer drops local stream state for that path
       And the runtime does not emit a separate reset op for the disappeared stream
 
-  Rule: Stream reload is application-driven via ctx |> reload_stream(name)
+  Rule: Stream reload is application-driven via socket |> reload_stream(name)
 
     Scenario: Application requests a reload
-      Given a store implements reload_stream(:messages, ctx) returning {:ok, items}
-      When a handler calls reload_stream(ctx, :messages)
+      Given a store implements reload_stream(:messages, socket) returning {:ok, items}
+      When a handler calls reload_stream(socket, :messages)
       Then the runtime invokes the store's reload_stream callback
       And the envelope's stream_ops contain a reset followed by one insert per returned item
 

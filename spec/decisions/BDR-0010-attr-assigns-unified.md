@@ -1,9 +1,9 @@
 ---
 id: BDR-0010
-title: Drop attr/assigns runtime split; unify into ctx.assigns; attr stays as a compile-time annotation
+title: Drop attr/assigns runtime split; unify into socket.assigns; attr stays as a compile-time annotation
 status: accepted
 date: 2026-05-08
-summary: At runtime, parent-passed values and store-internal state share one ctx.assigns map (LV-aligned). The attr macro stays for compile-time required/type/default validation, IDE hints, and codegen — but introduces no separate ctx.attrs namespace.
+summary: At runtime, parent-passed values and store-internal state share one socket.assigns map (LV-aligned). The attr macro stays for compile-time required/type/default validation, IDE hints, and codegen — but introduces no separate socket.attrs namespace.
 ---
 
 **Feature**: domains/runtime/features/render-contract.feature
@@ -11,33 +11,33 @@ summary: At runtime, parent-passed values and store-internal state share one ctx
 
 ## Context
 
-Earlier PRD drafts proposed a strict split between `ctx.attrs` (parent-supplied, read-only on the child side) and `ctx.assigns` (store-mutable internal state). Each child render started with two named bags. The split adds a concept and forces author code to decide which key lives where for every value.
+Earlier PRD drafts proposed a strict split between `socket.attrs` (parent-supplied, read-only on the child side) and `socket.assigns` (store-mutable internal state). Each child render started with two named bags. The split adds a concept and forces author code to decide which key lives where for every value.
 
 `Phoenix.LiveView` and `Phoenix.LiveComponent` keep a single `socket.assigns` map. Parent-passed values flow into the same bag as internal state. The `Phoenix.Component.attr/3` macro is purely compile-time: it declares required, type, default, and slot information, drives compile warnings, and produces no runtime namespace.
 
 ## Behaviours Considered
 
-### Option A: Unified ctx.assigns; attr is compile-time only
+### Option A: Unified socket.assigns; attr is compile-time only
 
 Single bag at runtime. `attr` macro stays as compile-time annotation that:
 - raises at the parent's render time when a `required: true` attr is missing from `child(...)`,
-- supplies `default:` values into `ctx.assigns` when the parent omits the key,
+- supplies `default:` values into `socket.assigns` when the parent omits the key,
 - contributes typespecs and codegen,
 - is excluded from the resolved render output unless the author explicitly maps it into `state do`.
 
-Function-valued attrs (callbacks) are declared as `attr :on_x, function(...), required: true` and live in `ctx.assigns` like any other value.
+Function-valued attrs (callbacks) are declared as `attr :on_x, function(...), required: true` and live in `socket.assigns` like any other value.
 
-### Option B: Strict ctx.attrs / ctx.assigns split (PRD draft)
+### Option B: Strict socket.attrs / socket.assigns split (PRD draft)
 
-Separate runtime namespaces. Authors read parent-passed values via `ctx.attrs.foo` and internal state via `ctx.assigns.bar`.
+Separate runtime namespaces. Authors read parent-passed values via `socket.attrs.foo` and internal state via `socket.assigns.bar`.
 
 ### Option C: Drop attr declarations entirely (full LV)
 
-No attr macro. Parent passes any keys via `child(Module, id: ..., key: value, ...)`; child reads `ctx.assigns.key`. Required-presence and type checking move to runtime errors or are dropped.
+No attr macro. Parent passes any keys via `child(Module, id: ..., key: value, ...)`; child reads `socket.assigns.key`. Required-presence and type checking move to runtime errors or are dropped.
 
 ## Decision
 
-Adopt Option A. `ctx` carries one `assigns` map at runtime. `attr` macro is compile-time only.
+Adopt Option A. `socket` carries one `assigns` map at runtime. `attr` macro is compile-time only.
 
 ## Rejected Alternatives
 

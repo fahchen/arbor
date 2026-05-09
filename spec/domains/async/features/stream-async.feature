@@ -12,8 +12,8 @@ Feature: stream_async
 
     Scenario: First call ensures both the AsyncResult assignment and the stream slot
       Given a store declares stream :messages, ...
-      When the application calls stream_async(ctx, :messages, fn -> {:ok, items} end)
-      Then ctx.assigns.messages is set to Arbor.AsyncResult.loading() synchronously
+      When the application calls stream_async(socket, :messages, fn -> {:ok, items} end)
+      Then socket.assigns.messages is set to Arbor.AsyncResult.loading() synchronously
       And the stream slot named messages is initialized
       And a task is spawned linked to the page runtime under Arbor.AsyncSupervisor
 
@@ -21,21 +21,21 @@ Feature: stream_async
 
     Scenario: Items only
       When the user fun returns {:ok, [%Msg{id: 1}, %Msg{id: 2}]}
-      Then on completion the runtime calls stream(ctx, :messages, items, [])
+      Then on completion the runtime calls stream(socket, :messages, items, [])
 
     Scenario: Items with stream opts
       When the user fun returns {:ok, [%Msg{id: 1}], at: 0, limit: -100}
-      Then on completion the runtime calls stream(ctx, :messages, [msg], at: 0, limit: -100)
+      Then on completion the runtime calls stream(socket, :messages, [msg], at: 0, limit: -100)
 
     Scenario: Explicit error
       When the user fun returns {:error, :rate_limited}
-      Then ctx.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:error, :rate_limited})
+      Then socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:error, :rate_limited})
       And the stream slot remains untouched
 
     Scenario: Invalid return shape
       When the user fun returns [%Msg{}] without the {:ok, ...} wrapper
       Then the runtime raises ArgumentError inside the task
-      And ctx.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, ...})
+      And socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, ...})
 
   Rule: A successful task atomically updates the AsyncResult to ok and seeds the stream
 
@@ -43,23 +43,23 @@ Feature: stream_async
       When the task completes successfully with items [msg1, msg2]
       Then the next envelope contains JSON Patch ops at /messages/ok and /messages/loading reflecting AsyncResult transitions
       And the same envelope contains stream_ops with insert ops for each item
-      And ctx.assigns.messages.result is true (Arbor.AsyncResult.ok flag)
+      And socket.assigns.messages.result is true (Arbor.AsyncResult.ok flag)
 
   Rule: Failure leaves the stream contents untouched
 
     Scenario: Failed task on a previously-populated stream
       Given the stream messages contains 50 items from an earlier successful load
       When a fresh stream_async call returns {:error, :network_failure}
-      Then ctx.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:error, :network_failure})
+      Then socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:error, :network_failure})
       And the stream's previously delivered items remain on the client
 
   Rule: :reset cancels the prior task and re-emits Arbor.AsyncResult.loading; stream contents controlled by the user fn
 
     Scenario: Reset re-emits loading
       Given a prior stream_async task is in flight for :messages
-      When the application calls stream_async(ctx, :messages, fun, reset: true)
+      When the application calls stream_async(socket, :messages, fun, reset: true)
       Then the prior task is cancelled
-      And ctx.assigns.messages re-emits Arbor.AsyncResult.loading()
+      And socket.assigns.messages re-emits Arbor.AsyncResult.loading()
 
     Scenario: Stream reset only when the user fn returns it
       Given a stream_async with reset: true completes successfully
@@ -81,9 +81,9 @@ Feature: stream_async
 
       Examples:
         | event                                                 | outcome                                                            |
-        | the task times out (with :timeout option)             | ctx.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, :timeout}); stream untouched |
-        | the application calls cancel_async(ctx, :messages, r) | the task is killed; ctx.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, r))     |
-        | the task crashes                                      | ctx.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, ...})                       |
+        | the task times out (with :timeout option)             | socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, :timeout}); stream untouched |
+        | the application calls cancel_async(socket, :messages, r) | the task is killed; socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, r))     |
+        | the task crashes                                      | socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, ...})                       |
         | the originating store node is unmounted               | the result is lazy-discarded; [:arbor, :async, :lazy_discard] is emitted                    |
         | a second stream_async is called for :messages         | the prior task is overwritten in tracking; only the latest task's result populates state    |
 
@@ -91,7 +91,7 @@ Feature: stream_async
 
     Scenario: Calling stream_async on an undeclared name raises
       Given a store has no stream :messages declaration
-      When the application calls stream_async(ctx, :messages, fun)
+      When the application calls stream_async(socket, :messages, fun)
       Then the runtime raises ArgumentError pointing at the missing declaration
 
   Rule: state do field type for stream_async-managed slots is composite
@@ -104,16 +104,16 @@ Feature: stream_async
   Rule: reload_stream and stream_async serve complementary recovery paths
 
     Scenario: reload_stream silently refreshes without loading flash
-      Given ctx.assigns.messages is %AsyncResult{ok?: true, result: true}
-      When the application calls reload_stream(ctx, :messages)
+      Given socket.assigns.messages is %AsyncResult{ok?: true, result: true}
+      When the application calls reload_stream(socket, :messages)
       Then the runtime invokes reload_stream/2 to fetch new items
       And the resulting envelope contains stream_ops with reset and inserts
-      And ctx.assigns.messages remains %AsyncResult{ok?: true, result: true}
+      And socket.assigns.messages remains %AsyncResult{ok?: true, result: true}
       And the client sees no loading flash
 
     Scenario: stream_async(reset: true) explicitly resets the loading indicator
-      Given ctx.assigns.messages is %AsyncResult{ok?: true, result: true}
-      When the application calls stream_async(ctx, :messages, fun, reset: true)
-      Then ctx.assigns.messages re-emits Arbor.AsyncResult.loading()
+      Given socket.assigns.messages is %AsyncResult{ok?: true, result: true}
+      When the application calls stream_async(socket, :messages, fun, reset: true)
+      Then socket.assigns.messages re-emits Arbor.AsyncResult.loading()
       And the client UI may show a loading indicator while the task runs
       And the task's result populates the stream as in a fresh load

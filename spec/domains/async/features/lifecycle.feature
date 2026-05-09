@@ -1,7 +1,7 @@
 @async @lifecycle
 Feature: Async Task Lifecycle
   As a store author
-  I want to launch background tasks whose results integrate with ctx.assigns and the wire shape via Arbor.AsyncResult
+  I want to launch background tasks whose results integrate with socket.assigns and the wire shape via Arbor.AsyncResult
   So that long-running work runs off the runtime mailbox and clients see explicit loading, ok, and failed states
 
   Background:
@@ -25,12 +25,12 @@ Feature: Async Task Lifecycle
   Rule: assign_async writes loading synchronously and resolves to ok or failed when the task completes
 
     Scenario: Single key happy path
-      When the application calls assign_async(ctx, :profile, fn -> {:ok, %{profile: data}} end)
-      Then ctx.assigns.profile is set to Arbor.AsyncResult.loading([:profile]) immediately
-      And on task completion ctx.assigns.profile becomes Arbor.AsyncResult.ok(prior, data)
+      When the application calls assign_async(socket, :profile, fn -> {:ok, %{profile: data}} end)
+      Then socket.assigns.profile is set to Arbor.AsyncResult.loading([:profile]) immediately
+      And on task completion socket.assigns.profile becomes Arbor.AsyncResult.ok(prior, data)
 
     Scenario: Multi-key atomic write
-      When the application calls assign_async(ctx, [:user, :org], fn -> {:ok, %{user: u, org: o}} end)
+      When the application calls assign_async(socket, [:user, :org], fn -> {:ok, %{user: u, org: o}} end)
       Then both keys are set to Arbor.AsyncResult.loading([:user, :org]) immediately
       And on task completion both keys are updated atomically
 
@@ -40,61 +40,61 @@ Feature: Async Task Lifecycle
 
     Scenario: User function returns explicit error
       When the user function returns {:error, :unauthorized}
-      Then ctx.assigns.<key> becomes Arbor.AsyncResult.failed(prior, {:error, :unauthorized})
+      Then socket.assigns.<key> becomes Arbor.AsyncResult.failed(prior, {:error, :unauthorized})
 
   Rule: start_async routes results to handle_async; AsyncResult is not auto-written
 
     Scenario: Result delivered to handle_async
-      Given a store implements handle_async(:warm_cache, result, ctx)
-      When the application calls start_async(ctx, :warm_cache, fn -> Cache.warm() end)
+      Given a store implements handle_async(:warm_cache, result, socket)
+      When the application calls start_async(socket, :warm_cache, fn -> Cache.warm() end)
       Then the runtime spawns a task and tracks it under name :warm_cache
-      And on completion handle_async(:warm_cache, {:ok, val}, ctx) is invoked
+      And on completion handle_async(:warm_cache, {:ok, val}, socket) is invoked
 
     Scenario: No automatic AsyncResult assignment
-      When the application calls start_async(ctx, :warm_cache, fn -> ... end)
-      Then ctx.assigns is unchanged by the call
+      When the application calls start_async(socket, :warm_cache, fn -> ... end)
+      Then socket.assigns is unchanged by the call
       And the client sees no AsyncResult unless the application manually writes one in handle_async
 
-  Rule: handle_async must return {:noreply, ctx}
+  Rule: handle_async must return {:noreply, socket}
 
     Scenario: Successful return
-      When handle_async(:foo, {:ok, val}, ctx) returns {:noreply, updated_ctx}
-      Then the runtime accepts the new ctx and triggers a render cycle
+      When handle_async(:foo, {:ok, val}, socket) returns {:noreply, updated_ctx}
+      Then the runtime accepts the new socket and triggers a render cycle
 
     Scenario: Other return shapes raise
-      When handle_async/3 returns anything other than {:noreply, ctx}
+      When handle_async/3 returns anything other than {:noreply, socket}
       Then the runtime raises with a "bad callback response" error
 
   Rule: cancel_async actively terminates a task and writes failed when called via AsyncResult variant
 
     Scenario: Cancel by AsyncResult sets failed before killing the task
-      When the application calls cancel_async(ctx, %AsyncResult{loading: [:profile]} = ar, :user_navigated_away)
-      Then ctx.assigns.profile is updated to Arbor.AsyncResult.failed(ar, {:exit, :user_navigated_away})
+      When the application calls cancel_async(socket, %AsyncResult{loading: [:profile]} = ar, :user_navigated_away)
+      Then socket.assigns.profile is updated to Arbor.AsyncResult.failed(ar, {:exit, :user_navigated_away})
       And the runtime kills the associated task pid
 
     Scenario: Cancel by key kills the task and lets DOWN drive the failed write
-      When the application calls cancel_async(ctx, :profile, :user_navigated_away)
+      When the application calls cancel_async(socket, :profile, :user_navigated_away)
       Then the runtime kills the associated task pid
-      And the resulting :DOWN message triggers ctx.assigns.profile = Arbor.AsyncResult.failed(prior, {:exit, :user_navigated_away})
+      And the resulting :DOWN message triggers socket.assigns.profile = Arbor.AsyncResult.failed(prior, {:exit, :user_navigated_away})
 
   Rule: assign_async :reset cancels the prior task before re-emitting loading
 
     Scenario: Reset all keys
       Given the prior assign_async for [:user, :org] is still in flight
-      When the application calls assign_async(ctx, [:user, :org], fun, reset: true)
+      When the application calls assign_async(socket, [:user, :org], fun, reset: true)
       Then the prior task is cancelled
       And both keys re-emit Arbor.AsyncResult.loading([:user, :org])
 
     Scenario: Reset subset of keys
       Given the prior assign_async for [:user, :org] is still in flight
-      When the application calls assign_async(ctx, [:user, :org], fun, reset: [:user])
+      When the application calls assign_async(socket, [:user, :org], fun, reset: [:user])
       Then the prior task is cancelled
       And :user re-emits Arbor.AsyncResult.loading; :org preserves its prior loading metadata
 
     Scenario: No reset preserves prior result during reload
-      Given ctx.assigns.profile is %AsyncResult{ok?: true, result: prior_data}
-      When the application calls assign_async(ctx, :profile, fun) without :reset
-      Then ctx.assigns.profile becomes Arbor.AsyncResult.loading(prior_async_result)
+      Given socket.assigns.profile is %AsyncResult{ok?: true, result: prior_data}
+      When the application calls assign_async(socket, :profile, fun) without :reset
+      Then socket.assigns.profile becomes Arbor.AsyncResult.loading(prior_async_result)
       And the prior result remains observable via the loading struct's preserved fields
 
   Rule: Tasks are linked to the page runtime; runtime exit kills tasks; default supervisor is Arbor.AsyncSupervisor
@@ -112,8 +112,8 @@ Feature: Async Task Lifecycle
   Rule: A second start_async with the same name silently overwrites the prior tracked ref
 
     Scenario: Old task lazy-discards
-      Given start_async(ctx, :foo, task_a) is in flight
-      When the application calls start_async(ctx, :foo, task_b) before task_a completes
+      Given start_async(socket, :foo, task_a) is in flight
+      When the application calls start_async(socket, :foo, task_b) before task_a completes
       Then runtime tracking switches to task_b's ref
       And task_a continues running but its result is discarded on arrival
 
@@ -133,21 +133,21 @@ Feature: Async Task Lifecycle
   Rule: A :timeout option terminates an overdue task and produces failed: {:exit, :timeout}
 
     Scenario: Timer fires before completion
-      When the application calls assign_async(ctx, :profile, fun, timeout: 5_000)
+      When the application calls assign_async(socket, :profile, fun, timeout: 5_000)
       And the task does not complete within 5 seconds
       Then the runtime kills the task pid
-      And ctx.assigns.profile becomes Arbor.AsyncResult.failed(prior, {:exit, :timeout})
+      And socket.assigns.profile becomes Arbor.AsyncResult.failed(prior, {:exit, :timeout})
 
     Scenario: Task completes before timer fires
       When a task with timeout: 5_000 completes in 2 seconds
       Then the timer is cancelled
-      And ctx.assigns.<key> reflects the normal ok or failed result
+      And socket.assigns.<key> reflects the normal ok or failed result
 
   Rule: Result classification on the wire AsyncResult is deterministic
 
     Scenario Outline: Failure event mapping
       Given a task encounters <event>
-      Then ctx.assigns.<key> is updated to <terminal_state>
+      Then socket.assigns.<key> is updated to <terminal_state>
 
       Examples:
         | event                                      | terminal_state                        |
@@ -183,27 +183,27 @@ Feature: Async Task Lifecycle
       Then the resulting JSON object uses keys "loading", "ok", "result", "failed"
       And the TypeScript codegen target emits an object type with field name ok (no question mark, since TypeScript identifiers do not allow ?)
 
-  Rule: User functions warned for ctx capture (LV-aligned)
+  Rule: User functions warned for socket capture (LV-aligned)
 
-    Scenario: Closure captures ctx
-      When a developer writes assign_async(ctx, :foo, fn -> ctx.assigns.bar end)
+    Scenario: Closure captures socket
+      When a developer writes assign_async(socket, :foo, fn -> socket.assigns.bar end)
       Then the compile-time validator emits a warning recommending an explicit local binding before the fn
 
   Rule: AsyncResult flows through JSON Patch like ordinary maps
 
     Scenario: AsyncResult transitions on the wire
-      Given ctx.assigns.profile transitions loading -> ok -> loading -> ok
+      Given socket.assigns.profile transitions loading -> ok -> loading -> ok
       Then patch envelopes contain replace ops at /profile/loading, /profile/ok, /profile/result
       And the wire shape is the JSON-serialized AsyncResult struct
 
   Rule: handle_async/3 exceptions are caught; runtime survives
 
     Scenario: handle_async raises
-      Given handle_async(:foo, {:ok, val}, ctx) raises a KeyError
+      Given handle_async(:foo, {:ok, val}, socket) raises a KeyError
       Then the runtime catches the exception
       And emits [:arbor, :async, :exception] with kind, reason, stacktrace
       And the runtime continues to process subsequent messages
-      And ctx.assigns is not modified for that cycle
+      And socket.assigns is not modified for that cycle
 
   Rule: Async telemetry is an Arbor extension over LV
 
@@ -223,7 +223,7 @@ Feature: Async Task Lifecycle
   Rule: Mount-time assign_async produces loading state in the first envelope
 
     Scenario: Mount calls assign_async
-      Given mount(ctx) calls assign_async(ctx, :profile, fun)
+      Given mount(socket) calls assign_async(socket, :profile, fun)
       When the first patch envelope is emitted
       Then the value at /profile in the initial replace is %{loading: [:profile], ok?: false, result: nil, failed: nil}
       And a subsequent envelope's ops update /profile/ok and /profile/result on completion

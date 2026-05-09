@@ -3,7 +3,7 @@ id: BDR-0004
 title: All cross-cutting and per-node concerns use LV-style attach_hook; no separate middleware macro
 status: accepted
 date: 2026-05-09
-summary: Arbor exposes one extension primitive — `attach_hook(ctx, id, stage, fun)` mirroring `Phoenix.LiveView.attach_hook/4`. There is no `middleware` macro for declarative per-store concerns. Authors attach all hooks (auth, validation, logging, feature flags, etc.) inside `mount/1` (or other handlers) on the store node that should host them.
+summary: Arbor exposes one extension primitive — `attach_hook(socket, id, stage, fun)` mirroring `Phoenix.LiveView.attach_hook/4`. There is no `middleware` macro for declarative per-store concerns. Authors attach all hooks (auth, validation, logging, feature flags, etc.) inside `mount/1` (or other handlers) on the store node that should host them.
 ---
 
 **Feature**: domains/runtime/features/command-routing.feature
@@ -20,7 +20,7 @@ Arbor's earliest drafts proposed two extension primitives — a `middleware Modu
 
 ### Option A: Drop the `middleware` macro; use `attach_hook` for everything (LV-pure)
 
-Every cross-cutting or node-local concern is attached at runtime via `attach_hook(ctx, id, stage, fun)`. Authors call `attach_hook` inside `mount/1` (or any handler) on the store node that owns the concern. Per-node concerns hook on that node's table; cross-node concerns hook on the root page store and pattern-match by path. Schema validation and render-output validation are runtime-attached default hooks installed by the runtime's mount path; authors can detach or replace them.
+Every cross-cutting or node-local concern is attached at runtime via `attach_hook(socket, id, stage, fun)`. Authors call `attach_hook` inside `mount/1` (or any handler) on the store node that owns the concern. Per-node concerns hook on that node's table; cross-node concerns hook on the root page store and pattern-match by path. Schema validation and render-output validation are runtime-attached default hooks installed by the runtime's mount path; authors can detach or replace them.
 
 ### Option B: Keep both `middleware Module` (declarative, compile-time) and `attach_hook` (runtime)
 
@@ -32,7 +32,7 @@ Only declarative per-store middleware. Cross-node concerns must propagate via pa
 
 ## Decision
 
-Adopt Option A. Drop the `middleware` macro entirely. `attach_hook(ctx, id, stage, fun)` is the sole extension primitive. Each store maintains its own hook table; child-attached hooks see only that node's events. Hooks return `{:cont, ctx}`, `{:halt, ctx}`, or `{:halt, reply, ctx}` (last only on `:before_command`).
+Adopt Option A. Drop the `middleware` macro entirely. `attach_hook(socket, id, stage, fun)` is the sole extension primitive. Each store maintains its own hook table; child-attached hooks see only that node's events. Hooks return `{:cont, socket}`, `{:halt, socket}`, or `{:halt, reply, socket}` (last only on `:before_command`).
 
 ## Rejected Alternatives
 

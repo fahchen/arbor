@@ -11,7 +11,7 @@ summary: A second start_async with the same name does not cancel the prior task.
 
 ## Context
 
-A store may call `start_async(ctx, :foo, ...)` twice in quick succession (e.g., a click that triggers a fresh data load before the previous one completes). The runtime needs a deterministic policy for how the two overlap. Three behaviours were considered:
+A store may call `start_async(socket, :foo, ...)` twice in quick succession (e.g., a click that triggers a fresh data load before the previous one completes). The runtime needs a deterministic policy for how the two overlap. Three behaviours were considered:
 
 - **Implicit cancel** of the prior task before spawning the new one.
 - **Concurrent allowed**: both tasks run; both results route to `handle_async/3`; the application is responsible for de-duping.

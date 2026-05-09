@@ -22,8 +22,8 @@ Without distinguishing these, every refresh would either always flash the loadin
 ## Behaviours Considered
 
 ### Option A: Two complementary APIs with distinct semantics
-- `reload_stream(ctx, name)` invokes the store's `reload_stream/2` callback, emits stream `reset + inserts`, leaves `AsyncResult` untouched. UX: silent refresh.
-- `stream_async(ctx, name, fun, reset: true)` cancels the prior task, re-emits `Arbor.AsyncResult.loading()`, runs the new task, populates the stream on completion. UX: loading flash.
+- `reload_stream(socket, name)` invokes the store's `reload_stream/2` callback, emits stream `reset + inserts`, leaves `AsyncResult` untouched. UX: silent refresh.
+- `stream_async(socket, name, fun, reset: true)` cancels the prior task, re-emits `Arbor.AsyncResult.loading()`, runs the new task, populates the stream on completion. UX: loading flash.
 
 Authors choose based on the desired UX. Both paths share the same wire format for stream content.
 
@@ -41,6 +41,6 @@ Adopt Option A. Both APIs coexist with documented complementary roles.
 
 Option B was rejected because the silent-refresh UX is common (auto-refresh on visibility change, websocket-pushed updates) and forcing a loading flash for those flows feels regressive.
 
-Option C was rejected because the explicit-reload UX is also common and authors should not have to write `assign(ctx, :foo, Arbor.AsyncResult.loading()) |> stream_async(...)` boilerplate.
+Option C was rejected because the explicit-reload UX is also common and authors should not have to write `assign(socket, :foo, Arbor.AsyncResult.loading()) |> stream_async(...)` boilerplate.
 
 The runtime documents both paths and recommends `reload_stream/2` for periodic/silent refreshes and `stream_async(reset: true)` for user-initiated reloads.

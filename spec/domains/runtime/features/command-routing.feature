@@ -77,7 +77,7 @@ Feature: Command Routing
         | a custom hook halt with error | hook_halt  |
 
     Scenario: Handler-controlled business failures arrive as ok status
-      Given the handler returns {:reply, %{ok: false, error: "out_of_stock"}, ctx}
+      Given the handler returns {:reply, %{ok: false, error: "out_of_stock"}, socket}
       When the runtime delivers the outcome
       Then the reply status is "ok"
       And the reply payload contains {"ok": false, "error": "out_of_stock"}
@@ -103,15 +103,15 @@ Feature: Command Routing
       And the reply payload category is "unauthorized"
       And the runtime does not return a synthetic ok no-op
 
-  Rule: A successful handler returns either {:noreply, ctx} or {:reply, payload, ctx}
+  Rule: A successful handler returns either {:noreply, socket} or {:reply, payload, socket}
 
-    Scenario: Handler chooses {:noreply, ctx}
-      When the handler completes with {:noreply, ctx}
+    Scenario: Handler chooses {:noreply, socket}
+      When the handler completes with {:noreply, socket}
       Then the client receives a reply with status "ok" and an empty payload
       And the resulting state mutations are observable through the next patch push
 
-    Scenario: Handler chooses {:reply, payload, ctx}
-      When the handler completes with {:reply, %{order_id: "ord_42"}, ctx}
+    Scenario: Handler chooses {:reply, payload, socket}
+      When the handler completes with {:reply, %{order_id: "ord_42"}, socket}
       Then the client receives a reply with status "ok" and payload {"order_id": "ord_42"}
       And the resulting state mutations are observable through the next patch push
 
@@ -202,18 +202,18 @@ Feature: Command Routing
   Rule: A :before_command hook may halt with a reply and short-circuit the pipeline
 
     Scenario: Hook continues the pipeline
-      Given a tracing :before_command hook that returns {:cont, ctx}
+      Given a tracing :before_command hook that returns {:cont, socket}
       When the runtime processes a command
       Then the pipeline continues to the next hook
 
     Scenario: Hook halts without a reply
-      Given a feature-flag gate hook that returns {:halt, ctx}
+      Given a feature-flag gate hook that returns {:halt, socket}
       When the runtime processes a command
       Then the addressed handler does not run
       And the runtime delivers a default ok reply with an empty payload
 
     Scenario: Hook halts with a custom reply
-      Given a feature-flag gate hook that returns {:halt, %{ok: false, reason: "feature_disabled"}, ctx}
+      Given a feature-flag gate hook that returns {:halt, %{ok: false, reason: "feature_disabled"}, socket}
       When the runtime processes a command
       Then the addressed handler does not run
       And the client receives a reply with status "ok" and payload {"ok": false, "reason": "feature_disabled"}
@@ -268,16 +268,16 @@ Feature: Command Routing
       And the metadata does not include the command payload contents
       And the metadata does not include user identifiers by default
 
-  Rule: attach_hook is callable wherever ctx is in scope
+  Rule: attach_hook is callable wherever socket is in scope
 
     Scenario: Hook attached during a handler
       Given mount has already completed
-      When a handler calls attach_hook(ctx, :one_shot, :before_command, fn)
+      When a handler calls attach_hook(socket, :one_shot, :before_command, fn)
       Then the hook is registered and runs for subsequent commands
 
     Scenario: Re-attaching the same id on the same stage raises
       Given a hook with id :audit is already attached on stage :before_command
-      When code calls attach_hook(ctx, :audit, :before_command, fn) again without first detaching
+      When code calls attach_hook(socket, :audit, :before_command, fn) again without first detaching
       Then the runtime raises ArgumentError
 
   Rule: Each store maintains its own hook table
@@ -295,8 +295,8 @@ Feature: Command Routing
   Rule: detach_hook silently no-ops when the hook is absent
 
     Scenario: Detaching a hook that was never attached
-      When code calls detach_hook(ctx, :nonexistent, :before_command)
-      Then the call returns the unchanged ctx
+      When code calls detach_hook(socket, :nonexistent, :before_command)
+      Then the call returns the unchanged socket
       And no error is raised
 
   Rule: Arbor does not define a built-in pub/sub layer
@@ -304,7 +304,7 @@ Feature: Command Routing
     Scenario: Stores subscribe to external message sources directly
       When a store wants to receive cross-page or external updates
       Then the store calls the application's pub/sub subscribe API directly inside its mount callback
-      And the store handles inbound messages via handle_info(msg, ctx)
+      And the store handles inbound messages via handle_info(msg, socket)
       And the runtime exposes no Arbor-specific subscribe macro or broadcast helper
 
   Rule: handle_info messages share the runtime's processing queue with commands
@@ -315,7 +315,7 @@ Feature: Command Routing
       Then the runtime processes them in arrival order
       And neither preempts the other mid-cycle
 
-  Rule: handle_info returns {:noreply, ctx} only and produces no transport reply
+  Rule: handle_info returns {:noreply, socket} only and produces no transport reply
 
     Scenario: handle_info that mutates state
       When a server-side message triggers handle_info that mutates assigns

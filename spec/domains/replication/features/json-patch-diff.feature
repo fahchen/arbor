@@ -11,14 +11,14 @@ Feature: JSON Patch Diff and Replication
   Rule: A render cycle that changes the resolved output produces exactly one patch envelope
 
     Scenario: Mutating handler causes one patch
-      When a handler mutates ctx.assigns and returns
+      When a handler mutates socket.assigns and returns
       Then the runtime computes the diff between previous and next resolved root output
       And emits exactly one patch envelope to the transport
 
   Rule: A render cycle whose resolved output is unchanged emits no patch envelope
 
-    Scenario: Handler returns ctx unchanged
-      When a handler returns {:noreply, ctx} without mutating ctx.assigns
+    Scenario: Handler returns socket unchanged
+      When a handler returns {:noreply, socket} without mutating socket.assigns
       Then no patch envelope is sent
 
   Rule: The patch envelope is {type, base_version, version, ops, stream_ops}
