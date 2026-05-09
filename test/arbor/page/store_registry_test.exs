@@ -1,9 +1,9 @@
-defmodule Arbor.StoreRegistryTest do
+defmodule Arbor.Page.StoreRegistryTest do
   use ExUnit.Case, async: true
 
+  alias Arbor.Page.StoreRegistry
+  alias Arbor.Page.StoreRegistry.Entry
   alias Arbor.Socket
-  alias Arbor.StoreRegistry
-  alias Arbor.StoreRegistry.Entry
 
   defmodule RootStore do
   end

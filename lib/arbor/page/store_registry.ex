@@ -1,9 +1,9 @@
-defmodule Arbor.StoreRegistry do
+defmodule Arbor.Page.StoreRegistry do
   @moduledoc "Runtime-internal registry for mounted Arbor store nodes."
 
   use TypedStructor
 
-  alias Arbor.StoreRegistry.Entry
+  alias Arbor.Page.StoreRegistry.Entry
 
   @type identity_key :: {[atom() | String.t()], module(), String.t()}
 

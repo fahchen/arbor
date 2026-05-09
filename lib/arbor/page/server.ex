@@ -1,14 +1,14 @@
-defmodule Arbor.PageServer do
+defmodule Arbor.Page.Server do
   @moduledoc "Page-scoped Arbor runtime GenServer. Hosts the store tree for one connected client session."
 
   use GenServer
 
   require Logger
 
-  alias Arbor.PageServer.State
+  alias Arbor.Page.Server.State
+  alias Arbor.Page.StoreRegistry
+  alias Arbor.Page.StoreRegistry.Entry
   alias Arbor.Socket
-  alias Arbor.StoreRegistry
-  alias Arbor.StoreRegistry.Entry
 
   @type start_arg :: {module(), map(), term()}
 

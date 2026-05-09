@@ -1,10 +1,10 @@
-defmodule Arbor.PageServer.State do
+defmodule Arbor.Page.Server.State do
   @moduledoc false
 
   use TypedStructor
 
+  alias Arbor.Page.StoreRegistry
   alias Arbor.Socket
-  alias Arbor.StoreRegistry
 
   typed_structor do
     field(:root_module, module(), enforce: true)
