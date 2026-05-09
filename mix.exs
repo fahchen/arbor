@@ -38,9 +38,9 @@ defmodule Arbor.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:telemetry, "~> 1.2"},
       {:typed_structor, "~> 0.6.1"},
       {:jsonpatch, "~> 2.2"},
-      {:telemetry, "~> 1.2"},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ritual, github: "fahchen/ritual", only: :dev, runtime: false}

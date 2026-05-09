@@ -1,6 +1,7 @@
 defmodule Arbor.Page.ServerTest do
   use ExUnit.Case, async: true
 
+  alias Arbor.Hooks.ValidateToState
   alias Arbor.Page.Server
   alias Arbor.Page.Server.State
   alias Arbor.Page.StoreRegistry
@@ -63,6 +64,7 @@ defmodule Arbor.Page.ServerTest do
     assert root_socket.parent_path == []
     assert root_socket.module == RootStore
     assert root_socket.assigns == %{__changed__: %{}, status: "mounted"}
+    assert %{after_to_state: [%{id: ValidateToState}]} = root_socket.private[:hooks]
     assert version == 0
     assert transport == %{transport_pid: self()}
 

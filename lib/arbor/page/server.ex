@@ -5,6 +5,7 @@ defmodule Arbor.Page.Server do
 
   require Logger
 
+  alias Arbor.Hooks.ValidateToState
   alias Arbor.Lifecycle
   alias Arbor.Page.Server.State
   alias Arbor.Page.StoreRegistry
@@ -39,10 +40,7 @@ defmodule Arbor.Page.Server do
         transport_pid: transport_pid
       }
       |> Socket.assign(Map.new(params))
-      |> Lifecycle.attach_hook(:validate_to_state, :after_to_state, fn _ctx, socket ->
-        # TODO(M2 Track B): replace the no-op hook with &Arbor.Hooks.ValidateToState.run/2.
-        {:cont, socket}
-      end)
+      |> Lifecycle.attach_hook(ValidateToState, :after_to_state, &ValidateToState.run/2)
       |> Reconciler.mount_store()
 
     store_registry =
