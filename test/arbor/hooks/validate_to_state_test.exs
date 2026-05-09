@@ -131,10 +131,10 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     attach_telemetry_handler(self())
 
     assert_raise ArgumentError, ~r/\$\.title/, fn ->
-      ValidateToState.run(
-        %{resolved_output: %{title: 42}, env: :test, validation_mode: :raise},
-        socket
-      )
+      invalid_socket =
+        %{socket | private: %{validate_to_state_env: :test, validate_to_state_mode: :raise}}
+
+      ValidateToState.after_to_state(%{title: 42}, invalid_socket)
     end
 
     assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
@@ -142,11 +142,11 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     assert %{env: :test, store_module: TitleStore, errors: [%{path: "$.title"} | _rest]} =
              metadata
 
-    assert {:cont, ^socket} =
-             ValidateToState.run(
-               %{resolved_output: %{title: 42}, env: :prod, validation_mode: :telemetry},
-               socket
-             )
+    telemetry_socket =
+      %{socket | private: %{validate_to_state_env: :prod, validate_to_state_mode: :telemetry}}
+
+    assert {:cont, ^telemetry_socket} =
+             ValidateToState.after_to_state(%{title: 42}, telemetry_socket)
 
     assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
 
@@ -155,14 +155,11 @@ defmodule Arbor.Hooks.ValidateToStateTest do
   end
 
   test "Scenario: successful validation emits stop telemetry" do
-    socket = %Socket{module: TitleStore, assigns: %{}, private: %{}}
+    socket = %Socket{module: TitleStore, assigns: %{}, private: %{validate_to_state_env: :test}}
     attach_telemetry_handler(self())
 
     assert {:cont, ^socket} =
-             ValidateToState.run(
-               %{resolved_output: %{title: "Inbox"}, env: :test, validation_mode: :raise},
-               socket
-             )
+             ValidateToState.after_to_state(%{title: "Inbox"}, socket)
 
     assert_receive {:telemetry_event, [:arbor, :validate, :stop], %{count: 1}, metadata}
     assert %{env: :test, store_module: TitleStore, errors: []} = metadata

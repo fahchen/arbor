@@ -99,8 +99,9 @@ defmodule Arbor.Page.Server do
   defp attach_default_hooks(%Socket{} = socket) do
     :arbor
     |> Application.get_env(:default_hooks, [])
-    |> Enum.reduce(socket, fn {id, stage, fun}, acc ->
-      Lifecycle.attach_hook(acc, id, stage, fun)
+    |> Enum.reduce(socket, fn {module, stage}, acc ->
+      fun = Function.capture(module, stage, Lifecycle.stage_arity(stage))
+      Lifecycle.attach_hook(acc, module, stage, fun)
     end)
   end
 end

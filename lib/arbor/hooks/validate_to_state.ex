@@ -22,28 +22,20 @@ defmodule Arbor.Hooks.ValidateToState do
           message: String.t(),
           reason: validation_error_reason()
         }
-  @type hook_ctx() :: %{
-          optional(:env) => validation_env(),
-          optional(:validation_mode) => validation_mode(),
-          optional(:resolved_output) => map()
-        }
-
   @doc """
   Runs render-output validation as an `:after_to_state` lifecycle hook.
 
   ## Examples
 
       socket = %Arbor.Socket{module: MyApp.RootStore}
-      ctx = %{resolved_output: %{title: "Inbox"}, env: :test, validation_mode: :raise}
-      Arbor.Hooks.ValidateToState.run(ctx, socket)
+      Arbor.Hooks.ValidateToState.after_to_state(%{title: "Inbox"}, socket)
       #=> {:cont, socket}
   """
-  @spec run(hook_ctx() | map(), Socket.t()) :: Arbor.Lifecycle.hook_result()
-  def run(ctx, %Socket{module: store_module} = socket)
-      when is_atom(store_module) and is_map(ctx) do
-    resolved_output = Map.get(ctx, :resolved_output, ctx)
-    env = Map.get(ctx, :env, runtime_env())
-    mode = Map.get(ctx, :validation_mode, configured_mode(env))
+  @spec after_to_state(map(), Socket.t()) :: Arbor.Lifecycle.hook_result()
+  def after_to_state(resolved_output, %Socket{module: store_module} = socket)
+      when is_atom(store_module) and is_map(resolved_output) do
+    env = Socket.get_private(socket, :validate_to_state_env, runtime_env())
+    mode = Socket.get_private(socket, :validate_to_state_mode, configured_mode(env))
 
     case validate(resolved_output, store_module) do
       :ok ->
