@@ -57,7 +57,12 @@ If the spec feels wrong, flag the discrepancy in the PR — never silently edit 
 - Hook return: `{:cont, socket} | {:halt, socket} | {:halt, reply, socket}`
 - Child identity is `{parent_path, module, id}`; `id` must be a binary (BDR-0011)
 - `Module.__arbor__/1` reflection keys: `:fields`, `:commands`, `:streams`, `:attrs`, `{:type, name}`
+- Stream runtime helpers (compile-time generated alongside `__arbor__/1`): `Module.__arbor_stream_config__(name) :: %{item_key: fun, limit: integer | nil}` and `Module.__arbor_stream_item_key__(name, item) :: binary` — used by `Arbor.Stream` so callers never `Code.eval_quoted/3` the AST stored on `:streams`
 - typed_structor evaluates field opts eagerly — `Arbor.DSL.State.field/3` wraps opts in `Macro.escape/1` so `item_key: &…` captures survive into reflection. Don't strip this
+- Stream API (LV-parity, frozen for M4+): `Arbor.Stream.stream/3,4`, `stream_configure/3`, `stream_insert/3,4`, `stream_delete/3`, `stream_delete_by_item_key/3`. Note Arbor uses `_by_item_key` where LV uses `_by_dom_id`
+- Reserved socket keys: `socket.assigns.__streams__` (per-store stream config + item_key index, runtime-internal) and `socket.private[:__arbor_pending_stream_ops__]` (pending ops accumulated during one handler invocation, flushed by `Arbor.Page.Server`). Do not read or write directly
+- `Arbor.Page.PatchEnvelope.t` shape: `type: "patch"`, `base_version`, `version`, `ops`, `stream_ops`. `version` is a monotonic per-page counter starting at 1 (initial bootstrap envelope) and resetting on reconnect (fresh page server). `ops` only carries `add`/`remove`/`replace` (BDR-0014); `move`/`copy`/`test` are filtered. Stream-typed paths never appear in `ops` — content flows entirely via `stream_ops`. Idle render cycles emit no envelope (BDR-0018)
+- Telemetry events emitted by the runtime: `[:arbor, :command, :start | :stop | :exception]`, `[:arbor, :render, :stop]`, `[:arbor, :resolve, :stop]`, `[:arbor, :validate, :stop | :exception]`, `[:arbor, :diff, :stop]`, `[:arbor, :patch, :stop]`, `[:arbor, :stream, :flush]`
 
 ## Workflow
 
