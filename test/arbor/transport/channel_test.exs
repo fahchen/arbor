@@ -129,6 +129,43 @@ defmodule Arbor.Transport.ChannelTest do
     shutdown_channel(socket)
   end
 
+  test "join + leave emit channel telemetry and stop the linked page server" do
+    handler = self()
+
+    :telemetry.attach_many(
+      "arbor-channel-test",
+      [
+        [:arbor, :channel, :join],
+        [:arbor, :channel, :terminate]
+      ],
+      fn name, _meas, meta, _config -> send(handler, {:channel_event, name, meta}) end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach("arbor-channel-test") end)
+
+    {:ok, _reply, channel_socket} =
+      UserSocket
+      |> socket("user_id", %{})
+      |> subscribe_and_join(PageChannel, "page:home", %{})
+
+    assert_receive {:channel_event, [:arbor, :channel, :join],
+                    %{module: RootStore, topic: "page:home", page_pid: page_pid}}
+
+    assert is_pid(page_pid)
+    assert Process.alive?(page_pid)
+    page_ref = Process.monitor(page_pid)
+
+    Process.flag(:trap_exit, true)
+    leave_ref = Phoenix.ChannelTest.leave(channel_socket)
+    assert_reply(leave_ref, :ok)
+
+    assert_receive {:channel_event, [:arbor, :channel, :terminate],
+                    %{module: RootStore, topic: "page:home"}}
+
+    assert_receive {:DOWN, ^page_ref, :process, ^page_pid, _reason}, 1_000
+  end
+
   test "to_wire/1 returns string-keyed envelope ready for Phoenix.Channel.push/3" do
     envelope = %PatchEnvelope{
       type: "patch",
