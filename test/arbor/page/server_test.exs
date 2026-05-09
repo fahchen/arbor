@@ -73,9 +73,23 @@ defmodule Arbor.Page.ServerTest do
     assert registry_entry.module == RootStore
     assert registry_entry.socket == root_socket
     assert registry_entry.resolved_state == %{status: "mounted"}
+    assert registry_entry.wire_state == %{"status" => "mounted"}
     assert StoreRegistry.path_lookup(store_registry, []) == registry_entry
 
     GenServer.stop(pid)
+  end
+
+  test "default hooks include the validate :after_serialize entry in dev" do
+    default_hooks = Application.get_env(:arbor, :default_hooks, [])
+
+    if Mix.env() == :dev do
+      assert Enum.any?(default_hooks, fn
+               {Arbor.Hooks.ValidateToState, :after_serialize, _fun} -> true
+               _other -> false
+             end)
+    else
+      assert default_hooks == []
+    end
   end
 
   test "root terminate fires on runtime exit" do

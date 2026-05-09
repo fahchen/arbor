@@ -14,6 +14,14 @@ defmodule Arbor.Page.StoreRegistry.Entry do
           | [resolved_state()]
           | %{optional(term()) => resolved_state()}
 
+  @type wire_state() ::
+          nil
+          | boolean()
+          | number()
+          | String.t()
+          | [wire_state()]
+          | %{optional(String.t()) => wire_state()}
+
   typed_structor do
     field :socket, Socket.t(),
       enforce: true,
@@ -27,7 +35,12 @@ defmodule Arbor.Page.StoreRegistry.Entry do
     field :resolved_state, resolved_state(),
       default: nil,
       doc:
-        "Last resolved render output for this node. Reused when memoization skips `update/2` and `to_state/1` (BDR-0013)."
+        "Last resolved render output (Elixir form) for this node. Reused when memoization skips `update/2` and `to_state/1` (BDR-0013)."
+
+    field :wire_state, wire_state() | nil,
+      default: nil,
+      doc:
+        "Last serialized render output (wire form, after `Arbor.Wire.to_wire/1`). Stored alongside `resolved_state` so the M4 diff engine can compare wire-form trees without re-serializing."
 
     field :consumed_keys, [Socket.assign_key()],
       default: [],

@@ -3,13 +3,23 @@ defmodule Arbor.Resolver do
   Public render resolver for Arbor store trees.
 
   `resolve/2` renders the given store socket, resolves any `child(...)`
-  placeholders bottom-up, runs the `:after_to_state` lifecycle hooks for each
-  rendered store, resets `socket.assigns.__changed__` after the render cycle,
-  and returns the updated registry snapshot.
+  placeholders bottom-up, then for each rendered store runs the lifecycle
+  pipeline:
+
+    1. `:after_to_state` hooks — receive the resolved Elixir term.
+    2. `Arbor.Wire.to_wire/1` — converts the resolved Elixir term to wire form.
+    3. `:after_serialize` hooks — receive the wire term.
+
+  After the pipeline, `socket.assigns.__changed__` is reset and the registry
+  entry stores both `resolved_state` (Elixir form, used for memoization) and
+  `wire_state` (wire form, consumed by the M4 diff engine).
 
   Return shape:
 
       {:ok, resolved_root, updated_socket, updated_store_registry}
+
+  `resolved_root` is the Elixir-form output of the root render. The matching
+  wire-form root is available via the registry root entry's `:wire_state`.
   """
 
   alias Arbor.Child
@@ -19,6 +29,7 @@ defmodule Arbor.Resolver do
   alias Arbor.Reconciler
   alias Arbor.Socket
   alias Arbor.Telemetry
+  alias Arbor.Wire
 
   @type resolved_scalar() :: nil | boolean() | number() | String.t() | atom()
   @type resolved_value() ::
@@ -80,8 +91,16 @@ defmodule Arbor.Resolver do
     {resolved_state, resolved_registry, resolved_live_identities} =
       resolve_value(raw_state, socket, registry, socket_path(socket), live_identities)
 
-    next_socket =
+    after_to_state_socket =
       case Lifecycle.run_hooks(socket, :after_to_state, [resolved_state], false) do
+        {:cont, %Socket{} = hooked_socket} -> hooked_socket
+        {:halt, %Socket{} = hooked_socket} -> hooked_socket
+      end
+
+    wire_state = Wire.to_wire(resolved_state)
+
+    next_socket =
+      case Lifecycle.run_hooks(after_to_state_socket, :after_serialize, [wire_state], false) do
         {:cont, %Socket{} = hooked_socket} -> Socket.reset_changed(hooked_socket)
         {:halt, %Socket{} = hooked_socket} -> Socket.reset_changed(hooked_socket)
       end
@@ -96,6 +115,7 @@ defmodule Arbor.Resolver do
           socket: next_socket,
           module: next_socket.module,
           resolved_state: resolved_state,
+          wire_state: wire_state,
           consumed_keys: entry_consumed_keys(registry, socket)
         }
       )

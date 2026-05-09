@@ -3,6 +3,7 @@ defmodule Arbor.ResolverTest do
 
   import Arbor.Child, only: [child: 2]
 
+  alias Arbor.Lifecycle
   alias Arbor.Page.StoreRegistry
   alias Arbor.Page.StoreRegistry.Entry
   alias Arbor.Reconciler
@@ -596,6 +597,34 @@ defmodule Arbor.ResolverTest do
         end)
 
       assert_receive {:EXIT, ^pid, {%ArgumentError{}, _stacktrace}}
+    end
+  end
+
+  describe "lifecycle pipeline" do
+    test ":after_to_state runs on the Elixir term, :after_serialize on the wire term" do
+      test_pid = self()
+      socket = root_socket(RawMapRootStore)
+
+      socket =
+        socket
+        |> Lifecycle.attach_hook(:elixir, :after_to_state, fn term, current_socket ->
+          send(test_pid, {:after_to_state, term})
+          {:cont, current_socket}
+        end)
+        |> Lifecycle.attach_hook(:wire, :after_serialize, fn term, current_socket ->
+          send(test_pid, {:after_serialize, term})
+          {:cont, current_socket}
+        end)
+
+      assert {:ok, _resolved, _socket, registry} = Resolver.resolve(socket, registry(socket))
+
+      assert_receive {:after_to_state, %{header: %{user_name: "Alice"}}}
+      assert_receive {:after_serialize, %{"header" => %{"user_name" => "Alice"}}}
+
+      assert %Entry{
+               resolved_state: %{header: %{user_name: "Alice"}},
+               wire_state: %{"header" => %{"user_name" => "Alice"}}
+             } = StoreRegistry.get(registry, [], RawMapRootStore, "")
     end
   end
 
