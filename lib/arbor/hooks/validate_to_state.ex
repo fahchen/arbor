@@ -2,13 +2,11 @@ defmodule Arbor.Hooks.ValidateToState do
   @moduledoc """
   Validates resolved `to_state/1` output against `state do` field reflection.
 
-  Runtime mode is configured via `Application.get_env(:arbor, :validate_to_state, default)`.
-  Defaults are `:raise` in `:dev` and `:test`, `:telemetry` in `:prod`.
+  Runtime mode is configured via `Application.get_env(:arbor, :validate_to_state, :raise)`.
   """
 
   alias Arbor.Socket
 
-  @type validation_env() :: :dev | :test | :prod
   @type validation_mode() :: :raise | :telemetry
   @type validation_error_reason() ::
           :extra_key
@@ -34,16 +32,15 @@ defmodule Arbor.Hooks.ValidateToState do
   @spec after_to_state(map(), Socket.t()) :: Arbor.Lifecycle.hook_result()
   def after_to_state(resolved_output, %Socket{module: store_module} = socket)
       when is_atom(store_module) and is_map(resolved_output) do
-    env = Socket.get_private(socket, :validate_to_state_env, runtime_env())
-    mode = Socket.get_private(socket, :validate_to_state_mode, configured_mode(env))
+    mode = configured_mode()
 
     case validate(resolved_output, store_module) do
       :ok ->
-        emit_stop(store_module, env)
+        emit_stop(store_module)
         {:cont, socket}
 
       {:error, errors} ->
-        emit_exception(store_module, env, errors)
+        emit_exception(store_module, errors)
 
         case mode do
           :raise -> raise ArgumentError, format_errors(store_module, errors)
@@ -519,37 +516,23 @@ defmodule Arbor.Hooks.ValidateToState do
     ArgumentError -> nil
   end
 
-  defp emit_stop(store_module, env) do
+  defp emit_stop(store_module) do
     :telemetry.execute(
       [:arbor, :validate, :stop],
       %{count: 1},
-      %{store_module: store_module, errors: [], env: env}
+      %{store_module: store_module, errors: []}
     )
   end
 
-  defp emit_exception(store_module, env, errors) do
+  defp emit_exception(store_module, errors) do
     :telemetry.execute(
       [:arbor, :validate, :exception],
       %{count: 1},
-      %{store_module: store_module, errors: errors, env: env}
+      %{store_module: store_module, errors: errors}
     )
   end
 
-  defp configured_mode(env) do
-    Application.get_env(:arbor, :validate_to_state, default_mode(env))
-  end
-
-  defp default_mode(:prod), do: :telemetry
-  defp default_mode(:dev), do: :raise
-  defp default_mode(:test), do: :raise
-
-  defp runtime_env do
-    case System.get_env("MIX_ENV") do
-      "dev" -> :dev
-      "test" -> :test
-      _other -> :prod
-    end
-  end
+  defp configured_mode, do: Application.get_env(:arbor, :validate_to_state, :raise)
 
   defp format_errors(store_module, errors) do
     details =

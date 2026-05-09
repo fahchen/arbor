@@ -8,6 +8,20 @@ import Config
 #
 # Override in an application's own config to disable validation
 # (`[]`), replace the validator, or stack additional hooks.
-config :arbor, :default_hooks, [
-  {Arbor.Hooks.ValidateToState, :after_to_state}
-]
+default_hooks =
+  if config_env() == :dev do
+    [{Arbor.Hooks.ValidateToState, :after_to_state}]
+  else
+    []
+  end
+
+config :arbor, :default_hooks, default_hooks
+
+validate_to_state_mode =
+  if config_env() == :prod do
+    :telemetry
+  else
+    :raise
+  end
+
+config :arbor, :validate_to_state, validate_to_state_mode

@@ -126,43 +126,29 @@ defmodule Arbor.Hooks.ValidateToStateTest do
              )
   end
 
-  test "Scenario: Validation behaviour depends on environment" do
+  test "Scenario: Validation exception telemetry is emitted before raise mode raises" do
     socket = %Socket{module: TitleStore, assigns: %{}, private: %{}}
     attach_telemetry_handler(self())
 
     assert_raise ArgumentError, ~r/\$\.title/, fn ->
-      invalid_socket =
-        %{socket | private: %{validate_to_state_env: :test, validate_to_state_mode: :raise}}
-
-      ValidateToState.after_to_state(%{title: 42}, invalid_socket)
+      ValidateToState.after_to_state(%{title: 42}, socket)
     end
 
     assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
 
-    assert %{env: :test, store_module: TitleStore, errors: [%{path: "$.title"} | _rest]} =
-             metadata
-
-    telemetry_socket =
-      %{socket | private: %{validate_to_state_env: :prod, validate_to_state_mode: :telemetry}}
-
-    assert {:cont, ^telemetry_socket} =
-             ValidateToState.after_to_state(%{title: 42}, telemetry_socket)
-
-    assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
-
-    assert %{env: :prod, store_module: TitleStore, errors: [%{path: "$.title"} | _rest]} =
+    assert %{store_module: TitleStore, errors: [%{path: "$.title"} | _rest]} =
              metadata
   end
 
   test "Scenario: successful validation emits stop telemetry" do
-    socket = %Socket{module: TitleStore, assigns: %{}, private: %{validate_to_state_env: :test}}
+    socket = %Socket{module: TitleStore, assigns: %{}, private: %{}}
     attach_telemetry_handler(self())
 
     assert {:cont, ^socket} =
              ValidateToState.after_to_state(%{title: "Inbox"}, socket)
 
     assert_receive {:telemetry_event, [:arbor, :validate, :stop], %{count: 1}, metadata}
-    assert %{env: :test, store_module: TitleStore, errors: []} = metadata
+    assert %{store_module: TitleStore, errors: []} = metadata
   end
 
   defp attach_telemetry_handler(test_pid) do
