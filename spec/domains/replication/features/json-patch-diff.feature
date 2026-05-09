@@ -72,7 +72,7 @@ Feature: JSON Patch Diff and Replication
   Rule: Stream-typed fields are excluded from JSON Patch ops
 
     Scenario: Stream-typed field appears as empty array at initial delivery
-      Given a store declares field :messages, stream(MessageState.t())
+      Given a store declares state do stream :messages, MessageState.t(), ... end
       When the first patch envelope is emitted
       Then the value at /messages in the initial replace is []
 

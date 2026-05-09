@@ -4,14 +4,16 @@ Feature: stream_async
   I want to launch a background task whose result populates a stream slot
   So that long, lazily-loaded collections deliver per-item ops with explicit loading-state on the wire
 
+  # Mirrors Phoenix.LiveView.stream_async/4 in LV 1.1+; Arbor retains item-key terminology.
+
   Background:
     Given a connected client
     And a page runtime mounted on the client's transport session
 
-  Rule: stream_async composes async lifecycle with the stream API
+  Rule: stream_async follows LV's combined async + stream flow
 
     Scenario: First call ensures both the AsyncResult assignment and the stream slot
-      Given a store declares stream :messages, ...
+      Given a store declares state do stream :messages, AsyncResult.of(MessageState.t()), ... end
       When the application calls stream_async(socket, :messages, fn -> {:ok, items} end)
       Then socket.assigns.messages is set to Arbor.AsyncResult.loading() synchronously
       And the stream slot named messages is initialized
@@ -90,14 +92,14 @@ Feature: stream_async
   Rule: stream_async requires a previously-declared stream slot
 
     Scenario: Calling stream_async on an undeclared name raises
-      Given a store has no stream :messages declaration
+      Given a store has no state do stream :messages, ... declaration
       When the application calls stream_async(socket, :messages, fun)
       Then the runtime raises ArgumentError pointing at the missing declaration
 
   Rule: state do field type for stream_async-managed slots is composite
 
     Scenario: Composite typespec
-      Given a store declares field :messages, AsyncResult.of(stream(MessageState.t()))
+      Given a store declares state do stream :messages, AsyncResult.of(MessageState.t()), ... end
       Then the runtime accepts the value as a three-field AsyncResult (status, result, reason) whose result is true and status is :ok once populated
       And codegen emits a TypeScript composite shape combining AsyncResult and an items array
 

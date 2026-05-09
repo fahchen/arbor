@@ -8,32 +8,31 @@ Feature: Streams Lifecycle
     Given a connected client
     And a page runtime mounted on the client's transport session
 
-  Rule: A store declares a stream slot via stream :name, opts
+  Rule: A store declares a stream slot via stream :name, T, opts inside state do
 
     Scenario: Custom item_key and limit
-      Given a store declares stream :messages, item_key: &"msg-#{&1.id}", limit: -100
+      Given a store declares state do stream :messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: -100 end
       Then the runtime records the item_key function and a limit of -100 for the messages stream
 
     Scenario: Default item_key depends on item id
-      Given a store declares stream :songs without :item_key
+      Given a store declares state do stream :songs, SongState.t() end
       When the runtime computes an item_key for an item with id "abc"
       Then the item_key is "songs-abc"
 
     Scenario: Default item_key and missing item id
-      Given a store declares stream :songs without :item_key
+      Given a store declares state do stream :songs, SongState.t() end
       When the application passes an item without an :id field
       Then the runtime raises an ArgumentError pointing at the failing call site
 
     Scenario: Duplicate stream name in one store
-      Given a store source contains stream :messages, ... twice
+      Given a store source contains state do stream :messages, MessageState.t(), ... stream :messages, MessageState.t(), ... end
       When the project compiles
       Then the compiler reports a duplicate-stream error
 
   Rule: A stream-typed field in state do is the canonical wire surface
 
     Scenario: state declaration plus stream slot
-      Given a store declares stream :messages, ...
-      And the store declares field :messages, stream(MessageState.t())
+      Given a store declares state do stream :messages, MessageState.t(), ... end
       Then the wire envelope emits stream content via stream_ops
       And the JSON Patch ops never touch /messages
 
