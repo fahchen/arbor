@@ -1,0 +1,5 @@
+%{
+  "jsonpatch": {:hex, :jsonpatch, "2.3.1", "49c380f458debbd2bc6e256daeab1081dc89624288f3d77ea83952229388d316", [:make, :mix], [], "hexpm", "06c3e4fff3574cc54d335041f6322fe1b72756e396dd472615ce350d3dd5e758"},
+  "telemetry": {:hex, :telemetry, "1.4.1", "ab6de178e2b29b58e8256b92b382ea3f590a47152ca3651ea857a6cae05ac423", [:rebar3], [], "hexpm", "2172e05a27531d3d31dd9782841065c50dd5c3c7699d95266b2edd54c2dafa1c"},
+  "typed_structor": {:hex, :typed_structor, "0.6.1", "5a1e9bdb06192e493cbe205133f3a69ca73db23901d8ca58e804fdd52ce0c46b", [:mix], [], "hexpm", "4b896a1fe0eb23eaccb7dac10849379748816a8824b0fe98ca3ebb3923e3d8c7"},
+}
