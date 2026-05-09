@@ -1,0 +1,21 @@
+defmodule ProductPageStore.MixProject do
+  use Mix.Project
+
+  def project do
+    [
+      app: :product_page_store,
+      version: "0.1.0",
+      elixir: "~> 1.19",
+      start_permanent: false,
+      deps: deps()
+    ]
+  end
+
+  def application, do: [extra_applications: [:logger]]
+
+  defp deps do
+    [
+      {:arbor, path: "../.."}
+    ]
+  end
+end
