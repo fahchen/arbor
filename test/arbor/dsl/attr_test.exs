@@ -6,9 +6,9 @@ defmodule Arbor.DSL.AttrTest do
   defmodule AttrFixture do
     use Arbor.Store
 
-    attr(:current_user, String.t(), required: true)
-    attr(:selected, boolean(), default: false)
-    attr(:on_select, (%{id: String.t()} -> any()), required: true)
+    attr :current_user, String.t(), required: true
+    attr :selected, boolean(), default: false
+    attr :on_select, (%{id: String.t()} -> any()), required: true
   end
 
   test "attr metadata is exposed through __arbor__(:attrs)" do

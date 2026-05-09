@@ -7,6 +7,7 @@ defmodule Arbor.MixProject do
       version: "0.1.0",
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
+      consolidate_protocols: Mix.env() != :test,
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       dialyzer: [
@@ -38,6 +39,7 @@ defmodule Arbor.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:telemetry, "~> 1.2"},
       {:typed_structor, "~> 0.6.1"},
       {:jsonpatch, "~> 2.2"},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

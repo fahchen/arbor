@@ -1,9 +1,24 @@
 defmodule Arbor.DSL.State do
   @moduledoc false
 
+  @doc """
+  Defines a typed Arbor state block on a store or reusable state module.
+
+  ## Examples
+
+      defmodule ExampleState do
+        use Arbor.State
+
+        state do
+          field :title, String.t()
+        end
+      end
+  """
   @spec state(do: Macro.t()) :: Macro.t()
   defmacro state(do: block) do
     quote do
+      @derive Arbor.Wire
+
       typed_structor definer: Arbor.Plugin.Definer do
         plugin(Arbor.Plugin.StateField)
         plugin(Arbor.Plugin.Reflection)
@@ -38,6 +53,16 @@ defmodule Arbor.DSL.State do
 
   Do not remove `Macro.escape(opts)` without rewriting the stream metadata and
   reflection pipeline.
+
+  ## Examples
+
+      defmodule ExampleStore do
+        use Arbor.Store
+
+        state do
+          field :title, String.t()
+        end
+      end
   """
   @spec field(atom(), Macro.t()) :: Macro.t()
   @spec field(atom(), Macro.t(), keyword()) :: Macro.t()
@@ -51,7 +76,19 @@ defmodule Arbor.DSL.State do
     end
   end
 
-  @doc false
+  @doc """
+  Declares a top-level stream field inside `state do`.
+
+  ## Examples
+
+      defmodule ExampleStore do
+        use Arbor.Store
+
+        state do
+          stream :messages, MessageState.t(), limit: -100
+        end
+      end
+  """
   @spec stream(atom(), Macro.t()) :: Macro.t()
   @spec stream(atom(), Macro.t(), keyword()) :: Macro.t()
   defmacro stream(name, item_type, opts \\ []) when is_atom(name) and is_list(opts) do
@@ -64,7 +101,19 @@ defmodule Arbor.DSL.State do
     end
   end
 
-  @doc false
+  @doc """
+  Declares an async-wrapped stream field inside `state do`.
+
+  ## Examples
+
+      defmodule ExampleStore do
+        use Arbor.Store
+
+        state do
+          stream_async :messages, MessageState.t(), limit: -100
+        end
+      end
+  """
   @spec stream_async(atom(), Macro.t()) :: Macro.t()
   @spec stream_async(atom(), Macro.t(), keyword()) :: Macro.t()
   defmacro stream_async(name, item_type, opts \\ []) when is_atom(name) and is_list(opts) do

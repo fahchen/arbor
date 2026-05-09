@@ -5,8 +5,46 @@ defmodule Arbor.Page.StoreRegistry.Entry do
 
   alias Arbor.Socket
 
+  @type resolved_state() ::
+          nil
+          | boolean()
+          | number()
+          | String.t()
+          | atom()
+          | [resolved_state()]
+          | %{optional(term()) => resolved_state()}
+
+  @type wire_state() ::
+          nil
+          | boolean()
+          | number()
+          | String.t()
+          | [wire_state()]
+          | %{optional(String.t()) => wire_state()}
+
   typed_structor do
-    field(:socket, Socket.t(), enforce: true)
-    field(:module, module(), enforce: true)
+    field :socket, Socket.t(),
+      enforce: true,
+      doc:
+        "Socket for this store node — carries assigns, hook table, identity. Preserved across identity-stable re-renders."
+
+    field :module, module(),
+      enforce: true,
+      doc: "Store module backing this node. Changing the module forces a fresh mount (BDR-0011)."
+
+    field :resolved_state, resolved_state(),
+      default: nil,
+      doc:
+        "Last resolved render output (Elixir form) for this node. Reused when memoization skips `update/2` and `to_state/1` (BDR-0013)."
+
+    field :wire_state, wire_state() | nil,
+      default: nil,
+      doc:
+        "Last serialized render output (wire form, after `Arbor.Wire.to_wire/1`). Stored alongside `resolved_state` so the M4 diff engine can compare wire-form trees without re-serializing."
+
+    field :consumed_keys, [Socket.assign_key()],
+      default: [],
+      doc:
+        "Assign keys this child consumes (the keys the parent passed via `child(Module, id: ..., key: value, ...)`). Memoization skips this child when none of these intersect the parent's `socket.assigns.__changed__`."
   end
 end

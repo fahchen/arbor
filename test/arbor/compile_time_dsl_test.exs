@@ -4,7 +4,7 @@ defmodule Arbor.TestSupport.MoneyState do
   use Arbor.State
 
   state do
-    field(:amount, integer())
+    field :amount, integer()
   end
 end
 
@@ -14,7 +14,7 @@ defmodule Arbor.TestSupport.ChildStore do
   use Arbor.Store
 
   state do
-    field(:id, String.t())
+    field :id, String.t()
   end
 end
 
@@ -29,12 +29,12 @@ defmodule Arbor.TestSupport.ExampleStore do
   state do
     stream(:messages, MoneyState.t(), item_key: &"msg-#{&1.amount}", limit: -100)
     stream(:events, String.t())
-    field(:load_state, Arbor.AsyncResult.of(stream(MoneyState.t())))
-    field(:child, ChildStore.state())
-    field(:money, MoneyState.t())
-    field(:status, %{type: :active} | %{type: :paused, value: integer()})
-    field(:tags, list(String.t()))
-    field(:meta, map())
+    field :load_state, Arbor.AsyncResult.of(stream(MoneyState.t()))
+    field :child, ChildStore.state()
+    field :money, MoneyState.t()
+    field :status, %{type: :active} | %{type: :paused, value: integer()}
+    field :tags, list(String.t())
+    field :meta, map()
   end
 
   command(:ping)
@@ -56,7 +56,7 @@ defmodule Arbor.TestSupport.ExampleState do
   alias Arbor.TestSupport.MoneyState
 
   state do
-    field(:money, MoneyState.t())
+    field :money, MoneyState.t()
   end
 end
 
@@ -101,7 +101,7 @@ defmodule Arbor.TestSupport.MultiCommandStore do
   use Arbor.Store
 
   state do
-    field(:id, String.t())
+    field :id, String.t()
   end
 
   command :select_product do

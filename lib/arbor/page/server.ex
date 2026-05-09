@@ -5,13 +5,25 @@ defmodule Arbor.Page.Server do
 
   require Logger
 
+  alias Arbor.Lifecycle
   alias Arbor.Page.Server.State
   alias Arbor.Page.StoreRegistry
   alias Arbor.Page.StoreRegistry.Entry
+  alias Arbor.Reconciler
+  alias Arbor.Resolver
   alias Arbor.Socket
+  alias Arbor.Telemetry
 
-  @type start_arg :: {module(), map(), term()}
+  @type start_arg() :: {module(), map(), term()}
 
+  @doc """
+  Starts one page-scoped runtime for the given root store module.
+
+  ## Examples
+
+      Arbor.Page.Server.start_link({MyApp.RootStore, %{"page_id" => "home"}, %{transport_pid: self()}})
+      #=> {:ok, pid}
+  """
   @spec start_link(start_arg()) :: GenServer.on_start()
   def start_link({root_module, _params, _transport_opts} = arg) when is_atom(root_module) do
     GenServer.start_link(__MODULE__, arg)
@@ -19,22 +31,41 @@ defmodule Arbor.Page.Server do
 
   @impl GenServer
   @spec init(start_arg()) :: {:ok, State.t()}
-  def init({root_module, _params, transport_opts}) do
+  def init({root_module, params, transport_opts}) do
     Process.flag(:trap_exit, true)
 
-    root_socket = %Socket{
-      id: "",
-      parent_path: [],
-      module: root_module,
-      assigns: %{},
-      private: %{}
-    }
+    transport_pid =
+      if is_map(transport_opts), do: Map.get(transport_opts, :transport_pid), else: nil
+
+    root_socket =
+      %Socket{
+        id: "",
+        parent_path: [],
+        module: root_module,
+        assigns: %{},
+        private: %{},
+        transport_pid: transport_pid
+      }
+      |> Socket.assign(Map.new(params))
+      |> attach_default_hooks()
+      |> Reconciler.mount_store()
 
     store_registry =
       StoreRegistry.put(StoreRegistry.new(), [], root_module, root_socket.id, %Entry{
         socket: root_socket,
         module: root_module
       })
+
+    render_started_at = System.monotonic_time()
+
+    {:ok, _resolved_root, root_socket, store_registry} =
+      Resolver.resolve(root_socket, store_registry)
+
+    Telemetry.emit(
+      [:arbor, :render, :stop],
+      %{duration: System.monotonic_time() - render_started_at},
+      %{module: root_module}
+    )
 
     {:ok,
      %State{
@@ -55,8 +86,21 @@ defmodule Arbor.Page.Server do
 
   @impl GenServer
   @spec terminate(term(), State.t()) :: :ok
-  def terminate(reason, %State{root_module: root_module}) do
+  def terminate(reason, %State{root_module: root_module, root_socket: root_socket}) do
+    if function_exported?(root_module, :terminate, 2) do
+      root_module.terminate(reason, root_socket)
+    end
+
     Logger.error("page server terminating for #{inspect(root_module)} reason=#{inspect(reason)}")
     :ok
+  end
+
+  @spec attach_default_hooks(Socket.t()) :: Socket.t()
+  defp attach_default_hooks(%Socket{} = socket) do
+    :arbor
+    |> Application.get_env(:default_hooks, [])
+    |> Enum.reduce(socket, fn {id, stage, fun}, acc ->
+      Lifecycle.attach_hook(acc, id, stage, fun)
+    end)
   end
 end

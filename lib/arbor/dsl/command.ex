@@ -5,6 +5,17 @@ defmodule Arbor.DSL.Command do
 
   @reserved_command_prefix "arbor:"
 
+  @doc """
+  Declares a command with no payload fields.
+
+  ## Examples
+
+      defmodule ExampleStore do
+        use Arbor.Store
+
+        command :refresh
+      end
+  """
   @spec command(atom()) :: Macro.t()
   defmacro command(name) when is_atom(name) do
     validate_command_name!(name)
@@ -14,6 +25,19 @@ defmodule Arbor.DSL.Command do
     end
   end
 
+  @doc """
+  Declares a command whose payload is described inside the block.
+
+  ## Examples
+
+      defmodule ExampleStore do
+        use Arbor.Store
+
+        command :rename do
+          payload :title, String.t()
+        end
+      end
+  """
   @spec command(atom(), do: Macro.t()) :: Macro.t()
   defmacro command(name, do: block) when is_atom(name) do
     validate_command_name!(name)
@@ -41,6 +65,19 @@ defmodule Arbor.DSL.Command do
     end
   end
 
+  @doc """
+  Declares one payload field inside a `command do ... end` block.
+
+  ## Examples
+
+      defmodule ExampleStore do
+        use Arbor.Store
+
+        command :rename do
+          payload :title, String.t()
+        end
+      end
+  """
   @spec payload(atom(), Macro.t()) :: Macro.t()
   @spec payload(atom(), Macro.t(), keyword()) :: Macro.t()
   defmacro payload(name, type, opts \\ []) when is_atom(name) and is_list(opts) do

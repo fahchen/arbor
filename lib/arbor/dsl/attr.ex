@@ -3,7 +3,14 @@ defmodule Arbor.DSL.Attr do
 
   @no_default {:__arbor_no_default__, __MODULE__}
 
-  @doc "Sentinel stored in attr metadata when no `default:` option was declared."
+  @doc """
+  Returns the sentinel stored in attr metadata when no `default:` option was declared.
+
+  ## Examples
+
+      iex> Arbor.DSL.Attr.no_default()
+      {:__arbor_no_default__, Arbor.DSL.Attr}
+  """
   @spec no_default() :: term()
   def no_default, do: @no_default
 
@@ -13,6 +20,14 @@ defmodule Arbor.DSL.Attr do
   Imported by `Arbor.Store`; metadata accumulates onto the `:__arbor_attrs__`
   module attribute and is exposed via `__arbor__(:attrs)` by
   `Arbor.Plugin.Reflection`.
+
+  ## Examples
+
+      defmodule ExampleStore do
+        use Arbor.Store
+
+        attr :title, String.t(), required: true
+      end
   """
   defmacro attr(name, type, opts \\ []) do
     required = Keyword.get(opts, :required, false)
