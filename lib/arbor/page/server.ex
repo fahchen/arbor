@@ -235,6 +235,22 @@ defmodule Arbor.Page.Server do
     {:stop, reason, state}
   end
 
+  # Catch-all dispatch path for application messages (typically Phoenix.PubSub
+  # broadcasts the root store subscribed to inside `mount/1`). Runs the
+  # `:handle_info` hook chain on the root socket, dispatches to the root
+  # store's `handle_info/2` callback when present, and re-renders. PubSub is
+  # not built in (BDR-0005), so the runtime emits `[:arbor, :pubsub, :receive]`
+  # purely for observability.
+  def handle_info(message, %State{} = state) do
+    Telemetry.emit(
+      [:arbor, :pubsub, :receive],
+      %{system_time: System.system_time()},
+      %{module: state.root_module, page_id: page_id(state)}
+    )
+
+    dispatch_root_handle_info(message, state)
+  end
+
   @impl GenServer
   @spec terminate(term(), State.t()) :: :ok
   def terminate(reason, %State{root_module: root_module, root_socket: root_socket}) do
@@ -302,6 +318,20 @@ defmodule Arbor.Page.Server do
 
     case run_hook_chain(:before_command, chain, [command_name, payload], state, true) do
       {:halt_reply, reply, state} ->
+        # BDR-0008: graceful denial path. Emit `[:arbor, :auth, :deny]` so
+        # operators can observe authz hooks halting commands without raising.
+        Telemetry.emit(
+          [:arbor, :auth, :deny],
+          %{system_time: System.system_time()},
+          %{
+            page_id: page_id(state),
+            module: addressed.module,
+            path: path,
+            command: command_name,
+            reply: reply
+          }
+        )
+
         state = clear_command_target(state, chain)
         {:halted, reply, state}
 
@@ -437,6 +467,41 @@ defmodule Arbor.Page.Server do
 
   defp wrap_hook_result({:halt, reply, %Socket{} = next_socket}, acc, chain_path, entry) do
     {:halt, {:halt_reply, reply, put_entry(acc, chain_path, %{entry | socket: next_socket})}}
+  end
+
+  @spec dispatch_root_handle_info(term(), State.t()) ::
+          {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+  defp dispatch_root_handle_info(message, %State{} = state) do
+    chain = [[]]
+
+    case run_hook_chain(:handle_info, chain, [message], state, false) do
+      {:halt, state} ->
+        {:noreply, state, {:continue, {:push_patch, nil}}}
+
+      {:cont, state} ->
+        state = invoke_root_handle_info(message, state)
+        {next_state, envelope} = render_and_envelope(state)
+        {:noreply, next_state, {:continue, {:push_patch, envelope}}}
+    end
+  end
+
+  @spec invoke_root_handle_info(term(), State.t()) :: State.t()
+  defp invoke_root_handle_info(message, %State{root_module: root_module} = state) do
+    if function_exported?(root_module, :handle_info, 2) do
+      %Entry{socket: socket} = entry = lookup_or_raise!(state.store_registry, [])
+
+      case root_module.handle_info(message, socket) do
+        {:noreply, %Socket{} = next_socket} ->
+          put_entry(state, [], %{entry | socket: next_socket})
+
+        other ->
+          raise ArgumentError,
+                "bad return from #{inspect(root_module)}.handle_info/2: expected " <>
+                  "{:noreply, socket}, got #{inspect(other)}"
+      end
+    else
+      state
+    end
   end
 
   @spec dispatch_handler(command_path(), atom(), command_payload(), State.t()) ::
