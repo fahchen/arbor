@@ -27,8 +27,8 @@ defmodule Arbor.TestSupport.ExampleStore do
   alias Arbor.TestSupport.MoneyState
 
   state do
-    field(:messages, stream(MoneyState.t()), item_key: &"msg-#{&1.amount}", limit: -100)
-    field(:events, stream(String.t()))
+    stream(:messages, MoneyState.t(), item_key: &"msg-#{&1.amount}", limit: -100)
+    stream(:events, String.t())
     field(:load_state, Arbor.AsyncResult.of(stream(MoneyState.t())))
     field(:child, ChildStore.state())
     field(:money, MoneyState.t())
@@ -66,7 +66,7 @@ defmodule Arbor.TestSupport.StreamOnlyStore do
   use Arbor.Store
 
   state do
-    field(:notes, stream(String.t()), limit: 50)
+    stream(:notes, String.t(), limit: 50)
   end
 end
 
@@ -78,6 +78,9 @@ defmodule Arbor.TestSupport.AsyncStreamStore do
   alias Arbor.TestSupport.MoneyState
 
   state do
+    # Top-level stream fields use `stream/3`. This composite field intentionally
+    # stays in the nested `stream(T)` type-marker form because it is wrapped by
+    # `AsyncResult.of(...)`, so `stream/3` does not apply here.
     field(:loaded, Arbor.AsyncResult.of(stream(MoneyState.t())),
       item_key: &"loaded-#{&1.amount}",
       limit: -200
@@ -91,7 +94,7 @@ defmodule Arbor.TestSupport.StreamStateModule do
   use Arbor.State
 
   state do
-    field(:lines, stream(String.t()), limit: 25)
+    stream(:lines, String.t(), limit: 25)
   end
 end
 
@@ -227,10 +230,10 @@ defmodule Arbor.CompileTimeDslTest do
     alias Arbor.TestSupport.StreamOnlyStore
     alias Arbor.TestSupport.StreamStateModule
 
-    test "field :name, stream(T) inside state do registers a stream slot" do
+    test "stream/3 inside state do registers a stream slot" do
       # ExampleStore declares two stream fields inside its state do block:
-      #   field :messages, stream(MoneyState.t()), item_key: ..., limit: -100
-      #   field :events,   stream(String.t())
+      #   stream :messages, MoneyState.t(), item_key: ..., limit: -100
+      #   stream :events,   String.t()
       # Both must round-trip into __arbor__(:streams).
       stream_names = Enum.map(ExampleStore.__arbor__(:streams), & &1.name)
 
@@ -246,29 +249,27 @@ defmodule Arbor.CompileTimeDslTest do
     end
 
     test "stream metadata round-trips item_type AST" do
-      messages =
-        ExampleStore.__arbor__(:streams)
-        |> Enum.find(&(&1.name == :messages))
+      messages = Enum.find(ExampleStore.__arbor__(:streams), &(&1.name == :messages))
 
-      # field :messages, stream(MoneyState.t()) → item_type AST is `MoneyState.t()`
+      # stream :messages, MoneyState.t() → item_type AST is `MoneyState.t()`
       assert {{:., _dot, [{:__aliases__, _alias, [:MoneyState]}, :t]}, _call, []} =
                messages.item_type
 
       events = Enum.find(ExampleStore.__arbor__(:streams), &(&1.name == :events))
 
-      # field :events, stream(String.t()) → item_type AST is `String.t()`
+      # stream :events, String.t() → item_type AST is `String.t()`
       assert {{:., _dot, [{:__aliases__, _alias, [:String]}, :t]}, _call, []} =
                events.item_type
     end
 
-    test "stream-only store: field :notes, stream(String.t()), limit: 50" do
+    test "stream-only store: stream :notes, String.t(), limit: 50" do
       assert [%{name: :notes, limit: 50, item_type: item_type}] =
                StreamOnlyStore.__arbor__(:streams)
 
       assert {{:., _dot, [{:__aliases__, _alias, [:String]}, :t]}, _call, []} = item_type
     end
 
-    test "Arbor.State module: field :lines, stream(String.t()), limit: 25" do
+    test "Arbor.State module: stream :lines, String.t(), limit: 25" do
       assert [%{name: :lines, limit: 25, item_type: item_type}] =
                StreamStateModule.__arbor__(:streams)
 
@@ -303,6 +304,12 @@ defmodule Arbor.CompileTimeDslTest do
     test "stream fields produce a stream(...) type AST visible via __arbor__(:type, name)" do
       assert {:stream, _meta, [_inner]} = ExampleStore.__arbor__(:type, :messages)
       assert {:stream, _meta, [_inner]} = ExampleStore.__arbor__(:type, :events)
+    end
+
+    test "top-level streams use stream/3; nested-in-AsyncResult streams use the stream(T) type marker" do
+      assert {{:., _dot, [{:__aliases__, _alias, [:Arbor, :AsyncResult]}, :of]}, _call,
+              [{:stream, _stream_meta, [_inner]}]} =
+               AsyncStreamStore.__arbor__(:type, :loaded)
     end
 
     test "store with only a stream field reflects correctly" do

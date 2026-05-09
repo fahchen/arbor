@@ -4,6 +4,6 @@ defmodule Arbor.TestSupport.TypespecProbe do
   use Arbor.Store
 
   state do
-    field(:messages, stream(String.t()))
+    stream(:messages, String.t())
   end
 end

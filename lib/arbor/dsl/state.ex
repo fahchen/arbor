@@ -10,7 +10,7 @@ defmodule Arbor.DSL.State do
         plugin(Arbor.Plugin.TypeSpec)
 
         import TypedStructor, except: [field: 2, field: 3]
-        import Arbor.DSL.State, only: [field: 2, field: 3]
+        import Arbor.DSL.State, only: [field: 2, field: 3, stream: 2, stream: 3]
 
         unquote(block)
       end
@@ -38,6 +38,19 @@ defmodule Arbor.DSL.State do
         unquote(name),
         unquote(type),
         unquote(Macro.escape(opts))
+      )
+    end
+  end
+
+  @doc false
+  @spec stream(atom(), Macro.t()) :: Macro.t()
+  @spec stream(atom(), Macro.t(), keyword()) :: Macro.t()
+  defmacro stream(name, item_type, opts \\ []) when is_atom(name) and is_list(opts) do
+    quote do
+      Arbor.DSL.State.field(
+        unquote(name),
+        stream(unquote(item_type)),
+        unquote(opts)
       )
     end
   end
