@@ -51,8 +51,9 @@ If the spec feels wrong, flag the discrepancy in the PR — never silently edit 
 - `%Arbor.Socket{}` field shape: `assigns`, `id`, `parent_path`, `module`, `endpoint`, `topic`, `transport_pid`, `private`. Mirrors `Phoenix.Socket`
 - `socket.assigns.__changed__` records mutations as `%{key => true}`; `===` short-circuits no-op writes (BDR-0013)
 - `socket.private[:hooks]` is reserved for `Arbor.Lifecycle` — write via `Arbor.Socket.put_private/3`
-- Hook stages: `:before_command | :after_command | :handle_async | :handle_info | :after_to_state` (BDR-0004)
-- Hook fun arity is stage-dependent: `:before_command`/`:after_command`/`:handle_async` are arity 3, `:handle_info`/`:after_to_state` are arity 2
+- Hook stages: `:before_command | :after_command | :handle_async | :handle_info | :after_to_state | :after_serialize` (BDR-0004)
+- Hook fun arity is stage-dependent: `:before_command`/`:after_command`/`:handle_async` are arity 3, `:handle_info`/`:after_to_state`/`:after_serialize` are arity 2
+- `:after_to_state` runs on the resolved Elixir term (atom keys, structs, atom values); `:after_serialize` runs on the wire term (string keys, plain maps, atoms-as-strings) produced by `Arbor.Wire.to_wire/1`
 - Hook return: `{:cont, socket} | {:halt, socket} | {:halt, reply, socket}`
 - Child identity is `{parent_path, module, id}`; `id` must be a binary (BDR-0011)
 - `Module.__arbor__/1` reflection keys: `:fields`, `:commands`, `:streams`, `:attrs`, `{:type, name}`
