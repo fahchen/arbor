@@ -26,14 +26,12 @@ defmodule Arbor.Hooks.ValidateToState do
   ## Examples
 
       socket = %Arbor.Socket{module: MyApp.RootStore}
-      Arbor.Hooks.ValidateToState.after_to_state(%{title: "Inbox"}, socket)
+      Arbor.Hooks.ValidateToState.after_to_state(:raise, %{title: "Inbox"}, socket)
       #=> {:cont, socket}
   """
-  @spec after_to_state(map(), Socket.t()) :: Arbor.Lifecycle.hook_result()
-  def after_to_state(resolved_output, %Socket{module: store_module} = socket)
-      when is_atom(store_module) and is_map(resolved_output) do
-    mode = configured_mode()
-
+  @spec after_to_state(validation_mode(), map(), Socket.t()) :: Arbor.Lifecycle.hook_result()
+  def after_to_state(mode, resolved_output, %Socket{module: store_module} = socket)
+      when mode in [:raise, :telemetry] and is_atom(store_module) and is_map(resolved_output) do
     case validate(resolved_output, store_module) do
       :ok ->
         emit_stop(store_module)
@@ -531,8 +529,6 @@ defmodule Arbor.Hooks.ValidateToState do
       %{store_module: store_module, errors: errors}
     )
   end
-
-  defp configured_mode, do: Application.get_env(:arbor, :validate_to_state, :raise)
 
   defp format_errors(store_module, errors) do
     details =

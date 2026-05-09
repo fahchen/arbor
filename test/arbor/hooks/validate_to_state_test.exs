@@ -131,8 +131,20 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     attach_telemetry_handler(self())
 
     assert_raise ArgumentError, ~r/\$\.title/, fn ->
-      ValidateToState.after_to_state(%{title: 42}, socket)
+      ValidateToState.after_to_state(:raise, %{title: 42}, socket)
     end
+
+    assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
+
+    assert %{store_module: TitleStore, errors: [%{path: "$.title"} | _rest]} =
+             metadata
+  end
+
+  test "Scenario: telemetry validation mode reports errors without raising" do
+    socket = %Socket{module: TitleStore, assigns: %{}, private: %{}}
+    attach_telemetry_handler(self())
+
+    assert {:cont, ^socket} = ValidateToState.after_to_state(:telemetry, %{title: 42}, socket)
 
     assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
 
@@ -145,7 +157,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     attach_telemetry_handler(self())
 
     assert {:cont, ^socket} =
-             ValidateToState.after_to_state(%{title: "Inbox"}, socket)
+             ValidateToState.after_to_state(:raise, %{title: "Inbox"}, socket)
 
     assert_receive {:telemetry_event, [:arbor, :validate, :stop], %{count: 1}, metadata}
     assert %{store_module: TitleStore, errors: []} = metadata

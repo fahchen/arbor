@@ -100,8 +100,18 @@ defmodule Arbor.Page.Server do
     :arbor
     |> Application.get_env(:default_hooks, [])
     |> Enum.reduce(socket, fn {module, stage}, acc ->
-      fun = Function.capture(module, stage, Lifecycle.stage_arity(stage))
+      fun = capture_default_hook(module, stage)
       Lifecycle.attach_hook(acc, module, stage, fun)
     end)
+  end
+
+  @spec capture_default_hook(module(), Lifecycle.stage()) :: function()
+  defp capture_default_hook(Arbor.Hooks.ValidateToState, :after_to_state) do
+    mode = Application.get_env(:arbor, :validate_to_state, :raise)
+    &Arbor.Hooks.ValidateToState.after_to_state(mode, &1, &2)
+  end
+
+  defp capture_default_hook(module, stage) when is_atom(module) do
+    Function.capture(module, stage, Lifecycle.stage_arity(stage))
   end
 end
