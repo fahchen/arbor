@@ -6,6 +6,11 @@ defmodule Arbor.Plugin.Normalize do
   @doc """
   Normalizes typed_structor's keyword-list field representation into the
   `%{name, type, opts}` map shape used by Arbor reflection.
+
+  ## Examples
+
+      iex> Arbor.Plugin.Normalize.fields([[name: :title, type: {:__aliases__, [], [:String]}, required: true]])
+      [%{name: :title, type: {:__aliases__, [], [:String]}, opts: [required: true]}]
   """
   @spec fields([Keyword.t()]) :: [field_definition()]
   def fields(fields) do

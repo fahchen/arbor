@@ -53,7 +53,18 @@ defmodule Arbor.Socket do
         "Reserved for runtime bookkeeping (hook table at `:hooks`, async ref tracking, pending stream ops). Do not read or write directly; use `get_private/3` and `put_private/3`."
   end
 
-  @doc "Assigns a single key on the socket and tracks it in `__changed__` when the value changes."
+  @doc """
+  Assigns one key on the socket and records the change in `__changed__`.
+
+  ## Examples
+
+      iex> socket = %Arbor.Socket{}
+      iex> socket = Arbor.Socket.assign(socket, :title, "Inbox")
+      iex> socket.assigns.title
+      "Inbox"
+      iex> socket.assigns.__changed__
+      %{title: true}
+  """
   @spec assign(t(), assign_key(), term()) :: t()
   def assign(%__MODULE__{} = socket, key, value) do
     current_assigns = ensure_changed_map(socket.assigns)
@@ -76,25 +87,63 @@ defmodule Arbor.Socket do
     end
   end
 
-  @doc "Assigns many keys from a keyword list or map."
+  @doc """
+  Assigns many keys from a keyword list or map.
+
+  ## Examples
+
+      iex> socket = %Arbor.Socket{}
+      iex> socket = Arbor.Socket.assign(socket, %{title: "Inbox", count: 2})
+      iex> socket.assigns.title
+      "Inbox"
+      iex> socket.assigns.count
+      2
+  """
   @spec assign(t(), keyword(term()) | map()) :: t()
   def assign(%__MODULE__{} = socket, attrs) when is_list(attrs) or is_map(attrs) do
     Enum.reduce(attrs, socket, fn {key, value}, acc -> assign(acc, key, value) end)
   end
 
-  @doc "Updates one assign by applying `fun` to the current value."
+  @doc """
+  Updates one assign by applying `fun` to the current value.
+
+  ## Examples
+
+      iex> socket = Arbor.Socket.assign(%Arbor.Socket{}, :count, 1)
+      iex> socket = Arbor.Socket.update_assign(socket, :count, &(&1 + 1))
+      iex> socket.assigns.count
+      2
+  """
   @spec update_assign(t(), assign_key(), (term() -> term())) :: t()
   def update_assign(%__MODULE__{} = socket, key, fun) when is_function(fun, 1) do
     assign(socket, key, fun.(Map.get(socket.assigns, key)))
   end
 
-  @doc "Clears the LV-style `__changed__` bookkeeping after a render cycle."
+  @doc """
+  Clears the LiveView-style `__changed__` bookkeeping after a render cycle.
+
+  ## Examples
+
+      iex> socket = Arbor.Socket.assign(%Arbor.Socket{}, :title, "Inbox")
+      iex> Arbor.Socket.reset_changed(socket).assigns.__changed__
+      %{}
+  """
   @spec reset_changed(t()) :: t()
   def reset_changed(%__MODULE__{} = socket) do
     %{socket | assigns: Map.put(socket.assigns, :__changed__, %{})}
   end
 
-  @doc "Returns whether the given assign key is marked as changed."
+  @doc """
+  Returns whether the given assign key is marked as changed.
+
+  ## Examples
+
+      iex> socket = Arbor.Socket.assign(%Arbor.Socket{}, :title, "Inbox")
+      iex> Arbor.Socket.changed?(socket, :title)
+      true
+      iex> Arbor.Socket.changed?(socket, :count)
+      false
+  """
   @spec changed?(t(), assign_key()) :: boolean()
   def changed?(%__MODULE__{} = socket, key) do
     socket
@@ -102,14 +151,34 @@ defmodule Arbor.Socket do
     |> Map.has_key?(key)
   end
 
-  @doc "Returns whether any consumed key appears in the socket's `__changed__` map."
+  @doc """
+  Returns whether any consumed key appears in the socket's `__changed__` map.
+
+  ## Examples
+
+      iex> socket = Arbor.Socket.assign(%Arbor.Socket{}, :title, "Inbox")
+      iex> Arbor.Socket.consumed_keys_changed?(socket, [:title, :count])
+      true
+      iex> Arbor.Socket.consumed_keys_changed?(socket, [:count])
+      false
+  """
   @spec consumed_keys_changed?(t(), [assign_key()]) :: boolean()
   def consumed_keys_changed?(%__MODULE__{} = socket, keys) when is_list(keys) do
     changed = ensure_changed(socket)
     Enum.any?(keys, &Map.has_key?(changed, &1))
   end
 
-  @doc "Reads a private runtime value."
+  @doc """
+  Reads a private runtime value.
+
+  ## Examples
+
+      iex> socket = %Arbor.Socket{private: %{hooks: %{}}}
+      iex> Arbor.Socket.get_private(socket, :hooks)
+      %{}
+      iex> Arbor.Socket.get_private(socket, :missing, :fallback)
+      :fallback
+  """
   @spec get_private(t(), private_key(), term()) :: term()
   def get_private(%__MODULE__{} = socket, key, default \\ nil) do
     Map.get(socket.private, key, default)

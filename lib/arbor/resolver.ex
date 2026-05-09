@@ -25,7 +25,36 @@ defmodule Arbor.Resolver do
           resolved_scalar() | [resolved_value()] | %{optional(term()) => resolved_value()}
   @type resolve_result() :: {:ok, resolved_value(), Socket.t(), StoreRegistry.t()}
 
-  @doc "Renders one store tree and resolves child placeholders bottom-up."
+  @doc """
+  Renders one store tree and resolves child placeholders bottom-up.
+
+  ## Examples
+
+      iex> defmodule ResolverDocChild do
+      ...>   use Arbor.Store
+      ...>   state do
+      ...>     field :title, String.t()
+      ...>   end
+      ...>   def to_state(socket), do: %{title: socket.assigns.title}
+      ...> end
+      iex> defmodule ResolverDocRoot do
+      ...>   use Arbor.Store
+      ...>   state do
+      ...>     field :child, map()
+      ...>   end
+      ...>   def to_state(_socket), do: %{child: Arbor.Child.child(ResolverDocChild, id: "child", title: "Inbox")}
+      ...> end
+      iex> socket = %Arbor.Socket{id: "", parent_path: [], module: ResolverDocRoot, assigns: %{}, private: %{}}
+      iex> registry =
+      ...>   Arbor.Page.StoreRegistry.put(
+      ...>     Arbor.Page.StoreRegistry.new(),
+      ...>     [],
+      ...>     ResolverDocRoot,
+      ...>     "",
+      ...>     %Arbor.Page.StoreRegistry.Entry{socket: socket, module: ResolverDocRoot}
+      ...>   )
+      iex> {:ok, %{child: %{title: "Inbox"}}, _socket, _registry} = Arbor.Resolver.resolve(socket, registry)
+  """
   @spec resolve(Socket.t(), StoreRegistry.t()) :: resolve_result()
   def resolve(%Socket{} = socket, %StoreRegistry{} = registry) do
     resolve_started_at = System.monotonic_time()

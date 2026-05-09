@@ -2,21 +2,18 @@ defmodule Arbor.State do
   @moduledoc "Compile-time DSL entrypoint for Arbor reusable state modules."
 
   @doc """
-  Returns whether `module` is an `Arbor.State` runtime-ineligible module.
+  Sets up a module to declare reusable Arbor state with `state do ... end`.
 
   ## Examples
 
-      Arbor.State.runtime_module?(MyApp.MoneyState)
-      #=> true
+      defmodule ExampleState do
+        use Arbor.State
 
-      Arbor.State.runtime_module?(MyApp.CartStore)
-      #=> false
+        state do
+          field :title, String.t()
+        end
+      end
   """
-  @spec runtime_module?(module()) :: boolean()
-  def runtime_module?(module) when is_atom(module) do
-    function_exported?(module, :__arbor_runtime_module__, 0) and module.__arbor_runtime_module__()
-  end
-
   @spec __using__(keyword()) :: Macro.t()
   defmacro __using__(_opts) do
     quote do
@@ -34,5 +31,26 @@ defmodule Arbor.State do
 
       @before_compile Arbor.Plugin.Reflection
     end
+  end
+
+  @doc """
+  Returns whether `module` is an `Arbor.State` runtime-ineligible module.
+
+  ## Examples
+
+      iex> defmodule RuntimeStateExample do
+      ...>   use Arbor.State
+      ...>   state do
+      ...>     field :title, String.t()
+      ...>   end
+      ...> end
+      iex> Arbor.State.runtime_module?(RuntimeStateExample)
+      true
+      iex> Arbor.State.runtime_module?(Arbor.Socket)
+      false
+  """
+  @spec runtime_module?(module()) :: boolean()
+  def runtime_module?(module) when is_atom(module) do
+    function_exported?(module, :__arbor_runtime_module__, 0) and module.__arbor_runtime_module__()
   end
 end

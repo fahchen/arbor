@@ -17,6 +17,14 @@ defmodule Arbor.Page.Server do
 
   @type start_arg :: {module(), map(), term()}
 
+  @doc """
+  Starts one page-scoped runtime for the given root store module.
+
+  ## Examples
+
+      Arbor.Page.Server.start_link({MyApp.RootStore, %{"page_id" => "home"}, %{transport_pid: self()}})
+      #=> {:ok, pid}
+  """
   @spec start_link(start_arg()) :: GenServer.on_start()
   def start_link({root_module, _params, _transport_opts} = arg) when is_atom(root_module) do
     GenServer.start_link(__MODULE__, arg)

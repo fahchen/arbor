@@ -14,6 +14,14 @@ defmodule Arbor.Plugin.StateField do
           opts: keyword()
         }
 
+  @doc """
+  Extracts stream-slot metadata from normalized Arbor field definitions.
+
+  ## Examples
+
+      iex> fields = [%{name: :messages, type: {:stream, [], [String.t()]}, opts: [limit: -10]}]
+      iex> [%{name: :messages, limit: -10}] = Arbor.Plugin.StateField.stream_fields(fields)
+  """
   @spec stream_fields([field_definition()]) :: [stream_definition()]
   def stream_fields(fields) do
     Enum.flat_map(fields, fn %{name: name, type: type, opts: opts} ->
@@ -41,10 +49,28 @@ defmodule Arbor.Plugin.StateField do
     end)
   end
 
+  @doc """
+  Returns the item type from a `stream(T)` AST node.
+
+  ## Examples
+
+      iex> Arbor.Plugin.StateField.stream_item_type({:stream, [], [String.t()]})
+      {:ok, String.t()}
+      iex> Arbor.Plugin.StateField.stream_item_type(String.t())
+      :error
+  """
   @spec stream_item_type(Macro.t()) :: {:ok, Macro.t()} | :error
   def stream_item_type({:stream, _meta, [item_type]}), do: {:ok, item_type}
   def stream_item_type(_other), do: :error
 
+  @doc """
+  Builds the default `item_key` capture for a stream field name.
+
+  ## Examples
+
+      iex> Arbor.Plugin.StateField.default_item_key_ast(:messages) |> Macro.to_string() |> String.starts_with?("&")
+      true
+  """
   @spec default_item_key_ast(atom()) :: Macro.t()
   def default_item_key_ast(name) when is_atom(name) do
     quote do
@@ -52,6 +78,17 @@ defmodule Arbor.Plugin.StateField do
     end
   end
 
+  @doc """
+  Evaluates literal quoted opts while leaving dynamic AST untouched.
+
+  ## Examples
+
+      iex> Arbor.Plugin.StateField.normalize_literal_opt(quote(do: -100))
+      -100
+      iex> fn_ast = {:&, [], [{:<<>>, [], ["msg-", {{:., [], [{:&, [], [1]}, :id]}, [], []}]}]}
+      iex> Arbor.Plugin.StateField.normalize_literal_opt(fn_ast)
+      fn_ast
+  """
   @spec normalize_literal_opt(term()) :: term()
   def normalize_literal_opt(nil), do: nil
 

@@ -20,6 +20,13 @@ defmodule Arbor.Reconciler do
 
   Returns a tagged action describing whether the child must mount, update, or
   can reuse the previously resolved output.
+
+  ## Examples
+
+      iex> parent_socket = Arbor.Socket.assign(%Arbor.Socket{}, :title, "Inbox")
+      iex> child = Arbor.Child.child(ExampleChild, id: "child", title: "Inbox")
+      iex> {:mount, {[], ExampleChild, "child"}, %Arbor.Socket{}, [:title]} =
+      ...>   Arbor.Reconciler.reconcile_child(child, parent_socket, [], Arbor.Page.StoreRegistry.new())
   """
   @spec reconcile_child(Child.t(), Socket.t(), [String.t()], StoreRegistry.t()) ::
           reconcile_result()
@@ -50,7 +57,18 @@ defmodule Arbor.Reconciler do
     end
   end
 
-  @doc "Runs `mount/1` when present; otherwise returns `{:ok, socket}`."
+  @doc """
+  Runs `mount/1` when present; otherwise returns the original socket.
+
+  ## Examples
+
+      iex> defmodule ReconcilerMountDocStore do
+      ...>   def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :mounted?, true)}
+      ...> end
+      iex> socket = %Arbor.Socket{module: ReconcilerMountDocStore}
+      iex> Arbor.Reconciler.mount_store(socket).assigns.mounted?
+      true
+  """
   @spec mount_store(Socket.t()) :: Socket.t()
   def mount_store(%Socket{module: module} = socket) when is_atom(module) do
     result =
@@ -63,7 +81,18 @@ defmodule Arbor.Reconciler do
     validate_callback_result!(module, :mount, 1, result)
   end
 
-  @doc "Runs `update/2` when present; otherwise merges the new assigns into the socket."
+  @doc """
+  Runs `update/2` when present; otherwise merges the new assigns into the socket.
+
+  ## Examples
+
+      iex> defmodule ReconcilerUpdateDocStore do
+      ...>   def update(assigns, socket), do: {:ok, Arbor.Socket.assign(socket, assigns)}
+      ...> end
+      iex> socket = %Arbor.Socket{module: ReconcilerUpdateDocStore, assigns: %{}, private: %{}}
+      iex> Arbor.Reconciler.update_store(socket, %{title: "Inbox"}).assigns.title
+      "Inbox"
+  """
   @spec update_store(Socket.t(), map()) :: Socket.t()
   def update_store(%Socket{module: module} = socket, new_assigns)
       when is_atom(module) and is_map(new_assigns) do
@@ -82,6 +111,20 @@ defmodule Arbor.Reconciler do
 
   A dropped child emits a skeleton lazy-discard telemetry event so M5 can hook
   into the same path when async delivery arrives after disappearance.
+
+  ## Examples
+
+      iex> entry = %Arbor.Page.StoreRegistry.Entry{socket: %Arbor.Socket{}, module: Example}
+      iex> registry =
+      ...>   Arbor.Page.StoreRegistry.put(
+      ...>     Arbor.Page.StoreRegistry.new(),
+      ...>     [],
+      ...>     Example,
+      ...>     "root",
+      ...>     entry
+      ...>   )
+      iex> Arbor.Reconciler.prune_stale_entries(registry, %{})
+      %Arbor.Page.StoreRegistry{entries: %{}}
   """
   @spec prune_stale_entries(StoreRegistry.t(), map()) :: StoreRegistry.t()
   def prune_stale_entries(%StoreRegistry{} = registry, live_identities)

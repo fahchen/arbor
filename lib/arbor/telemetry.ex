@@ -8,8 +8,8 @@ defmodule Arbor.Telemetry do
 
   ## Examples
 
-      Arbor.Telemetry.emit([:arbor, :render, :stop], %{duration: 10}, %{module: MyStore})
-      #=> :ok
+      iex> Arbor.Telemetry.emit([:arbor, :render, :stop], %{duration: 10}, %{module: Example})
+      :ok
   """
   @spec emit([atom()], map(), map()) :: :ok
   def emit(event_name, measurements, metadata)
