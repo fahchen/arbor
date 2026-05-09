@@ -16,7 +16,7 @@ Feature: Streams Lifecycle
 
     Scenario: Default item_key depends on item id
       Given a store declares stream :songs without :item_key
-      When the runtime computes a item_key for an item with id "abc"
+      When the runtime computes an item_key for an item with id "abc"
       Then the item_key is "songs-abc"
 
     Scenario: Default item_key and missing item id
