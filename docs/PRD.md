@@ -54,11 +54,11 @@ Arbor lets developers model page state as a hierarchical tree of stateful stores
 
 ### Store
 
-A runtime node identified by `(parent_path, module, id)`. The root page store is rooted at `[]`. A store can declare attrs, output state, commands, streams, async slots, and a render function. Cross-cutting and per-node concerns (auth, validation, logging, tracing) attach at runtime via `attach_hook(socket, ...)` inside `mount/1` or any handler — there is no `middleware` macro (BDR-0004). Identity persists across re-renders within the same parent; a child whose identity disappears is silently discarded (no callback). The root may define `terminate(reason, socket)` mirroring `Phoenix.LiveView.terminate/2`.
+A runtime node identified by `(parent_path, module, id)`. The root page store is rooted at `[]`. A store can declare attrs, output state, commands, and a render function. Stream slots are declared inside `state do`; async flows are runtime-only via `assign_async/3,4`, `start_async/3,4`, and `handle_async/3`. Cross-cutting and per-node concerns (auth, validation, logging, tracing) attach at runtime via `attach_hook(socket, ...)` inside `mount/1` or any handler — there is no `middleware` macro (BDR-0004). Identity persists across re-renders within the same parent; a child whose identity disappears is silently discarded (no callback). The root may define `terminate(reason, socket)` mirroring `Phoenix.LiveView.terminate/2`.
 
 ### `state do` — public output shape
 
-`state do` declares the value `to_state/1` returns. It is the single source of truth for typespecs, TypeScript codegen, and render-output validation. Field types include primitives, `list(...)`, `map()`, nested `Arbor.State` modules, references to other stores' `state()`, native Elixir typespec unions for variants, `stream(T)` markers (streams/lifecycle), and `AsyncResult.of(T)` markers (async/lifecycle).
+`state do` declares the value `to_state/1` returns. It is the single source of truth for typespecs, TypeScript codegen, and render-output validation. Field types include primitives, `list(...)`, `map()`, nested `Arbor.State` modules, references to other stores' `state()`, native Elixir typespec unions for variants, `stream :name, item_type, opts` declarations, and `AsyncResult.of(T)` markers (async/lifecycle).
 
 ```elixir
 state do
@@ -66,6 +66,7 @@ state do
   field :items, list(CartItemState.t())
   field :subtotal, MoneyState.t()
   field :error, map() | nil
+  stream :messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: -100
 end
 ```
 
@@ -77,6 +78,7 @@ export type CartStoreState = {
   items: CartItemState[]
   subtotal: MoneyState
   error: Record<string, unknown> | null
+  messages: MessageState[]
 }
 ```
 
@@ -148,7 +150,8 @@ Children invoke parent-provided functions. The mechanism is a function-valued `a
 attr :on_select, (%{id: String.t()} -> any()), required: true
 
 def handle_command(:select, _, socket) do
-  {:noreply, invoke(socket, :on_select, %{id: socket.assigns.product.id})}
+  socket.assigns.on_select.(%{id: socket.assigns.product.id})
+  {:noreply, socket}
 end
 ```
 
@@ -182,12 +185,14 @@ Stores receive arbitrary in-process messages via `handle_info(msg, socket)`. Typ
 LiveView-parity stream API for collections that should not live in server memory after delivery. Declaration:
 
 ```elixir
-stream :messages, item_key: &"msg-#{&1.id}", limit: -100
+state do
+  stream :messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: -100
+end
 ```
 
-Operations are socket-pipe helpers: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`. The full LV option set is supported: `:at`, `:limit`, `:reset`, `:item_key`, `:update_only`. After flush the runtime retains only the item_key index; item values are dropped.
+Operations are socket-pipe helpers: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`. This mirrors `Phoenix.LiveView` except Arbor uses item keys, not DOM ids, so LV's `stream_delete_by_dom_id/3` becomes `stream_delete_by_item_key/3`. The full LV option set is otherwise supported: `:at`, `:limit`, `:reset`, `:item_key`, `:update_only`. After flush the runtime retains only the item_key index; item values are dropped.
 
-Stream-typed fields appear in `state do` as `field :name, stream(T)` and are opaque to JSON Patch. They render as `[]` in the initial-state envelope; subsequent envelopes' `ops` never touch their paths; stream content flows through `stream_ops` only. Cycles with non-empty `stream_ops` always emit an envelope, even when JSON Patch ops are empty (BDR-0018).
+Stream-typed fields appear in `state do` via `stream :name, item_type, opts` and are opaque to JSON Patch. They render as `[]` in the initial-state envelope; subsequent envelopes' `ops` never touch their paths; stream content flows through `stream_ops` only. Cycles with non-empty `stream_ops` always emit an envelope, even when JSON Patch ops are empty (BDR-0018).
 
 There is no dedicated reload mechanism. To refresh a stream the application calls `stream(socket, name, fresh_items, reset: true)` directly (the runtime emits a `reset` op followed by per-item inserts in the same envelope). When the refresh involves an async fetch, use `stream_async(socket, name, fun, reset: true)` — see below for the loading-flash variant (BDR-0022).
 
@@ -211,7 +216,7 @@ A child store that disappears does not actively cancel its async tasks; results 
 
 ### `stream_async/4`
 
-Composite of async lifecycle and stream API. User fun returns `{:ok, enumerable}`, `{:ok, enumerable, stream_opts}`, or `{:error, reason}`. On success, runtime atomically writes `AsyncResult.ok(prior, true)` to the assign and seeds the stream with the returned items. The state field type is composite: `field :messages, AsyncResult.of(stream(MessageState.t()))`.
+LiveView-parity `stream_async/4` (available in Phoenix.LiveView 1.1+) with Arbor's item-key terminology. User fun returns `{:ok, enumerable}`, `{:ok, enumerable, stream_opts}`, or `{:error, reason}`. On success, runtime atomically writes `AsyncResult.ok(prior, true)` to the assign and seeds the stream with the returned items. The state field type is composite: `stream :messages, AsyncResult.of(MessageState.t()), item_key: ...`.
 
 Refresh paths (BDR-0022): silent refresh uses `stream(reset: true)` with items already in hand; loading-flash refresh uses `stream_async(reset: true)` to re-run an async fetch and re-emit the AsyncResult `:loading` state until the new result arrives.
 
@@ -248,7 +253,7 @@ A `state do` field whose type is another store's `state()` may be populated by e
 | Component | Responsibility |
 |-----------|----------------|
 | Page Runtime | One GenServer per connected page; owns the store tree, message loop, version counter, transport session. |
-| Store Metadata Registry | Compile-time declarations: `attr`, `state`, `command`, `stream`, `async`. |
+| Store Metadata Registry | Compile-time declarations: `attr`, `state`, and `command` (including stream fields declared inside `state do`). |
 | Render Resolver | Walks `to_state/1`'s return value and resolves `child(...)` placeholders bottom-up. |
 | Render Validator | Validates each store's resolved output via `Arbor.Hooks.ValidateToState`. |
 | Reconciler | Maintains `(parent_path, module, id)` identity; preserves `socket.assigns` across cycles. Memoization uses LV-style `socket.assigns.__changed__` per-key dirty tracking written by `assign/3` and cleared after each render cycle (BDR-0013). |
@@ -328,17 +333,16 @@ There is no wire enum of error categories. Malformed or impossible commands (unk
 | `use Arbor.State` | Marks a module as a reusable state object type | Required for `Arbor.State` modules |
 | `attr name, type, opts` | Declares parent-supplied assign (data or function) | Compile-time only; values flow into `socket.assigns` |
 | `state do ... end` | Declares the public output shape | Validated against `to_state/1` output |
-| `field name, type, opts` | One field in `state do` | Supports primitives, lists, nested state, `stream(T)`, `AsyncResult.of(T)`, native typespec unions |
+| `field name, type, opts` | One field in `state do` | Supports primitives, lists, nested state, `AsyncResult.of(T)`, native typespec unions |
+| `stream name, item_type, opts` | Declares a stream-typed field inside `state do` | `:item_key` (function), `:limit`; wire content travels via `stream_ops` |
 | `command name do payload ... end` | Declares command + payload schema | Runtime-validated |
 | `attach_hook(socket, id, stage, fun)` | Attach a lifecycle hook on a store node | Sole extension primitive (BDR-0004); replaces the prior `middleware` macro |
 | `detach_hook(socket, id, stage)` | Remove a previously-attached hook | Silent no-op when absent |
-| `stream name, opts` | Declares stream slot | `:item_key` (function), `:limit` |
-| `async name, opts` | Declares named async slot | Optional sugar over `start_async` |
 | `mount(socket)` | Initialize socket.assigns | Returns `{:ok, socket}` |
 | `update(new_assigns, socket)` | React to attr changes | Returns `{:ok, socket}`; default merges new_assigns |
 | `handle_command(name, payload, socket)` | Client command handler | Returns `{:noreply, socket}` or `{:reply, payload, socket}` |
 | `handle_info(msg, socket)` | Server-side message handler (also receives upward callback effects via `send/2`) | Returns `{:noreply, socket}` |
-| `handle_async(name, result, socket)` | Async task completion handler | Returns `{:noreply, socket}` |
+| `handle_async(name, result, socket)` | Async task completion handler | Returns `{:noreply, socket}`; async flows are runtime-only via `assign_async`/`start_async`/`handle_async` |
 | `terminate(reason, socket)` | Root page store termination | Optional |
 | `to_state(socket)` | Produce the public output shape | Required |
 
@@ -348,7 +352,6 @@ There is no wire enum of error categories. Malformed or impossible commands (unk
 |----------|---------|
 | `assign(socket, key, value)` / `assign(socket, kw_or_map)` | Set `socket.assigns` |
 | `update_assign(socket, key, fun)` | Functionally update an assign |
-| `invoke(socket, callback_name, payload)` | Call a parent-provided function attr |
 | `child(Module, opts)` | Render-time placeholder |
 | `attach_hook(socket, id, stage, fun)` | Attach a lifecycle hook |
 | `detach_hook(socket, id, stage)` | Detach a hook (silent no-op if absent) |
@@ -356,7 +359,7 @@ There is no wire enum of error categories. Malformed or impossible commands (unk
 | `start_async(socket, name, fun, opts)` | Spawn named async task; routes to handle_async |
 | `cancel_async(socket, name_or_key, reason)` | Cancel an in-flight task |
 | `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3` | Stream API (LV-parity) |
-| `stream_async(socket, name, fun, opts)` | Composite async + stream |
+| `stream_async(socket, name, fun, opts)` | Async + stream helper (LV-parity; item-key naming divergence only) |
 
 ### Render contract — runtime rules
 
@@ -481,10 +484,8 @@ defmodule MyApp.Stores.MessagesStore do
   attr :room_id, :string, required: true
 
   state do
-    field :messages, AsyncResult.of(stream(MessageState.t()))
+    stream :messages, AsyncResult.of(MessageState.t()), item_key: &"msg-#{&1.id}", limit: -100
   end
-
-  stream :messages, item_key: &"msg-#{&1.id}", limit: -100
 
   command :reload
 
@@ -566,7 +567,7 @@ export type ProductPageStoreCommands = {
 
 | Milestone | Deliverables | Effort | Timeline |
 |-----------|--------------|--------|----------|
-| M1: Runtime kernel + metadata | Page runtime GenServer; `use Arbor.Store` / `use Arbor.State`; metadata registry for `attr`/`state`/`command`/`stream`/`async`; `socket` struct with `assign`/`update_assign`/`invoke`/`attach_hook`/`detach_hook`. | High | Weeks 1–2 |
+| M1: Runtime kernel + metadata | Page runtime GenServer; `use Arbor.Store` / `use Arbor.State`; metadata registry for `attr`/`state`/`command`; `socket` struct with `assign`/`update_assign`/`attach_hook`/`detach_hook`. | High | Weeks 1–2 |
 | M2: Render contract + resolver | `child(...)` placeholder, render-output resolver, identity-preserving reconciler, render-output validation hook, `mount`/`update`/`render` lifecycle, `handle_info/2`, root `terminate/2`. | High | Weeks 3–4 |
 | M3: Command pipeline | Path-based routing, payload schema validation hook, attach_hook/detach_hook, authorization hook, `handle_command/3`, transport reply contract, let-it-crash for malformed commands, system command namespace. | High | Weeks 5–6 |
 | M4: Replication + streams | RFC 6902 diff engine, patch envelope (`ops` + `stream_ops`), version counter, stream API (LV-parity: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`), reference WebSocket adapter. | High | Weeks 7–8 |
@@ -580,7 +581,7 @@ Persistence is **not** an Arbor primitive (recorded in `spec/backlog.md`). Appli
 The MVP is done when all of the following are true:
 
 - A connected page runs as exactly one runtime process bound 1:1 to its transport session (BDR-0003).
-- A store can declare `attr`, `state`, `command`, `stream`, `async`. `attr` is compile-time only; values flow into `socket.assigns` (BDR-0010). Hooks are runtime-attached via `attach_hook` (BDR-0004); there is no `middleware` macro.
+- A store can declare `attr`, `state`, and `command`. Stream fields are declared inside `state do`; async flows are runtime-only via `assign_async`/`start_async`/`handle_async`. `attr` is compile-time only; values flow into `socket.assigns` (BDR-0010). Hooks are runtime-attached via `attach_hook` (BDR-0004); there is no `middleware` macro.
 - `state do` is the public output shape; codegen produces matching Elixir typespecs and TypeScript types.
 - `to_state(socket)` returns a value matching `state do`, with `child(...)` placeholders permitted; the resolver substitutes them bottom-up.
 - Identity is `(parent_path, module, id)`; child assigns survive identity-stable re-renders; disappear-then-reappear is a fresh mount (BDR-0011); `id` must be a string.
@@ -590,9 +591,9 @@ The MVP is done when all of the following are true:
 - `handle_info(msg, socket)` shares the runtime mailbox with commands; no Arbor PubSub abstraction (BDR-0005).
 - Diff engine emits structural minimal RFC 6902 diff with no threshold (BDR-0014). Initial state is the first patch envelope's `replace` at path `""`.
 - No application-level resync command; recovery is reconnect (BDR-0015).
-- Stream API LV-parity; server forgets values; refresh via `stream(reset: true)` or `stream_async(reset: true)` (BDR-0022); stream-only cycles emit envelopes (BDR-0018).
+- Stream API LV-parity; stream fields are declared inside `state do`; Arbor diverges from LV only in naming `stream_delete_by_item_key/3` instead of `stream_delete_by_dom_id/3`; server forgets values; refresh via `stream(reset: true)` or `stream_async(reset: true)` (BDR-0022); stream-only cycles emit envelopes (BDR-0018).
 - Async API LV-parity plus an Arbor `:timeout` extension; `start_async` same-name overwrites + lazy-discards (BDR-0019); `handle_async/3` exceptions caught (BDR-0020); telemetry events `[:arbor, :async, :*]` cover the lifecycle.
-- `stream_async/4` composite works; `stream(reset: true)` and `stream_async(reset: true)` cover silent and loading-flash refresh respectively (BDR-0022).
+- `stream_async/4` matches Phoenix.LiveView 1.1+ semantics; `stream(reset: true)` and `stream_async(reset: true)` cover silent and loading-flash refresh respectively (BDR-0022).
 - The system runs without CRDTs, offline sync, event sourcing, built-in PubSub, built-in persistence, slot composition, or `move`/`copy`/`test` JSON Patch ops.
 
 ## Risks and Trade-offs
@@ -614,6 +615,6 @@ The MVP is done when all of the following are true:
 If a milestone slips:
 
 1. **First rollback:** ship MVP without the TypeScript codegen step (Elixir typespec only).
-2. **Second rollback:** ship without `stream_async/4` (apply `start_async` + manual stream/4).
+2. **Second rollback:** ship without `stream_async/4` sugar (apply `start_async` + manual stream/4).
 3. **Third rollback:** ship without `:timeout` async option.
 4. **Never rollback:** single-process ownership, attr/assigns unification, child identity rules, command routing, attach_hook, RFC 6902 ops, `handle_info/2`, AsyncResult struct, stream API LV-parity, the BDR set.

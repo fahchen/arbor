@@ -3,7 +3,7 @@ id: BDR-0022
 title: Refresh primitives — stream/4 with reset: true (silent) vs stream_async/4 with reset: true (with loading flash)
 status: accepted
 date: 2026-05-09
-summary: Arbor exposes no dedicated reload mechanism (no `reload_stream` helper, no `reload_stream/2` callback). To refresh a stream's contents the application calls `stream(socket, name, fresh_items, reset: true)` directly (silent — AsyncResult untouched) or, when a loading indicator is desired, re-runs `stream_async(socket, name, fun, reset: true)` (re-emits AsyncResult.loading then re-seeds on completion).
+summary: Arbor exposes no dedicated reload mechanism (no `reload_stream` helper, no `reload_stream/2` callback). To refresh a stream's contents the application calls `stream(socket, name, fresh_items, reset: true)` directly (silent — AsyncResult untouched) or, when a loading indicator is desired, re-runs LV-parity `stream_async(socket, name, fun, reset: true)` (re-emits AsyncResult.loading then re-seeds on completion).
 ---
 
 ## Scope

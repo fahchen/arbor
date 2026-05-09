@@ -173,18 +173,17 @@ Feature: Render Contract
       Then the first cycle drops the child node
       And the second cycle mounts a fresh node with new assigns
 
-  Rule: invoke/3 calls a parent-supplied function attr with the payload as its single argument
+  Rule: A function-valued attr is called directly from socket.assigns with the payload as its single argument
 
     Scenario: Child calls an inline closure the parent passed via child(...)
       Given the parent renders child(ChildStore, id: "x", on_select: fn payload -> ...end)
       And the child reads socket.assigns.on_select
-      When the child runs invoke(socket, :on_select, %{id: "prod_1"})
+      When the child runs socket.assigns.on_select.(%{id: "prod_1"})
       Then the function at socket.assigns.on_select is called with the single argument %{id: "prod_1"}
-      And invoke returns the child's socket (chainable via |>)
 
-    Scenario: invoke on a missing callback raises
+    Scenario: Direct call on a missing callback raises
       Given the child has no value at socket.assigns.<callback_name>
-      When the child runs invoke(socket, :missing, payload)
+      When the child runs socket.assigns.missing.(payload)
       Then the runtime raises a "missing callback" error pointing at the offending call site
 
   Rule: Render-output validation is run by the to_state validation hook after child resolution
