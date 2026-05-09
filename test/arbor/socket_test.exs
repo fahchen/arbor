@@ -76,22 +76,4 @@ defmodule Arbor.SocketTest do
       assert Socket.consumed_keys_changed?(socket, [:title, :sibling_field])
     end
   end
-
-  describe "invoke/3" do
-    test "calls a function attr and returns the same socket" do
-      parent = self()
-
-      socket =
-        Socket.assign(%Socket{}, :on_select, fn payload -> send(parent, {:selected, payload}) end)
-
-      assert Socket.invoke(socket, :on_select, %{id: "prod_1"}) == socket
-      assert_received {:selected, %{id: "prod_1"}}
-    end
-
-    test "raises clearly when the callback is missing" do
-      assert_raise ArgumentError, ~r/missing callback assign :missing/, fn ->
-        Socket.invoke(%Socket{}, :missing, %{id: "prod_1"})
-      end
-    end
-  end
 end

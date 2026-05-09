@@ -58,20 +58,6 @@ defmodule Arbor.Socket do
     assign(socket, key, fun.(Map.get(socket.assigns, key)))
   end
 
-  @doc "Invokes a callback assign with the given payload and returns the same child socket."
-  @spec invoke(t(), assign_key(), term()) :: t()
-  def invoke(%__MODULE__{} = socket, callback_name, payload) do
-    callback = Map.get(socket.assigns, callback_name)
-
-    if is_function(callback, 1) do
-      callback.(payload)
-      socket
-    else
-      raise ArgumentError,
-            "missing callback assign #{inspect(callback_name)}: expected socket.assigns[#{inspect(callback_name)}] to be a 1-arity function, got: #{inspect(callback)}"
-    end
-  end
-
   @doc "Clears the LV-style `__changed__` bookkeeping after a render cycle."
   @spec reset_changed(t()) :: t()
   def reset_changed(%__MODULE__{} = socket) do
