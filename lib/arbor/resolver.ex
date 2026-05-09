@@ -142,7 +142,7 @@ defmodule Arbor.Resolver do
   end
 
   defp resolve_value(value, %Socket{} = parent_socket, %StoreRegistry{} = registry, path, live)
-       when is_map(value) do
+       when is_map(value) and not is_struct(value) do
     Enum.reduce(value, {%{}, registry, live}, fn {key, child_or_value},
                                                  {acc, current_registry, current_live} ->
       if match?(%Child{}, child_or_value) do

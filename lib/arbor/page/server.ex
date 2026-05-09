@@ -27,6 +27,7 @@ defmodule Arbor.Page.Server do
 
   require Logger
 
+  alias Arbor.Async
   alias Arbor.Diff
   alias Arbor.Hooks.ValidateCommandSchema
   alias Arbor.Lifecycle
@@ -131,14 +132,15 @@ defmodule Arbor.Page.Server do
 
     envelope = PatchEnvelope.initial(wire_root, stream_ops)
 
-    state = %State{
-      root_module: root_module,
-      root_socket: root_socket(store_registry, root_socket),
-      store_registry: store_registry,
-      version: 1,
-      previous_wire_root: wire_root,
-      transport: transport_opts
-    }
+    state =
+      rebuild_async_index(%State{
+        root_module: root_module,
+        root_socket: root_socket(store_registry, root_socket),
+        store_registry: store_registry,
+        version: 1,
+        previous_wire_root: wire_root,
+        transport: transport_opts
+      })
 
     Telemetry.emit(
       [:arbor, :patch, :stop],
@@ -215,7 +217,18 @@ defmodule Arbor.Page.Server do
   end
 
   @impl GenServer
-  @spec handle_info({:EXIT, pid(), term()}, State.t()) :: {:stop, term(), State.t()}
+  def handle_info({ref, classified}, %State{} = state) when is_reference(ref) do
+    handle_async_result(ref, classified, state)
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %State{} = state) do
+    handle_async_down(ref, reason, state)
+  end
+
+  def handle_info({:arbor_async_timeout, ref}, %State{} = state) when is_reference(ref) do
+    handle_async_timeout(ref, state)
+  end
+
   def handle_info({:EXIT, pid, reason}, %State{} = state) do
     Logger.error("page server linked process exited: #{inspect(pid)} reason=#{inspect(reason)}")
     {:stop, reason, state}
@@ -240,7 +253,12 @@ defmodule Arbor.Page.Server do
           {command_reply(), State.t(), PatchEnvelope.t() | nil}
   defp run_command_with_render(path, command_name, payload, %State{} = state) do
     {reply, state} = run_command_pipeline(path, command_name, payload, state)
+    {next_state, envelope} = render_and_envelope(state)
+    {reply, next_state, envelope}
+  end
 
+  @spec render_and_envelope(State.t()) :: {State.t(), PatchEnvelope.t() | nil}
+  defp render_and_envelope(%State{} = state) do
     {next_root_socket, next_registry} =
       run_render_cycle(state.root_socket, state.store_registry)
 
@@ -253,15 +271,16 @@ defmodule Arbor.Page.Server do
 
     next_version = if envelope, do: envelope.version, else: state.version
 
-    next_state = %{
-      state
-      | root_socket: root_socket(next_registry, next_root_socket),
-        store_registry: next_registry,
-        version: next_version,
-        previous_wire_root: wire_root
-    }
+    next_state =
+      rebuild_async_index(%{
+        state
+        | root_socket: root_socket(next_registry, next_root_socket),
+          store_registry: next_registry,
+          version: next_version,
+          previous_wire_root: wire_root
+      })
 
-    {reply, next_state, envelope}
+    {next_state, envelope}
   end
 
   @spec run_command_pipeline(command_path(), atom(), command_payload(), State.t()) ::
@@ -551,4 +570,284 @@ defmodule Arbor.Page.Server do
   @spec envelope_stream_count(PatchEnvelope.t() | nil) :: non_neg_integer()
   defp envelope_stream_count(nil), do: 0
   defp envelope_stream_count(%PatchEnvelope{stream_ops: ops}), do: length(ops)
+
+  # ---------------------------------------------------------------------------
+  # Async message routing
+  # ---------------------------------------------------------------------------
+
+  @spec handle_async_result(reference(), term(), State.t()) ::
+          {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+  defp handle_async_result(ref, classified, %State{} = state) do
+    case Map.fetch(state.async_index, ref) do
+      {:ok, {identity, name}} ->
+        # Demonitor + flush any pending :DOWN for this ref so it does not
+        # also drive a failed write after the success path has run.
+        Process.demonitor(ref, [:flush])
+        process_async_result(identity, name, classified, state)
+
+      :error ->
+        emit_lazy_discard(state, ref, classified)
+        {:noreply, state, {:continue, {:push_patch, nil}}}
+    end
+  end
+
+  @spec handle_async_down(reference(), term(), State.t()) ::
+          {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+  defp handle_async_down(ref, reason, %State{} = state) do
+    case Map.fetch(state.async_index, ref) do
+      {:ok, {identity, name}} ->
+        process_async_down(identity, name, reason, state)
+
+      :error ->
+        # Either the matching {ref, result} already arrived (success path
+        # demonitored + flushed) or the task was for a node that no longer
+        # exists. Either way: silent.
+        {:noreply, state, {:continue, {:push_patch, nil}}}
+    end
+  end
+
+  @spec handle_async_timeout(reference(), State.t()) ::
+          {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+  defp handle_async_timeout(ref, %State{} = state) do
+    case Map.fetch(state.async_index, ref) do
+      {:ok, {identity, name}} ->
+        process_async_timeout(identity, name, state)
+
+      :error ->
+        {:noreply, state, {:continue, {:push_patch, nil}}}
+    end
+  end
+
+  @spec process_async_result(
+          StoreRegistry.identity_key(),
+          Async.tracking_name(),
+          term(),
+          State.t()
+        ) ::
+          {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+  defp process_async_result(identity, name, classified, %State{} = state) do
+    with %Entry{} = entry <- fetch_entry(state, identity),
+         {:ok, tracking_entry} <- Async.fetch_tracking(entry.socket, name) do
+      next_state =
+        apply_async_result_to_entry(state, identity, entry, name, tracking_entry, classified)
+
+      {next_state, envelope} = render_and_envelope(next_state)
+      {:noreply, next_state, {:continue, {:push_patch, envelope}}}
+    else
+      _missing ->
+        emit_lazy_discard(state, name, classified)
+        {:noreply, state, {:continue, {:push_patch, nil}}}
+    end
+  end
+
+  defp apply_async_result_to_entry(
+         state,
+         identity,
+         entry,
+         name,
+         %{kind: :start} = tracking_entry,
+         classified
+       ) do
+    dispatch_handle_async(state, identity, entry, entry.module, name, tracking_entry, classified)
+  end
+
+  defp apply_async_result_to_entry(state, identity, entry, name, tracking_entry, classified) do
+    emit_async_stop(entry.socket, name, tracking_entry.kind, classified)
+    next_socket = Async.apply_task_result(entry.socket, name, tracking_entry, classified)
+    put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+  end
+
+  @spec process_async_down(
+          StoreRegistry.identity_key(),
+          Async.tracking_name(),
+          term(),
+          State.t()
+        ) ::
+          {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+  defp process_async_down(identity, name, reason, %State{} = state) do
+    with %Entry{} = entry <- fetch_entry(state, identity),
+         {:ok, tracking_entry} <- Async.fetch_tracking(entry.socket, name) do
+      next_state = apply_async_down_to_entry(state, identity, entry, name, tracking_entry, reason)
+      {next_state, envelope} = render_and_envelope(next_state)
+      {:noreply, next_state, {:continue, {:push_patch, envelope}}}
+    else
+      _missing -> {:noreply, state, {:continue, {:push_patch, nil}}}
+    end
+  end
+
+  defp apply_async_down_to_entry(state, identity, entry, name, tracking_entry, reason) do
+    emit_async_stop(
+      entry.socket,
+      name,
+      tracking_entry.kind,
+      {:exit, tracking_entry.cancel_reason || reason}
+    )
+
+    next_socket = Async.apply_task_down(entry.socket, name, tracking_entry, reason)
+    put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+  end
+
+  @spec process_async_timeout(StoreRegistry.identity_key(), Async.tracking_name(), State.t()) ::
+          {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+  defp process_async_timeout(identity, name, %State{} = state) do
+    with %Entry{} = entry <- fetch_entry(state, identity),
+         {next_socket, %{pid: pid}} <- Async.mark_timeout(entry.socket, name) do
+      if Process.alive?(pid), do: Process.exit(pid, :kill)
+      next_state = put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+      # No envelope yet — the resulting :DOWN will run render.
+      {:noreply, next_state, {:continue, {:push_patch, nil}}}
+    else
+      _missing -> {:noreply, state, {:continue, {:push_patch, nil}}}
+    end
+  end
+
+  @spec dispatch_handle_async(
+          State.t(),
+          StoreRegistry.identity_key(),
+          Entry.t(),
+          module(),
+          Async.tracking_name(),
+          Async.tracking_entry(),
+          term()
+        ) :: State.t()
+  defp dispatch_handle_async(state, identity, entry, module, name, tracking_entry, classified) do
+    socket = Async.drop_tracking_only(entry.socket, name)
+    cancel_tracked_timer(tracking_entry)
+
+    delivered = unwrap_for_handle_async(classified)
+    chain_path = entry_path(identity)
+    chain = path_chain(chain_path)
+
+    state = put_entry_by_identity(state, identity, %{entry | socket: socket})
+
+    case run_hook_chain(:handle_async, chain, [name, delivered], state, false) do
+      {:cont, state} ->
+        invoke_handle_async(state, identity, module, name, delivered)
+
+      {:halt, state} ->
+        state
+    end
+  end
+
+  @spec invoke_handle_async(
+          State.t(),
+          StoreRegistry.identity_key(),
+          module(),
+          Async.tracking_name(),
+          term()
+        ) :: State.t()
+  defp invoke_handle_async(state, identity, module, name, delivered) do
+    %Entry{socket: socket} = entry = fetch_entry(state, identity)
+
+    if function_exported?(module, :handle_async, 3) do
+      try do
+        case module.handle_async(name, delivered, socket) do
+          {:noreply, %Socket{} = next_socket} ->
+            put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+
+          other ->
+            raise ArgumentError,
+                  "bad return from #{inspect(module)}.handle_async/3: expected " <>
+                    "{:noreply, socket}, got #{inspect(other)}"
+        end
+      rescue
+        error ->
+          # BDR-0020: handle_async/3 exceptions are caught; runtime survives.
+          Arbor.Async.Telemetry.exception(socket, name, :start, :error, error, __STACKTRACE__)
+
+          Logger.error(
+            "handle_async/3 raised on #{inspect(module)} for #{inspect(name)}: " <>
+              Exception.format(:error, error, __STACKTRACE__)
+          )
+
+          state
+      end
+    else
+      state
+    end
+  end
+
+  defp unwrap_for_handle_async({:ok, value}), do: {:ok, value}
+  defp unwrap_for_handle_async({:exit, reason_class}), do: {:exit, reason_class}
+
+  defp cancel_tracked_timer(%{timer_ref: nil}), do: :ok
+
+  defp cancel_tracked_timer(%{timer_ref: ref}) when is_reference(ref) do
+    _cancel = Process.cancel_timer(ref)
+    :ok
+  end
+
+  @spec fetch_entry(State.t(), StoreRegistry.identity_key()) :: Entry.t() | nil
+  defp fetch_entry(%State{store_registry: registry}, {parent_path, module, id}) do
+    StoreRegistry.get(registry, parent_path, module, id)
+  end
+
+  @spec put_entry_by_identity(State.t(), StoreRegistry.identity_key(), Entry.t()) :: State.t()
+  defp put_entry_by_identity(
+         %State{store_registry: registry} = state,
+         {parent_path, module, id},
+         %Entry{} = entry
+       ) do
+    next_registry = StoreRegistry.put(registry, parent_path, module, id, entry)
+
+    next_root_socket =
+      if parent_path == [] and id == "" do
+        entry.socket
+      else
+        state.root_socket
+      end
+
+    %{state | store_registry: next_registry, root_socket: next_root_socket}
+  end
+
+  @spec entry_path(StoreRegistry.identity_key()) :: command_path()
+  defp entry_path({[], _module, ""}), do: []
+
+  defp entry_path({parent_path, _module, id}) do
+    Enum.reverse([id | parent_path |> Enum.map(&to_string/1) |> Enum.reverse()])
+  end
+
+  @spec rebuild_async_index(State.t()) :: State.t()
+  defp rebuild_async_index(%State{store_registry: registry} = state) do
+    index =
+      Enum.reduce(StoreRegistry.keys(registry), %{}, &collect_entry_refs(registry, &1, &2))
+
+    %{state | async_index: index}
+  end
+
+  defp collect_entry_refs(registry, {parent_path, module, id} = identity, acc) do
+    case StoreRegistry.get(registry, parent_path, module, id) do
+      %Entry{socket: socket} ->
+        Enum.reduce(Async.tracking(socket), acc, &put_ref(&1, identity, &2))
+
+      nil ->
+        acc
+    end
+  end
+
+  defp put_ref({name, %{ref: ref}}, identity, acc), do: Map.put(acc, ref, {identity, name})
+
+  @spec emit_async_stop(Socket.t(), Async.tracking_name(), Async.kind(), term()) :: :ok
+  defp emit_async_stop(socket, name, kind, classified) do
+    status =
+      case classified do
+        {:ok, {:ok, _value}} -> :ok
+        {:ok, {:ok, _value, _opts}} -> :ok
+        _other -> :failed
+      end
+
+    Arbor.Async.Telemetry.stop(socket, name, kind, status)
+  end
+
+  @spec emit_lazy_discard(State.t(), term(), term()) :: :ok
+  defp emit_lazy_discard(%State{} = state, name_or_ref, _classified) do
+    Arbor.Async.Telemetry.lazy_discard(
+      %{page_id: page_id(state), module: state.root_module},
+      name_or_ref_for_metadata(name_or_ref),
+      nil
+    )
+  end
+
+  defp name_or_ref_for_metadata(name) when is_atom(name) or is_list(name), do: name
+  defp name_or_ref_for_metadata(_ref), do: nil
 end

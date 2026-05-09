@@ -35,5 +35,11 @@ defmodule Arbor.Page.Server.State do
       default: nil,
       doc:
         "Transport-adapter session info (Phoenix Channel pid + opts). Set at mount; M4 forwards patch envelopes to it after each render cycle."
+
+    field :async_index,
+          %{reference() => {StoreRegistry.identity_key(), Arbor.Async.tracking_name()}},
+          default: %{},
+          doc:
+            "Aux index `task_ref => {identity, name}` rebuilt after every handler call. Lets the page server route incoming `{ref, result}` and `{:DOWN, ref, ...}` messages to the originating store entry without scanning the registry."
   end
 end

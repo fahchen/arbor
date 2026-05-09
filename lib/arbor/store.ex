@@ -11,6 +11,21 @@ defmodule Arbor.Store do
       import Arbor.DSL.Attr, only: [attr: 2, attr: 3]
       import Arbor.Child, only: [child: 2]
 
+      # Note: `stream_async/3,4` is intentionally NOT imported here. The
+      # `state do` DSL exposes `stream_async/2,3` for declaring async-wrapped
+      # stream fields, and Elixir cannot disambiguate same-name imports by
+      # argument count. Stores call the runtime form via the fully-qualified
+      # `Arbor.Async.stream_async/3,4`.
+      import Arbor.Async.Macros,
+        only: [
+          assign_async: 3,
+          assign_async: 4,
+          start_async: 3,
+          start_async: 4,
+          cancel_async: 2,
+          cancel_async: 3
+        ]
+
       Module.register_attribute(__MODULE__, :__arbor_fields__, accumulate: false)
       Module.register_attribute(__MODULE__, :__arbor_commands__, accumulate: true)
       Module.register_attribute(__MODULE__, :__arbor_command_payload_fields__, accumulate: true)
