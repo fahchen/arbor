@@ -60,11 +60,31 @@ defmodule Arbor.TestSupport.ExampleState do
   end
 end
 
+defmodule Arbor.TestSupport.MultiCommandStore do
+  @moduledoc false
+
+  use Arbor.Store
+
+  state do
+    field(:id, String.t())
+  end
+
+  command :select_product do
+    payload(:id, String.t())
+  end
+
+  command :apply_filters do
+    payload(:status, %{type: :active} | %{type: :paused, value: integer()})
+    payload(:include_archived, boolean())
+  end
+end
+
 defmodule Arbor.CompileTimeDslTest do
   use ExUnit.Case, async: true
 
   alias Arbor.TestSupport.ExampleState
   alias Arbor.TestSupport.ExampleStore
+  alias Arbor.TestSupport.MultiCommandStore
 
   test "store reflection exposes fields, commands, streams, and attrs" do
     assert [:messages, :events, :load_state, :child, :money, :status, :tags, :meta] =
@@ -165,6 +185,20 @@ defmodule Arbor.CompileTimeDslTest do
     assert_raise CompileError, fn ->
       Code.compile_string(source)
     end
+  end
+
+  test "multiple command payload blocks accumulate independently" do
+    assert [
+             %{name: :select_product, payload_fields: [%{name: :id, opts: []}], opts: []},
+             %{
+               name: :apply_filters,
+               payload_fields: [
+                 %{name: :status, opts: []},
+                 %{name: :include_archived, opts: []}
+               ],
+               opts: []
+             }
+           ] = MultiCommandStore.__arbor__(:commands)
   end
 
   test "typespecs are generated for t/0, state/0, and stream/1" do

@@ -3,7 +3,9 @@ defmodule Arbor.Plugin.StateField do
 
   use TypedStructor.Plugin
 
-  @type field_definition :: %{name: atom(), type: Macro.t(), opts: keyword()}
+  alias Arbor.Plugin.Normalize
+
+  @type field_definition :: Normalize.field_definition()
   @type stream_definition :: %{
           name: atom(),
           item_type: Macro.t(),
@@ -11,17 +13,6 @@ defmodule Arbor.Plugin.StateField do
           limit: integer() | nil,
           opts: keyword()
         }
-
-  @spec normalize_fields([Keyword.t()]) :: [field_definition()]
-  def normalize_fields(fields) do
-    Enum.map(fields, fn field ->
-      %{
-        name: Keyword.fetch!(field, :name),
-        type: Keyword.fetch!(field, :type),
-        opts: Keyword.drop(field, [:name, :type])
-      }
-    end)
-  end
 
   @spec stream_fields([field_definition()]) :: [stream_definition()]
   def stream_fields(fields) do
@@ -76,7 +67,7 @@ defmodule Arbor.Plugin.StateField do
   @impl TypedStructor.Plugin
   defmacro after_definition(definition, _opts) do
     quote bind_quoted: [definition: definition] do
-      @__arbor_fields__ Arbor.Plugin.StateField.normalize_fields(definition.fields)
+      @__arbor_fields__ Arbor.Plugin.Normalize.fields(definition.fields)
     end
   end
 end

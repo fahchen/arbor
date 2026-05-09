@@ -11,7 +11,6 @@ defmodule Arbor.Store do
 
       Module.register_attribute(__MODULE__, :__arbor_fields__, accumulate: false)
       Module.register_attribute(__MODULE__, :__arbor_commands__, accumulate: true)
-      Module.register_attribute(__MODULE__, :__arbor_command_payload_fields__, accumulate: true)
       Module.register_attribute(__MODULE__, :__arbor_attrs__, accumulate: true)
     end
   end

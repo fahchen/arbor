@@ -1,16 +1,20 @@
 defmodule Arbor.Plugin.CommandPayload do
   @moduledoc false
 
-  @type field_definition :: %{name: atom(), type: Macro.t(), opts: keyword()}
+  use TypedStructor.Plugin
 
-  @spec normalize_fields([Keyword.t()]) :: [field_definition()]
-  def normalize_fields(fields) do
-    Enum.map(fields, fn field ->
-      %{
-        name: Keyword.fetch!(field, :name),
-        type: Keyword.fetch!(field, :type),
-        opts: Keyword.drop(field, [:name, :type])
-      }
-    end)
+  @impl TypedStructor.Plugin
+  defmacro after_definition(definition, opts) do
+    quote bind_quoted: [definition: definition, opts: opts] do
+      command_name = Keyword.fetch!(opts, :command_name)
+      owner_module = Keyword.fetch!(opts, :owner_module)
+      payload_fields = Arbor.Plugin.Normalize.fields(definition.fields)
+
+      Module.put_attribute(owner_module, :__arbor_commands__, %{
+        name: command_name,
+        payload_fields: payload_fields,
+        opts: []
+      })
+    end
   end
 end
