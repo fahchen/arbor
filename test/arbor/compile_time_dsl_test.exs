@@ -60,6 +60,41 @@ defmodule Arbor.TestSupport.ExampleState do
   end
 end
 
+defmodule Arbor.TestSupport.StreamOnlyStore do
+  @moduledoc false
+
+  use Arbor.Store
+
+  state do
+    field(:notes, stream(String.t()), limit: 50)
+  end
+end
+
+defmodule Arbor.TestSupport.AsyncStreamStore do
+  @moduledoc false
+
+  use Arbor.Store
+
+  alias Arbor.TestSupport.MoneyState
+
+  state do
+    field(:loaded, Arbor.AsyncResult.of(stream(MoneyState.t())),
+      item_key: &"loaded-#{&1.amount}",
+      limit: -200
+    )
+  end
+end
+
+defmodule Arbor.TestSupport.StreamStateModule do
+  @moduledoc false
+
+  use Arbor.State
+
+  state do
+    field(:lines, stream(String.t()), limit: 25)
+  end
+end
+
 defmodule Arbor.TestSupport.MultiCommandStore do
   @moduledoc false
 
@@ -184,6 +219,71 @@ defmodule Arbor.CompileTimeDslTest do
 
     assert_raise CompileError, fn ->
       Code.compile_string(source)
+    end
+  end
+
+  describe "streams" do
+    alias Arbor.TestSupport.AsyncStreamStore
+    alias Arbor.TestSupport.StreamOnlyStore
+    alias Arbor.TestSupport.StreamStateModule
+
+    test "explicit item_key is preserved as a quoted capture, not evaluated" do
+      assert [%{name: :messages, item_key: item_key}] =
+               Enum.filter(ExampleStore.__arbor__(:streams), &(&1.name == :messages))
+
+      refute is_function(item_key),
+             "item_key must remain quoted AST until reflection consumers eval it"
+
+      assert {:&, _meta, _body} = item_key
+    end
+
+    test "default item_key falls back to a stream-name-prefixed capture" do
+      assert [%{name: :events, item_key: default_item_key}] =
+               Enum.filter(ExampleStore.__arbor__(:streams), &(&1.name == :events))
+
+      assert {:&, _meta, _body} = default_item_key
+    end
+
+    test "limit is normalized into a literal integer (unary-minus survives)" do
+      assert %{limit: -100} =
+               Enum.find(ExampleStore.__arbor__(:streams), &(&1.name == :messages))
+
+      assert %{limit: nil} =
+               Enum.find(ExampleStore.__arbor__(:streams), &(&1.name == :events))
+    end
+
+    test "stream fields produce a stream(...) type AST visible via __arbor__(:type, name)" do
+      assert {:stream, _meta, [_inner]} = ExampleStore.__arbor__(:type, :messages)
+      assert {:stream, _meta, [_inner]} = ExampleStore.__arbor__(:type, :events)
+    end
+
+    test "store with only a stream field reflects correctly" do
+      assert [%{name: :notes, limit: 50}] = StreamOnlyStore.__arbor__(:streams)
+      assert {:stream, _meta, [_string_type]} = StreamOnlyStore.__arbor__(:type, :notes)
+    end
+
+    test "AsyncResult.of(stream(T)) composite is NOT registered as a stream slot in M1" do
+      # M1 scope: only direct `stream(T)` field types register a stream slot.
+      # `AsyncResult.of(stream(T))` is the wire shape consumed by `stream_async/4`
+      # (M5), which will register the slot at runtime via the async pipeline.
+      assert [] = AsyncStreamStore.__arbor__(:streams)
+
+      assert {{:., _meta, [{:__aliases__, _alias_meta, [:Arbor, :AsyncResult]}, :of]}, _call_meta,
+              [_inner]} = AsyncStreamStore.__arbor__(:type, :loaded)
+    end
+
+    test "Arbor.State modules support stream fields" do
+      assert [%{name: :lines, limit: 25}] = StreamStateModule.__arbor__(:streams)
+    end
+
+    test "non-stream fields are excluded from __arbor__(:streams)" do
+      stream_names = Enum.map(ExampleStore.__arbor__(:streams), & &1.name)
+
+      refute :child in stream_names
+      refute :money in stream_names
+      refute :status in stream_names
+      refute :tags in stream_names
+      refute :meta in stream_names
     end
   end
 
