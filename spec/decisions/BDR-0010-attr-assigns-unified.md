@@ -44,7 +44,7 @@ Adopt Option A. `socket` carries one `assigns` map at runtime. `attr` macro is c
 Option B was rejected because:
 - LV proves the unified bag works without losing clarity.
 - Two namespaces force authors to learn a contract that LV developers already do not use.
-- Memoization comparison becomes "compare both" rather than a single map reference.
+- Memoization would have to consider two namespaces rather than a single `socket.assigns.__changed__` map.
 - Function-valued attrs (callbacks) end up split across namespaces in confusing ways.
 
 Option C was rejected because:

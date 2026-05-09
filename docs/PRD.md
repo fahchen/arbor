@@ -247,7 +247,7 @@ A `state do` field whose type is another store's `state()` may be populated by e
 | Store Metadata Registry | Compile-time declarations: `attr`, `state`, `command`, `stream`, `async`. |
 | Render Resolver | Walks `to_state/1`'s return value and resolves `child(...)` placeholders bottom-up. |
 | Render Validator | Validates each store's resolved output via `Arbor.Hooks.ValidateToState`. |
-| Reconciler | Maintains `(parent_path, module, id)` identity; preserves `socket.assigns` across cycles via reference equality memoization (BDR-0013). |
+| Reconciler | Maintains `(parent_path, module, id)` identity; preserves `socket.assigns` across cycles. Memoization uses LV-style `socket.assigns.__changed__` per-key dirty tracking written by `assign/3` and cleared after each render cycle (BDR-0013). |
 | Command Router | Resolves `{path, command}` to a node via the store registry; runs schema validation and authorization hooks; dispatches `handle_command/3`. |
 | Hook Runner | Executes ordered hooks around mount, command, render, terminate. |
 | Diff Engine | Produces RFC 6902 JSON Patch ops from previous to next resolved output. Pure structural minimal diff (BDR-0014). |

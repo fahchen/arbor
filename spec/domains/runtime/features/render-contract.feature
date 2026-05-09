@@ -142,21 +142,28 @@ Feature: Render Contract
         | handle_async    |
         | handle_info     |
 
-  Rule: A child whose socket.assigns is reference-equal to last cycle skips update/2 and to_state/1
+  Rule: A child whose consumed assigns are not in __changed__ skips update/2 and to_state/1
 
-    Scenario: Unrelated sibling re-renders without re-rendering this child
-      Given a sibling's command mutates only the sibling's socket.assigns
-      And this child's socket.assigns reference is unchanged from the previous cycle
+    Scenario: Unrelated sibling mutates assigns this child does not consume
+      Given a sibling's command mutates only :sibling_field via assign/3
+      And this child consumes only :title and :unread_count
       When the runtime walks the tree
-      Then this child's update/2 is not invoked
+      Then __changed__ contains :sibling_field but not :title or :unread_count
+      And this child's update/2 is not invoked
       And this child's to_state/1 is not invoked
       And the previously resolved output for this child is reused
 
-    Scenario: A no-op write breaks ref equality and forces re-render
-      Given a handler writes the same value to the same assigns key (e.g., assign(socket, :status, socket.assigns.status))
-      When the runtime walks the tree
-      Then the assigns map reference has changed
-      And update/2 and to_state/1 run for that child even though the value is semantically unchanged
+    Scenario: assign/3 with the same value is a no-op (no entry recorded in __changed__)
+      Given a handler calls assign(socket, :status, socket.assigns.status)
+      When the macro inspects the prior value
+      Then the new value is === to the prior value
+      And no entry is added to socket.assigns.__changed__
+      And the child whose only consumed key is :status skips its update/2 and to_state/1
+
+    Scenario: __changed__ is reset after each render cycle
+      Given socket.assigns.__changed__ is %{title: "old"} after a handler's assign/3 call
+      When the render cycle completes and the patch envelope is emitted
+      Then the runtime resets socket.assigns.__changed__ to %{} for the next message
 
   Rule: A disappeared child is unmounted; reappearance is a fresh mount with no preserved assigns
 
