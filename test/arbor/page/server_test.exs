@@ -117,4 +117,98 @@ defmodule Arbor.Page.ServerTest do
 
     assert_receive {:root_terminate, :shutdown, "mounted"}
   end
+
+  defmodule HandleInfoStore do
+    use Arbor.Store
+
+    state do
+      field :counter, integer()
+    end
+
+    def mount(socket) do
+      {:ok, Arbor.Socket.assign(socket, :counter, 0)}
+    end
+
+    def handle_info(:bump, socket) do
+      {:noreply, Arbor.Socket.update_assign(socket, :counter, &(&1 + 1))}
+    end
+
+    def to_state(socket) do
+      %{counter: socket.assigns.counter}
+    end
+  end
+
+  test "catch-all handle_info dispatches to root store and emits [:arbor, :pubsub, :receive]" do
+    handler = self()
+
+    :telemetry.attach(
+      "pubsub-receive-test",
+      [:arbor, :pubsub, :receive],
+      fn _name, _meas, meta, _config -> send(handler, {:pubsub_receive, meta}) end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach("pubsub-receive-test") end)
+
+    assert {:ok, pid} =
+             Server.start_link({HandleInfoStore, %{}, %{transport_pid: self()}})
+
+    # consume initial bootstrap envelope
+    assert_receive {:patch, _envelope}
+
+    send(pid, :bump)
+
+    assert_receive {:pubsub_receive, %{module: HandleInfoStore}}
+    assert_receive {:patch, %{ops: ops}}
+    assert Enum.any?(ops, fn op -> op[:path] == "/counter" and op[:value] == 1 end)
+  end
+
+  defmodule DenyStore do
+    use Arbor.Store
+
+    state do
+      field :status, String.t()
+    end
+
+    command(:do_thing)
+
+    def mount(socket) do
+      socket = Arbor.Socket.assign(socket, :status, "ready")
+
+      socket =
+        Arbor.Lifecycle.attach_hook(socket, :authz, :before_command, fn _name, _payload, s ->
+          {:halt, %{"error" => "forbidden"}, s}
+        end)
+
+      {:ok, socket}
+    end
+
+    def handle_command(:do_thing, _payload, socket) do
+      {:noreply, socket}
+    end
+
+    def to_state(socket) do
+      %{status: socket.assigns.status}
+    end
+  end
+
+  test "graceful denial via :before_command halt-with-reply emits [:arbor, :auth, :deny]" do
+    handler = self()
+
+    :telemetry.attach(
+      "auth-deny-test",
+      [:arbor, :auth, :deny],
+      fn _name, _meas, meta, _config -> send(handler, {:auth_deny, meta}) end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach("auth-deny-test") end)
+
+    assert {:ok, pid} = Server.start_link({DenyStore, %{}, %{transport_pid: self()}})
+    assert_receive {:patch, _envelope}
+
+    assert {:ok, %{"error" => "forbidden"}} = Server.command(pid, [], :do_thing, %{})
+
+    assert_receive {:auth_deny, %{command: :do_thing, module: DenyStore, path: []}}
+  end
 end
