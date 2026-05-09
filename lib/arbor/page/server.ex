@@ -5,6 +5,8 @@ defmodule Arbor.Page.Server do
 
   require Logger
 
+  alias Arbor.Hooks.ValidateToState
+  alias Arbor.Lifecycle
   alias Arbor.Page.Server.State
   alias Arbor.Page.StoreRegistry
   alias Arbor.Page.StoreRegistry.Entry
@@ -22,13 +24,19 @@ defmodule Arbor.Page.Server do
   def init({root_module, _params, transport_opts}) do
     Process.flag(:trap_exit, true)
 
-    root_socket = %Socket{
-      id: "",
-      parent_path: [],
-      module: root_module,
-      assigns: %{},
-      private: %{}
-    }
+    root_socket =
+      Lifecycle.attach_hook(
+        %Socket{
+          id: "",
+          parent_path: [],
+          module: root_module,
+          assigns: %{},
+          private: %{}
+        },
+        ValidateToState,
+        :after_to_state,
+        &ValidateToState.run/2
+      )
 
     store_registry =
       StoreRegistry.put(StoreRegistry.new(), [], root_module, root_socket.id, %Entry{

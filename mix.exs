@@ -38,6 +38,7 @@ defmodule Arbor.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:telemetry, "~> 1.4"},
       {:typed_structor, "~> 0.6.1"},
       {:jsonpatch, "~> 2.2"},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
