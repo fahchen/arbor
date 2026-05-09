@@ -11,6 +11,8 @@ defmodule Arbor.State do
       Module.register_attribute(__MODULE__, :__arbor_fields__, accumulate: false)
       Module.register_attribute(__MODULE__, :__arbor_commands__, accumulate: true)
       Module.register_attribute(__MODULE__, :__arbor_attrs__, accumulate: true)
+
+      @before_compile Arbor.Plugin.Reflection
     end
   end
 end

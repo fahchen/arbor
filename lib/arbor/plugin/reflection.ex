@@ -38,9 +38,5 @@ defmodule Arbor.Plugin.Reflection do
   end
 
   @impl TypedStructor.Plugin
-  defmacro init(_opts) do
-    quote do
-      @before_compile Arbor.Plugin.Reflection
-    end
-  end
+  defmacro init(_opts), do: :ok
 end
