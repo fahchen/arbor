@@ -155,6 +155,7 @@ defmodule Arbor.LifecycleTest do
     assert Lifecycle.stage_arity(:handle_async) == 3
     assert Lifecycle.stage_arity(:handle_info) == 2
     assert Lifecycle.stage_arity(:after_to_state) == 2
+    assert Lifecycle.stage_arity(:after_serialize) == 2
   end
 
   defp hook_fun_for(:before_command) do
@@ -175,5 +176,9 @@ defmodule Arbor.LifecycleTest do
 
   defp hook_fun_for(:after_to_state) do
     fn _resolved_output, current_socket -> {:cont, current_socket} end
+  end
+
+  defp hook_fun_for(:after_serialize) do
+    fn _wire_output, current_socket -> {:cont, current_socket} end
   end
 end

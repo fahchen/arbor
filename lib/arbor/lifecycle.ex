@@ -1,5 +1,23 @@
 defmodule Arbor.Lifecycle do
-  @moduledoc "Lifecycle hook helpers for Arbor runtime stages. Mirrors `Phoenix.LiveView.Lifecycle`."
+  @moduledoc """
+  Lifecycle hook helpers for Arbor runtime stages. Mirrors `Phoenix.LiveView.Lifecycle`.
+
+  ## Stages
+
+  | Stage              | Arity | Hook arguments                          |
+  | :----------------- | :---- | :-------------------------------------- |
+  | `:before_command`  | 3     | `(command_name, payload, socket)`       |
+  | `:after_command`   | 3     | `(command_name, payload, socket)`       |
+  | `:handle_async`    | 3     | `(name, async_result, socket)`          |
+  | `:handle_info`     | 2     | `(message, socket)`                     |
+  | `:after_to_state`  | 2     | `(resolved_elixir_term, socket)`        |
+  | `:after_serialize` | 2     | `(wire_term, socket)`                   |
+
+  `:after_to_state` runs after `Arbor.Resolver` substitutes child placeholders;
+  it sees the Elixir-form output (atom keys, structs, atom values).
+  `:after_serialize` runs after `Arbor.Wire.to_wire/1` converts the resolved
+  output to wire form (string keys, plain maps, atoms-as-strings).
+  """
 
   alias Arbor.Socket
 
@@ -9,6 +27,7 @@ defmodule Arbor.Lifecycle do
           | :handle_async
           | :handle_info
           | :after_to_state
+          | :after_serialize
 
   @type hook_id :: term()
   @type hook_result :: {:cont, Socket.t()} | {:halt, Socket.t()} | {:halt, term(), Socket.t()}
@@ -16,13 +35,21 @@ defmodule Arbor.Lifecycle do
   @type hook_entry :: %{id: hook_id(), fun: hook_fun()}
   @type hook_table :: %{optional(stage()) => [hook_entry()]}
 
-  @stages [:before_command, :after_command, :handle_async, :handle_info, :after_to_state]
+  @stages [
+    :before_command,
+    :after_command,
+    :handle_async,
+    :handle_info,
+    :after_to_state,
+    :after_serialize
+  ]
   @stage_arity %{
     before_command: 3,
     after_command: 3,
     handle_async: 3,
     handle_info: 2,
-    after_to_state: 2
+    after_to_state: 2,
+    after_serialize: 2
   }
 
   @doc """
@@ -133,7 +160,7 @@ defmodule Arbor.Lifecycle do
   ## Examples
 
       iex> Arbor.Lifecycle.stages()
-      [:before_command, :after_command, :handle_async, :handle_info, :after_to_state]
+      [:before_command, :after_command, :handle_async, :handle_info, :after_to_state, :after_serialize]
   """
   @spec stages() :: [stage()]
   def stages, do: @stages
@@ -141,11 +168,20 @@ defmodule Arbor.Lifecycle do
   @doc """
   Returns the required hook function arity for a lifecycle stage.
 
+  | Stage              | Arity | Hook arguments                          |
+  | :----------------- | :---- | :-------------------------------------- |
+  | `:before_command`  | 3     | `(command_name, payload, socket)`       |
+  | `:after_command`   | 3     | `(command_name, payload, socket)`       |
+  | `:handle_async`    | 3     | `(name, async_result, socket)`          |
+  | `:handle_info`     | 2     | `(message, socket)`                     |
+  | `:after_to_state`  | 2     | `(resolved_elixir_term, socket)`        |
+  | `:after_serialize` | 2     | `(wire_term, socket)`                   |
+
   ## Examples
 
       iex> Arbor.Lifecycle.stage_arity(:before_command)
       3
-      iex> Arbor.Lifecycle.stage_arity(:after_to_state)
+      iex> Arbor.Lifecycle.stage_arity(:after_serialize)
       2
   """
   @spec stage_arity(stage()) :: 2 | 3
