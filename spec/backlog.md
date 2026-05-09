@@ -11,7 +11,3 @@
 ## Open Decisions
 
 (None at present.)
-
-## Open Decisions
-
-(None at present.)

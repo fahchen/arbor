@@ -14,6 +14,11 @@ Feature: Async Task Lifecycle
       When code calls Arbor.AsyncResult.loading()
       Then the struct is %{status: :loading, result: nil, reason: nil}
 
+    Scenario: Loading preserves the prior result for stale-while-loading UX
+      Given a prior result of %AsyncResult{status: :ok, result: "snapshot"}
+      When code calls Arbor.AsyncResult.loading(prior)
+      Then the struct is %{status: :loading, result: "snapshot", reason: nil}
+
     Scenario: Ok with a value
       When code calls Arbor.AsyncResult.ok(prior, value)
       Then the struct is %{status: :ok, result: value, reason: nil}
@@ -27,12 +32,12 @@ Feature: Async Task Lifecycle
 
     Scenario: Single key happy path
       When the application calls assign_async(socket, :profile, fn -> {:ok, %{profile: data}} end)
-      Then socket.assigns.profile is set to Arbor.AsyncResult.loading([:profile]) immediately
+      Then socket.assigns.profile is set to Arbor.AsyncResult.loading() immediately
       And on task completion socket.assigns.profile becomes Arbor.AsyncResult.ok(prior, data)
 
     Scenario: Multi-key atomic write
       When the application calls assign_async(socket, [:user, :org], fn -> {:ok, %{user: u, org: o}} end)
-      Then both keys are set to Arbor.AsyncResult.loading([:user, :org]) immediately
+      Then both keys are set to Arbor.AsyncResult.loading() immediately
       And on task completion both keys are updated atomically
 
     Scenario: User function returns invalid shape
@@ -84,13 +89,13 @@ Feature: Async Task Lifecycle
       Given the prior assign_async for [:user, :org] is still in flight
       When the application calls assign_async(socket, [:user, :org], fun, reset: true)
       Then the prior task is cancelled
-      And both keys re-emit Arbor.AsyncResult.loading([:user, :org])
+      And both keys re-emit Arbor.AsyncResult.loading()
 
     Scenario: Reset subset of keys
       Given the prior assign_async for [:user, :org] is still in flight
       When the application calls assign_async(socket, [:user, :org], fun, reset: [:user])
       Then the prior task is cancelled
-      And :user re-emits Arbor.AsyncResult.loading; :org preserves its prior loading metadata
+      And :user re-emits Arbor.AsyncResult.loading(); :org preserves its prior loading state unchanged
 
     Scenario: No reset preserves prior result during reload
       Given socket.assigns.profile is %AsyncResult{status: :ok, result: prior_data}

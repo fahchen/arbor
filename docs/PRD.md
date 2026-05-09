@@ -122,10 +122,14 @@ A child's `id` must be a string; numeric ids must be `to_string/1`'d. Duplicate 
 
 ### Command
 
-`command name do payload ... end` declares a client-callable command and its payload schema. Variants in payloads use native typespec unions of literal-tagged maps:
+`command :name` (shorthand, no payload) or `command :name do payload ... end` declares a client-callable command and its payload schema. Variants in payloads use native typespec unions of literal-tagged maps:
 
 ```elixir
-command :select_product do
+command :ping                                     # shorthand: no payload
+
+command :reload_products                          # shorthand: no payload
+
+command :select_product do                        # block form: typed payload
   payload :id, String.t()
 end
 
@@ -586,7 +590,7 @@ The MVP is done when all of the following are true:
 - `handle_info(msg, socket)` shares the runtime mailbox with commands; no Arbor PubSub abstraction (BDR-0005).
 - Diff engine emits structural minimal RFC 6902 diff with no threshold (BDR-0014). Initial state is the first patch envelope's `replace` at path `""`.
 - No application-level resync command; recovery is reconnect (BDR-0015).
-- Stream API LV-parity; server forgets values; reload is application-driven (BDR-0017); stream-only cycles emit envelopes (BDR-0018).
+- Stream API LV-parity; server forgets values; refresh via `stream(reset: true)` or `stream_async(reset: true)` (BDR-0022); stream-only cycles emit envelopes (BDR-0018).
 - Async API LV-parity plus an Arbor `:timeout` extension; `start_async` same-name overwrites + lazy-discards (BDR-0019); `handle_async/3` exceptions caught (BDR-0020); telemetry events `[:arbor, :async, :*]` cover the lifecycle.
 - `stream_async/4` composite works; `stream(reset: true)` and `stream_async(reset: true)` cover silent and loading-flash refresh respectively (BDR-0022).
 - The system runs without CRDTs, offline sync, event sourcing, built-in PubSub, built-in persistence, slot composition, or `move`/`copy`/`test` JSON Patch ops.
