@@ -67,8 +67,11 @@ defmodule Arbor.Page.ServerTest do
     assert %{before_command: [%{id: Arbor.Hooks.ValidateCommandSchema}]} =
              Arbor.Socket.get_private(root_socket, :hooks)
 
-    assert version == 0
+    # M4: initial render emits the bootstrap envelope (version 1).
+    assert version == 1
     assert transport == %{transport_pid: self()}
+
+    assert_receive {:patch, %Arbor.Page.PatchEnvelope{base_version: 0, version: 1}}
 
     assert StoreRegistry.keys(store_registry) == [{[], RootStore, ""}]
 

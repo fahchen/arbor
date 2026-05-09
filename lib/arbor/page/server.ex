@@ -5,27 +5,39 @@ defmodule Arbor.Page.Server do
   hooks → `handle_command/3` → `:after_command` hooks → reply) per
   BDR-0007/0009.
 
-  ## Cross-track contract (M3 → M4)
+  ## Cross-track contract (M3 → M4 → M5)
 
   Transport adapters call `command/4` (or `command/5` with a transport ref) to
   dispatch a single client command. The runtime returns the channel reply
   payload — `{:ok, reply_payload}` — which the transport forwards to the
-  client. Reply ordering matches BDR-0009: the reply is the call's return
-  value; the patch push and effects fire after.
+  client. After the reply is sent, the runtime renders the tree, computes a
+  JSON Patch diff against the previously-rendered wire root, accumulates
+  stream ops queued during the handler, builds an `Arbor.Page.PatchEnvelope`,
+  and pushes it to the bound transport pid via a `{:patch, envelope}` message
+  on `handle_continue/2` (so the reply lands first per BDR-0009).
+
+  At mount, the same flow runs once with `previous_wire_root: nil` — the
+  initial envelope replaces the entire root path (`""`) with the freshly
+  rendered wire root and starts the version counter at 1.
+
+  Idle render cycles (no diff ops, no stream ops) emit nothing per BDR-0018.
   """
 
   use GenServer
 
   require Logger
 
+  alias Arbor.Diff
   alias Arbor.Hooks.ValidateCommandSchema
   alias Arbor.Lifecycle
+  alias Arbor.Page.PatchEnvelope
   alias Arbor.Page.Server.State
   alias Arbor.Page.StoreRegistry
   alias Arbor.Page.StoreRegistry.Entry
   alias Arbor.Reconciler
   alias Arbor.Resolver
   alias Arbor.Socket
+  alias Arbor.Stream
   alias Arbor.Telemetry
 
   @type start_arg() :: {module(), map(), term()}
@@ -58,6 +70,7 @@ defmodule Arbor.Page.Server do
     3. Dispatch `handle_command/3` on the addressed store module.
     4. Run `:after_command` hooks root-first along the chain.
     5. Return `{:ok, reply_payload}`.
+    6. Render → diff → push patch envelope (after the reply lands).
 
   Path or command-name resolution failures `raise` (BDR-0003 let-it-crash);
   the GenServer crashes and the supervisor/transport observe the exit.
@@ -84,7 +97,8 @@ defmodule Arbor.Page.Server do
   end
 
   @impl GenServer
-  @spec init(start_arg()) :: {:ok, State.t()}
+  @spec init(start_arg()) ::
+          {:ok, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
   def init({root_module, params, transport_opts}) do
     Process.flag(:trap_exit, true)
 
@@ -112,14 +126,27 @@ defmodule Arbor.Page.Server do
 
     {root_socket, store_registry} = run_render_cycle(root_socket, store_registry)
 
-    {:ok,
-     %State{
-       root_module: root_module,
-       root_socket: root_socket,
-       store_registry: store_registry,
-       version: 0,
-       transport: transport_opts
-     }}
+    {wire_root, store_registry} = root_wire(store_registry, root_socket)
+    {stream_ops, store_registry} = flush_all_stream_ops(store_registry)
+
+    envelope = PatchEnvelope.initial(wire_root, stream_ops)
+
+    state = %State{
+      root_module: root_module,
+      root_socket: root_socket(store_registry, root_socket),
+      store_registry: store_registry,
+      version: 1,
+      previous_wire_root: wire_root,
+      transport: transport_opts
+    }
+
+    Telemetry.emit(
+      [:arbor, :patch, :stop],
+      %{count: length(envelope.ops), stream_count: length(envelope.stream_ops)},
+      %{module: root_module, version: state.version}
+    )
+
+    {:ok, state, {:continue, {:push_patch, envelope}}}
   end
 
   @impl GenServer
@@ -128,14 +155,15 @@ defmodule Arbor.Page.Server do
           GenServer.from(),
           State.t()
         ) ::
-          {:reply, {:ok, command_reply()}, State.t()}
+          {:reply, {:ok, command_reply()}, State.t(),
+           {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
   def handle_call({:command, path, command_name, payload, _ref}, _from, %State{} = state) do
     base_meta = %{page_id: page_id(state), path: path, command: command_name}
     started_at = System.monotonic_time()
     Telemetry.emit([:arbor, :command, :start], %{system_time: System.system_time()}, base_meta)
 
     try do
-      {reply, next_state} = run_command_pipeline(path, command_name, payload, state)
+      {reply, next_state, envelope} = run_command_with_render(path, command_name, payload, state)
 
       Telemetry.emit(
         [:arbor, :command, :stop],
@@ -143,11 +171,16 @@ defmodule Arbor.Page.Server do
         Map.put(base_meta, :status, :ok)
       )
 
-      # M4 owns the diff engine + envelope construction; M3 emits a skeleton
-      # patch :stop event so downstream observers see the slot is occupied.
-      Telemetry.emit([:arbor, :patch, :stop], %{count: 0}, base_meta)
+      Telemetry.emit(
+        [:arbor, :patch, :stop],
+        %{
+          count: envelope_op_count(envelope),
+          stream_count: envelope_stream_count(envelope)
+        },
+        Map.put(base_meta, :version, next_state.version)
+      )
 
-      {:reply, {:ok, reply}, next_state}
+      {:reply, {:ok, reply}, next_state, {:continue, {:push_patch, envelope}}}
     rescue
       error ->
         Telemetry.emit(
@@ -162,6 +195,23 @@ defmodule Arbor.Page.Server do
 
         reraise error, __STACKTRACE__
     end
+  end
+
+  @impl GenServer
+  @spec handle_continue({:push_patch, PatchEnvelope.t() | nil}, State.t()) ::
+          {:noreply, State.t()}
+  def handle_continue({:push_patch, nil}, %State{} = state), do: {:noreply, state}
+
+  def handle_continue({:push_patch, %PatchEnvelope{} = envelope}, %State{} = state) do
+    case transport_pid(state) do
+      nil ->
+        :ok
+
+      pid when is_pid(pid) ->
+        send(pid, {:patch, envelope})
+    end
+
+    {:noreply, state}
   end
 
   @impl GenServer
@@ -183,8 +233,36 @@ defmodule Arbor.Page.Server do
   end
 
   # ---------------------------------------------------------------------------
-  # Command pipeline
+  # Command pipeline + render
   # ---------------------------------------------------------------------------
+
+  @spec run_command_with_render(command_path(), atom(), command_payload(), State.t()) ::
+          {command_reply(), State.t(), PatchEnvelope.t() | nil}
+  defp run_command_with_render(path, command_name, payload, %State{} = state) do
+    {reply, state} = run_command_pipeline(path, command_name, payload, state)
+
+    {next_root_socket, next_registry} =
+      run_render_cycle(state.root_socket, state.store_registry)
+
+    {wire_root, next_registry} = root_wire(next_registry, next_root_socket)
+    {stream_ops, next_registry} = flush_all_stream_ops(next_registry)
+
+    diff_ops = Diff.diff(state.previous_wire_root, wire_root)
+
+    envelope = PatchEnvelope.build(state.version, diff_ops, stream_ops)
+
+    next_version = if envelope, do: envelope.version, else: state.version
+
+    next_state = %{
+      state
+      | root_socket: root_socket(next_registry, next_root_socket),
+        store_registry: next_registry,
+        version: next_version,
+        previous_wire_root: wire_root
+    }
+
+    {reply, next_state, envelope}
+  end
 
   @spec run_command_pipeline(command_path(), atom(), command_payload(), State.t()) ::
           {command_reply(), State.t()}
@@ -396,6 +474,55 @@ defmodule Arbor.Page.Server do
     {next_root_socket, next_registry}
   end
 
+  @spec root_wire(StoreRegistry.t(), Socket.t()) :: {term(), StoreRegistry.t()}
+  defp root_wire(%StoreRegistry{} = registry, %Socket{module: module}) do
+    case StoreRegistry.get(registry, [], module, "") do
+      %Entry{wire_state: wire_state} -> {wire_state, registry}
+      nil -> {nil, registry}
+    end
+  end
+
+  @spec root_socket(StoreRegistry.t(), Socket.t()) :: Socket.t()
+  defp root_socket(%StoreRegistry{} = registry, %Socket{module: module} = fallback) do
+    case StoreRegistry.get(registry, [], module, "") do
+      %Entry{socket: socket} -> socket
+      nil -> fallback
+    end
+  end
+
+  # Walks every entry in the registry and concatenates their pending stream
+  # ops in entry-discovery order (root first, then descendants in registry-key
+  # order), clearing the per-socket accumulators along the way. Pending ops
+  # do not survive across handlers (see `streams/lifecycle`).
+  @spec flush_all_stream_ops(StoreRegistry.t()) :: {[Stream.op()], StoreRegistry.t()}
+  defp flush_all_stream_ops(%StoreRegistry{} = registry) do
+    sorted_keys =
+      registry
+      |> StoreRegistry.keys()
+      |> Enum.sort_by(fn {parent_path, _module, _id} -> length(parent_path) end)
+
+    Enum.reduce(sorted_keys, {[], registry}, fn identity, {ops_acc, reg_acc} ->
+      flush_entry(reg_acc, identity, ops_acc)
+    end)
+  end
+
+  @spec flush_entry(StoreRegistry.t(), StoreRegistry.identity_key(), [Stream.op()]) ::
+          {[Stream.op()], StoreRegistry.t()}
+  defp flush_entry(%StoreRegistry{} = registry, {parent_path, module, id} = _identity, ops_acc) do
+    case StoreRegistry.get(registry, parent_path, module, id) do
+      %Entry{socket: socket} = entry ->
+        {entry_ops, next_socket} = Stream.flush_pending_ops(socket)
+
+        next_registry =
+          StoreRegistry.put(registry, parent_path, module, id, %{entry | socket: next_socket})
+
+        {ops_acc ++ entry_ops, next_registry}
+
+      nil ->
+        {ops_acc, registry}
+    end
+  end
+
   @spec attach_default_hooks(Socket.t()) :: Socket.t()
   defp attach_default_hooks(%Socket{} = socket) do
     :arbor
@@ -409,4 +536,19 @@ defmodule Arbor.Page.Server do
   defp page_id(%State{root_socket: %Socket{assigns: assigns}}) do
     Map.get(assigns, :page_id) || Map.get(assigns, "page_id")
   end
+
+  @spec transport_pid(State.t()) :: pid() | nil
+  defp transport_pid(%State{transport: transport}) when is_map(transport) do
+    Map.get(transport, :transport_pid)
+  end
+
+  defp transport_pid(_state), do: nil
+
+  @spec envelope_op_count(PatchEnvelope.t() | nil) :: non_neg_integer()
+  defp envelope_op_count(nil), do: 0
+  defp envelope_op_count(%PatchEnvelope{ops: ops}), do: length(ops)
+
+  @spec envelope_stream_count(PatchEnvelope.t() | nil) :: non_neg_integer()
+  defp envelope_stream_count(nil), do: 0
+  defp envelope_stream_count(%PatchEnvelope{stream_ops: ops}), do: length(ops)
 end

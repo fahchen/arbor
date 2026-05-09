@@ -26,9 +26,14 @@ defmodule Arbor.Page.Server.State do
       doc:
         "Monotonic counter incremented per emitted patch envelope. Resets to 0 on a fresh page server (e.g. after reconnect)."
 
+    field :previous_wire_root, term(),
+      default: nil,
+      doc:
+        "Wire-form root of the most recently rendered tree, cached for the next diff. `nil` between mount and the first envelope; non-nil thereafter."
+
     field :transport, term(),
       default: nil,
       doc:
-        "Placeholder for transport-adapter state (Phoenix Channel session). M4 wires this; M1/M2 store opaquely."
+        "Transport-adapter session info (Phoenix Channel pid + opts). Set at mount; M4 forwards patch envelopes to it after each render cycle."
   end
 end
