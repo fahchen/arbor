@@ -8,6 +8,8 @@
     attr: 3,
     command: 1,
     command: 2,
+    field: 2,
+    field: 3,
     payload: 2,
     payload: 3,
     state: 1,
