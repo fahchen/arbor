@@ -2,7 +2,7 @@ defmodule Arbor.Hooks.ValidateToState do
   @moduledoc """
   Validates resolved `to_state/1` output against `state do` field reflection.
 
-  Runtime mode is configured via `Application.get_env(:arbor, :validate_to_state, :raise)`.
+  The validation mode is supplied by the hook attachment callsite.
   """
 
   alias Arbor.Socket
