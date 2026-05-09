@@ -17,6 +17,8 @@ defmodule Arbor.DSL.State do
   @spec state(do: Macro.t()) :: Macro.t()
   defmacro state(do: block) do
     quote do
+      @derive Arbor.Wire
+
       typed_structor definer: Arbor.Plugin.Definer do
         plugin(Arbor.Plugin.StateField)
         plugin(Arbor.Plugin.Reflection)

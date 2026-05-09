@@ -104,7 +104,26 @@ defmodule Arbor.Plugin.StateField do
   @impl TypedStructor.Plugin
   defmacro after_definition(definition, _opts) do
     quote bind_quoted: [definition: definition] do
+      Arbor.Plugin.StateField.validate_field_types!(__MODULE__, definition.fields)
       @__arbor_fields__ Arbor.Plugin.Normalize.fields(definition.fields)
     end
+  end
+
+  @doc false
+  @spec validate_field_types!(module(), [Keyword.t()]) :: :ok
+  def validate_field_types!(host_module, fields) when is_atom(host_module) and is_list(fields) do
+    Enum.each(fields, fn field ->
+      name = Keyword.fetch!(field, :name)
+      type = Keyword.fetch!(field, :type)
+
+      unless Arbor.Type.valid_type?(type) do
+        raise CompileError,
+          description:
+            "Arbor #{inspect(host_module)}.#{name}: unsupported field type " <>
+              "#{Macro.to_string(type)}. See `Arbor.Type` for the supported AST shapes."
+      end
+    end)
+
+    :ok
   end
 end

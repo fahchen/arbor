@@ -27,6 +27,8 @@ defmodule Arbor.Plugin.Reflection do
         end
       end
 
+    validate_state_clauses = build_validate_state_clauses(fields)
+
     quote do
       def __arbor__(:fields), do: unquote(Macro.escape(fields))
       def __arbor__(:commands), do: unquote(Macro.escape(commands))
@@ -34,9 +36,84 @@ defmodule Arbor.Plugin.Reflection do
       def __arbor__(:attrs), do: unquote(Macro.escape(attrs))
 
       unquote_splicing(type_clauses)
+
+      unquote_splicing(validate_state_clauses)
     end
   end
 
   @impl TypedStructor.Plugin
   defmacro init(_opts), do: :ok
+
+  defp build_validate_state_clauses(fields) do
+    expected_keys = Enum.map(fields, fn %{name: name} -> Atom.to_string(name) end)
+
+    field_check_exprs = Enum.map(fields, &build_field_check_expr/1)
+
+    map_clause =
+      quote do
+        @doc false
+        @spec __arbor_validate_state__(term()) ::
+                :ok | {:error, [{String.t(), String.t()}]}
+        def __arbor_validate_state__(value) when is_map(value) do
+          field_errors = List.flatten([unquote_splicing(field_check_exprs)])
+
+          extra_errors =
+            value
+            |> Map.keys()
+            |> Enum.reject(&(&1 in unquote(expected_keys)))
+            |> Enum.map(fn extra_key ->
+              {"$." <> to_string(extra_key), "unexpected field " <> inspect(extra_key)}
+            end)
+
+          case field_errors ++ extra_errors do
+            [] -> :ok
+            errors -> {:error, errors}
+          end
+        end
+      end
+
+    fallback_clause =
+      quote do
+        def __arbor_validate_state__(value) do
+          {:error, [{"$", "expected map, got: " <> inspect(value)}]}
+        end
+      end
+
+    [map_clause, fallback_clause]
+  end
+
+  defp build_field_check_expr(%{name: name, type: type}) do
+    key_string = Atom.to_string(name)
+    path_string = "$." <> key_string
+    type_label = Macro.to_string(type)
+    escaped_type = Macro.escape(type)
+
+    quote do
+      Arbor.Plugin.Reflection.__check_field__(
+        value,
+        unquote(key_string),
+        unquote(path_string),
+        unquote(type_label),
+        unquote(escaped_type),
+        __MODULE__
+      )
+    end
+  end
+
+  @doc false
+  @spec __check_field__(map(), String.t(), String.t(), String.t(), Macro.t(), module()) ::
+          [{String.t(), String.t()}]
+  def __check_field__(value, key, path, type_label, type_ast, module) do
+    case Map.fetch(value, key) do
+      :error ->
+        [{path, "missing required field"}]
+
+      {:ok, field_value} ->
+        if Arbor.Type.valid?(field_value, type_ast, module) do
+          []
+        else
+          [{path, "expected " <> type_label <> ", got: " <> inspect(field_value)}]
+        end
+    end
+  end
 end
