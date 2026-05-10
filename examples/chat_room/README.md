@@ -154,7 +154,7 @@ The example wires the `:arbor_ts` Mix compiler in `mix.exs`:
 compilers: Mix.compilers() ++ [:arbor_ts]
 ```
 
-Selected output from `priv/codegen/ts/arbor.ts`:
+Selected output from `ui/src/generated/arbor.ts`:
 
 ```ts
 export namespace MyApp {
@@ -191,6 +191,11 @@ build when the committed bundle drifts from the source.
 ## Frontend
 
 The example ships a small React UI under `ui/`.
+
+The UI imports types from `ui/src/generated/arbor.ts`, which is emitted by
+`mix compile.arbor_ts` as part of the project's compiler chain (see
+`mix.exs`). Re-run `mix compile` (or `mix compile.arbor_ts` directly) after
+changing any `state do` or `command do` block to refresh the bundle.
 
 In one terminal, start the Phoenix endpoint:
 
