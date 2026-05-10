@@ -41,8 +41,11 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     channel pid so patch envelopes flow back as `{:patch, envelope}` messages
     that the adapter forwards to the client as `"patch"` events.
 
-    On channel `terminate/2` the linked page server receives `:EXIT` and
-    stops via `BDR-0003` let-it-crash. Reconnect is recovery (BDR-0015):
+    On channel `terminate/2` the adapter unlinks the page server and calls
+    `GenServer.stop/3` with the channel's terminate reason — so the page
+    server's own `terminate/2` (and the root store's `terminate/2`) run
+    with the actual context (`:normal`, `:shutdown`, `{:shutdown, :left}`,
+    etc) instead of a linked-exit signal. Reconnect is recovery (BDR-0015):
     each new join builds a fresh page server with `version: 1` and an
     initial `replace ""` envelope. There is no in-memory state preserved
     across disconnects.
@@ -184,13 +187,13 @@ if Code.ensure_loaded?(Phoenix.Channel) do
         %{module: root_module, topic: topic, reason: reason, page_pid: page_pid}
       )
 
-      # The page server is linked to the channel pid; the impending exit
-      # delivers `:EXIT` and the page server stops on its own. We unlink+stop
-      # explicitly so the page server's `terminate/2` runs with the original
-      # reason rather than a noproc-style EXIT.
+      # Unlink-then-stop so the page server's `terminate/2` runs with the
+      # actual channel reason (`:normal`, `:shutdown`, `{:shutdown, :left}`,
+      # etc) rather than the linked-exit signal Phoenix would otherwise send
+      # alongside the channel pid's exit.
       if is_pid(page_pid) and Process.alive?(page_pid) do
         Process.unlink(page_pid)
-        GenServer.stop(page_pid, :shutdown, 1_000)
+        GenServer.stop(page_pid, reason, 1_000)
       end
 
       :ok

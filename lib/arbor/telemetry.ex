@@ -16,11 +16,11 @@ defmodule Arbor.Telemetry do
   @type event() :: {[atom()], String.t()}
 
   @events [
-    {[:arbor, :command, :start], "Per-command span start. Metadata: page_id, path, command."},
+    {[:arbor, :command, :start], "Per-command span start. Metadata: page_id, store_id, command."},
     {[:arbor, :command, :stop],
-     "Per-command span stop. Measurements: duration. Metadata: page_id, path, command, status."},
+     "Per-command span stop. Measurements: duration. Metadata: page_id, store_id, command, status."},
     {[:arbor, :command, :exception],
-     "Per-command span when a handler raises. Metadata: kind, reason, stacktrace."},
+     "Per-command span when a handler raises. Metadata: page_id, store_id, command, kind, reason, stacktrace."},
     {[:arbor, :render, :stop],
      "Render cycle completion. Measurements: duration. Metadata: module."},
     {[:arbor, :resolve, :stop],
