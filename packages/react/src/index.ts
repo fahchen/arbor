@@ -1,5 +1,6 @@
 export { ArborProvider, useArborClient } from "./provider"
 export { shallowEqual } from "./shallow"
+export { useStore, useCommand, useAsyncResult, useStream } from "./hooks"
 export type {
   ArborClient,
   AsyncResult,
