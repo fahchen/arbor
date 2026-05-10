@@ -1,6 +1,10 @@
 defmodule Arbor.Page.ServerCommandTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
+  require Logger
+
   alias Arbor.Lifecycle
   alias Arbor.Page.Server
   alias Arbor.Page.Server.State
@@ -261,8 +265,11 @@ defmodule Arbor.Page.ServerCommandTest do
     test "raises and exits the page runtime when the path is unknown" do
       {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
 
-      catch_exit(Server.command(pid, ["missing"], :select, %{"id" => "x"}))
-      assert_receive {:EXIT, ^pid, _reason}
+      capture_log(fn ->
+        catch_exit(Server.command(pid, ["missing"], :select, %{"id" => "x"}))
+        assert_receive {:EXIT, ^pid, _reason}
+        Logger.flush()
+      end)
     end
   end
 
@@ -270,8 +277,11 @@ defmodule Arbor.Page.ServerCommandTest do
     test "raises and exits when the addressed store does not declare the command" do
       {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
 
-      catch_exit(Server.command(pid, ["filters"], :delete, %{}))
-      assert_receive {:EXIT, ^pid, _reason}
+      capture_log(fn ->
+        catch_exit(Server.command(pid, ["filters"], :delete, %{}))
+        assert_receive {:EXIT, ^pid, _reason}
+        Logger.flush()
+      end)
     end
   end
 
@@ -290,8 +300,11 @@ defmodule Arbor.Page.ServerCommandTest do
     test "schema validation hook raises before any handler runs" do
       {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
 
-      catch_exit(Server.command(pid, ["filters"], :change_query, %{"query" => 42}))
-      assert_receive {:EXIT, ^pid, _reason}
+      capture_log(fn ->
+        catch_exit(Server.command(pid, ["filters"], :change_query, %{"query" => 42}))
+        assert_receive {:EXIT, ^pid, _reason}
+        Logger.flush()
+      end)
     end
   end
 
@@ -342,8 +355,12 @@ defmodule Arbor.Page.ServerCommandTest do
   describe "Scenario: A handler crash terminates the page runtime" do
     test "the page runtime exits and the caller observes the exit" do
       {:ok, pid} = Server.start_link({CrashingStore, %{}, %{transport_pid: self()}})
-      catch_exit(Server.command(pid, [], :boom, %{}))
-      assert_receive {:EXIT, ^pid, _reason}
+
+      capture_log(fn ->
+        catch_exit(Server.command(pid, [], :boom, %{}))
+        assert_receive {:EXIT, ^pid, _reason}
+        Logger.flush()
+      end)
     end
   end
 
@@ -451,13 +468,16 @@ defmodule Arbor.Page.ServerCommandTest do
 
       {:ok, pid} = Server.start_link({CrashingStore, %{}, %{transport_pid: self()}})
 
-      catch_exit(Server.command(pid, [], :boom, %{}))
-      assert_receive {:EXIT, ^pid, _reason}
+      capture_log(fn ->
+        catch_exit(Server.command(pid, [], :boom, %{}))
+        assert_receive {:EXIT, ^pid, _reason}
 
-      assert_receive {:telemetry, [:arbor, :command, :exception], _,
-                      %{kind: :error, reason: %RuntimeError{}, stacktrace: stacktrace}}
+        assert_receive {:telemetry, [:arbor, :command, :exception], _,
+                        %{kind: :error, reason: %RuntimeError{}, stacktrace: stacktrace}}
 
-      assert is_list(stacktrace)
+        assert is_list(stacktrace)
+        Logger.flush()
+      end)
     end
   end
 

@@ -2,6 +2,9 @@ defmodule Arbor.ResolverTest do
   use ExUnit.Case, async: true
 
   import Arbor.Child, only: [child: 2]
+  import ExUnit.CaptureLog
+
+  require Logger
 
   alias Arbor.Lifecycle
   alias Arbor.Page.StoreRegistry
@@ -562,25 +565,31 @@ defmodule Arbor.ResolverTest do
     end
 
     test "Render raise crashes the runtime" do
-      pid =
-        spawn_link(fn ->
-          socket = root_socket(RaisingRootStore)
-          Resolver.resolve(socket, registry(socket))
-        end)
+      capture_log(fn ->
+        pid =
+          spawn_link(fn ->
+            socket = root_socket(RaisingRootStore)
+            Resolver.resolve(socket, registry(socket))
+          end)
 
-      assert_receive {:EXIT, ^pid, {%KeyError{}, _stacktrace}}
+        assert_receive {:EXIT, ^pid, {%KeyError{}, _stacktrace}}
+        Logger.flush()
+      end)
     end
 
     test "Returning {:error, reason} from mount raises" do
       child = child(BadMountChildStore, id: "child")
 
-      pid =
-        spawn_link(fn ->
-          socket = root_socket(AssignedChildRootStore, %{child: child})
-          Resolver.resolve(socket, registry(socket))
-        end)
+      capture_log(fn ->
+        pid =
+          spawn_link(fn ->
+            socket = root_socket(AssignedChildRootStore, %{child: child})
+            Resolver.resolve(socket, registry(socket))
+          end)
 
-      assert_receive {:EXIT, ^pid, {%ArgumentError{}, _stacktrace}}
+        assert_receive {:EXIT, ^pid, {%ArgumentError{}, _stacktrace}}
+        Logger.flush()
+      end)
     end
 
     test "update non-conforming returns raise" do
@@ -591,12 +600,15 @@ defmodule Arbor.ResolverTest do
 
       assert {:ok, _resolved, socket, registry} = Resolver.resolve(socket, registry)
 
-      pid =
-        spawn_link(fn ->
-          Resolver.resolve(Socket.assign(socket, :value, "two"), registry)
-        end)
+      capture_log(fn ->
+        pid =
+          spawn_link(fn ->
+            Resolver.resolve(Socket.assign(socket, :value, "two"), registry)
+          end)
 
-      assert_receive {:EXIT, ^pid, {%ArgumentError{}, _stacktrace}}
+        assert_receive {:EXIT, ^pid, {%ArgumentError{}, _stacktrace}}
+        Logger.flush()
+      end)
     end
   end
 
