@@ -216,7 +216,7 @@ Feature: Async Task Lifecycle
     Scenario Outline: Lifecycle event surface
       When the runtime processes an async event
       Then it emits a telemetry event of name "<event>"
-      With metadata including page_id, path, name (or keys), kind (assign or start)
+      With metadata including page_id, store_id, name (or keys), kind (assign or start)
 
       Examples:
         | event                        |
