@@ -76,7 +76,7 @@ defmodule Arbor.Lifecycle do
       raise ArgumentError, "hook #{inspect(id)} already attached for stage #{inspect(stage)}"
     end
 
-    next_stage_hooks = Enum.reverse([%{id: id, fun: fun} | Enum.reverse(stage_hooks)])
+    next_stage_hooks = List.insert_at(stage_hooks, -1, %{id: id, fun: fun})
     put_hooks(socket, Map.put(hooks, stage, next_stage_hooks))
   end
 

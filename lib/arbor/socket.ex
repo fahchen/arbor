@@ -82,8 +82,7 @@ defmodule Arbor.Socket do
       when is_list(parent_path) and is_binary(id) do
     parent_path
     |> Enum.map(&to_string/1)
-    |> Enum.reverse()
-    |> then(&Enum.reverse([id | &1]))
+    |> List.insert_at(-1, id)
   end
 
   @doc """

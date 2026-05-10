@@ -291,6 +291,6 @@ defmodule Arbor.Resolver do
 
   @spec append_path_segment([String.t()], String.t()) :: [String.t()]
   defp append_path_segment(path, segment) when is_list(path) and is_binary(segment) do
-    Enum.reverse([segment | Enum.reverse(path)])
+    List.insert_at(path, -1, segment)
   end
 end
