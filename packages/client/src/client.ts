@@ -222,9 +222,11 @@ class ArborClientImpl implements ArborClient {
   }
 
   private async connectFreshChannel(): Promise<void> {
-    if (this.ownsSocket) {
-      this.socket.connect()
-    }
+    // Phoenix.Socket.connect is idempotent; calling it on a caller-owned
+    // socket that's already open is a no-op, while calling it on a
+    // caller-owned socket the caller forgot to connect unblocks the
+    // channel join.
+    this.socket.connect()
 
     const generation = this.channelGeneration + 1
     this.channelGeneration = generation
