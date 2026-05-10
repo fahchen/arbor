@@ -22,8 +22,8 @@ command_schema_hook =
 state_validation_hooks =
   if config_env() == :dev do
     [
-      {Arbor.Hooks.ValidateToState, :after_serialize,
-       &Arbor.Hooks.ValidateToState.after_serialize(:raise, &1, &2)}
+      {Arbor.Hooks.ValidateRender, :after_serialize,
+       &Arbor.Hooks.ValidateRender.after_serialize(:raise, &1, &2)}
     ]
   else
     []

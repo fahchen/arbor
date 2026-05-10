@@ -6,7 +6,7 @@ defmodule Arbor.Resolver do
   placeholders bottom-up, then for each rendered store runs the lifecycle
   pipeline:
 
-    1. `:after_to_state` hooks — receive the resolved Elixir term.
+    1. `:after_render` hooks — receive the resolved Elixir term.
     2. `Arbor.Wire.to_wire/1` — converts the resolved Elixir term to wire form.
     3. `:after_serialize` hooks — receive the wire term.
 
@@ -64,14 +64,14 @@ defmodule Arbor.Resolver do
       ...>   state do
       ...>     field :title, String.t()
       ...>   end
-      ...>   def to_state(socket), do: %{title: socket.assigns.title}
+      ...>   def render(socket), do: %{title: socket.assigns.title}
       ...> end
       iex> defmodule ResolverDocRoot do
       ...>   use Arbor.Store
       ...>   state do
       ...>     field :child, map()
       ...>   end
-      ...>   def to_state(_socket), do: %{child: Arbor.Child.child(ResolverDocChild, id: "child", title: "Inbox")}
+      ...>   def render(_socket), do: %{child: Arbor.Child.child(ResolverDocChild, id: "child", title: "Inbox")}
       ...> end
       iex> socket = %Arbor.Socket{id: "", parent_path: [], module: ResolverDocRoot, assigns: %{}, private: %{}}
       iex> registry =
@@ -102,7 +102,7 @@ defmodule Arbor.Resolver do
 
   defp render_store(%Socket{} = socket, %StoreRegistry{} = registry, live_identities)
        when is_map(live_identities) do
-    raw_state = socket.module.to_state(socket)
+    raw_state = socket.module.render(socket)
     store_id = Socket.store_id(socket)
 
     {resolved_state, resolved_registry, resolved_live_identities} =
@@ -110,8 +110,8 @@ defmodule Arbor.Resolver do
 
     resolved_state = inject_store_id(resolved_state, store_id)
 
-    after_to_state_socket =
-      case Lifecycle.run_hooks(socket, :after_to_state, [resolved_state], false) do
+    after_render_socket =
+      case Lifecycle.run_hooks(socket, :after_render, [resolved_state], false) do
         {:cont, %Socket{} = hooked_socket} -> hooked_socket
         {:halt, %Socket{} = hooked_socket} -> hooked_socket
       end
@@ -119,7 +119,7 @@ defmodule Arbor.Resolver do
     wire_state = Wire.to_wire(resolved_state)
 
     next_socket =
-      case Lifecycle.run_hooks(after_to_state_socket, :after_serialize, [wire_state], false) do
+      case Lifecycle.run_hooks(after_render_socket, :after_serialize, [wire_state], false) do
         {:cont, %Socket{} = hooked_socket} ->
           hooked_socket
           |> Stream.drain_and_prune()

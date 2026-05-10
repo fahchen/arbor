@@ -39,7 +39,7 @@ defmodule Bench.RuntimeStore do
     {:noreply, Arbor.Socket.assign(socket, :note, note)}
   end
 
-  def to_state(socket) do
+  def render(socket) do
     %{counter: socket.assigns.counter, note: socket.assigns.note}
   end
 end

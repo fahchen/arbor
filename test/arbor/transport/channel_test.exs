@@ -37,7 +37,7 @@ defmodule Arbor.Transport.ChannelTest do
     end
 
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "Inbox")}
-    def to_state(socket), do: %{title: socket.assigns.title}
+    def render(socket), do: %{title: socket.assigns.title}
 
     command :rename do
       payload :title, String.t()

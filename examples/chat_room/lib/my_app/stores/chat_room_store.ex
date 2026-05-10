@@ -124,7 +124,7 @@ defmodule MyApp.Stores.ChatRoomStore do
   # Render output
   # ---------------------------------------------------------------------------
 
-  def to_state(socket) do
+  def render(socket) do
     %{
       # Stream-typed fields are forced to `[]` on the wire by `Arbor.Wire`
       # (BDR-0014/0018) — content flows via stream_ops. `socket.assigns.messages`

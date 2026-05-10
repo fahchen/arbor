@@ -25,7 +25,7 @@ defmodule Arbor.Child do
   Builds a child placeholder sentinel.
 
   The runtime treats the returned struct specially only when it appears inside a
-  `to_state/1` return value. Elsewhere it is inert data.
+  `render/1` return value. Elsewhere it is inert data.
 
   ## Examples
 

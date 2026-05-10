@@ -17,7 +17,7 @@ defmodule MyApp.Stores.CartPageStore do
     field :cart, CartStore.state()
   end
 
-  def to_state(socket) do
+  def render(socket) do
     %{
       header:
         Arbor.Child.child(HeaderStore,
@@ -32,4 +32,7 @@ defmodule MyApp.Stores.CartPageStore do
         )
     }
   end
+
+  def mount(socket), do: {:ok, socket}
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end

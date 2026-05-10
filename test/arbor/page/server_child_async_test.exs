@@ -67,7 +67,7 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       {:ok, socket}
     end
 
-    def to_state(socket) do
+    def render(socket) do
       %{data: Map.get(socket.assigns, :data), slow: socket.assigns.slow, messages: []}
     end
 
@@ -123,9 +123,11 @@ defmodule Arbor.Page.ServerChildAsyncTest do
 
     def mount(socket), do: {:ok, socket}
 
-    def to_state(socket) do
+    def render(socket) do
       %{widget: Arbor.Child.child(WidgetStore, id: "w1", test_pid: socket.assigns.test_pid)}
     end
+
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   describe "child store async + hook routing" do

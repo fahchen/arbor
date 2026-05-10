@@ -29,7 +29,7 @@ defmodule Bench.StreamStore do
     {:noreply, Arbor.Stream.stream(socket, :items, items)}
   end
 
-  def to_state(socket), do: %{items: Map.get(socket.assigns, :items, [])}
+  def render(socket), do: %{items: Map.get(socket.assigns, :items, [])}
 end
 
 defmodule Bench.StreamHelpers do

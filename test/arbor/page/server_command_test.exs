@@ -24,7 +24,7 @@ defmodule Arbor.Page.ServerCommandTest do
     end
 
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :status, "ready")}
-    def to_state(socket), do: %{status: socket.assigns.status}
+    def render(socket), do: %{status: socket.assigns.status}
 
     def handle_command(:select, %{"id" => id}, socket) do
       {:reply, %{selected: id}, Arbor.Socket.assign(socket, :status, "selected:" <> id)}
@@ -46,7 +46,7 @@ defmodule Arbor.Page.ServerCommandTest do
     command :wipe
 
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :query, "")}
-    def to_state(socket), do: %{query: socket.assigns.query}
+    def render(socket), do: %{query: socket.assigns.query}
 
     def handle_command(:change_query, %{"query" => query}, socket) do
       {:noreply, Arbor.Socket.assign(socket, :query, query)}
@@ -84,7 +84,7 @@ defmodule Arbor.Page.ServerCommandTest do
       {:ok, socket}
     end
 
-    def to_state(socket) do
+    def render(socket) do
       %{
         title: socket.assigns.title,
         filters: Arbor.Child.child(FiltersStore, id: "filters"),
@@ -129,7 +129,7 @@ defmodule Arbor.Page.ServerCommandTest do
       {:ok, Arbor.Socket.assign(socket, :ok, true)}
     end
 
-    def to_state(socket), do: %{ok: socket.assigns.ok}
+    def render(socket), do: %{ok: socket.assigns.ok}
 
     def handle_command(:restricted, _payload, socket) do
       send(socket.assigns.test_pid, :handler_should_not_run)
@@ -156,7 +156,7 @@ defmodule Arbor.Page.ServerCommandTest do
       {:ok, Arbor.Socket.assign(socket, :ok, true)}
     end
 
-    def to_state(socket), do: %{ok: socket.assigns.ok}
+    def render(socket), do: %{ok: socket.assigns.ok}
 
     def handle_command(:gated, _payload, socket) do
       send(socket.assigns.test_pid, :handler_should_not_run)
@@ -175,7 +175,7 @@ defmodule Arbor.Page.ServerCommandTest do
     command :select
 
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :id, socket.id)}
-    def to_state(socket), do: %{id: socket.assigns.id}
+    def render(socket), do: %{id: socket.assigns.id}
 
     def handle_command(:select, _payload, socket) do
       {:reply, %{selected: socket.assigns.id}, socket}
@@ -192,12 +192,14 @@ defmodule Arbor.Page.ServerCommandTest do
 
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ids, ["prod_123", "prod_456"])}
 
-    def to_state(socket) do
+    def render(socket) do
       %{
         products:
           Enum.map(socket.assigns.ids, fn id -> Arbor.Child.child(ProductCardStore, id: id) end)
       }
     end
+
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule CrashingStore do
@@ -211,7 +213,7 @@ defmodule Arbor.Page.ServerCommandTest do
     command :boom
 
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ok, true)}
-    def to_state(socket), do: %{ok: socket.assigns.ok}
+    def render(socket), do: %{ok: socket.assigns.ok}
 
     def handle_command(:boom, _payload, _socket) do
       raise "boom"

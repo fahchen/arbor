@@ -32,7 +32,9 @@ defmodule MyApp.Stores.HeaderStore do
     {:ok, socket}
   end
 
-  def to_state(socket) do
+  def render(socket) do
     %{signed_in: socket.assigns.signed_in, user_name: socket.assigns.user_name}
   end
+
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end

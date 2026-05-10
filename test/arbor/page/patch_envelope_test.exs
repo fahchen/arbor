@@ -15,7 +15,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
     end
 
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "Inbox")}
-    def to_state(socket), do: %{title: socket.assigns.title}
+    def render(socket), do: %{title: socket.assigns.title}
 
     command :rename do
       payload :title, String.t()
@@ -45,7 +45,9 @@ defmodule Arbor.Page.PatchEnvelopeTest do
       {:ok, socket}
     end
 
-    def to_state(socket), do: %{title: socket.assigns.title, messages: []}
+    def render(socket), do: %{title: socket.assigns.title, messages: []}
+
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule StreamOnlyHandlerStore do
@@ -60,7 +62,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
 
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "static")}
 
-    def to_state(socket), do: %{title: socket.assigns.title, messages: []}
+    def render(socket), do: %{title: socket.assigns.title, messages: []}
 
     command :ping
 
@@ -79,7 +81,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
     end
 
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ok, true)}
-    def to_state(socket), do: %{ok: socket.assigns.ok}
+    def render(socket), do: %{ok: socket.assigns.ok}
 
     command :ping
     def handle_command(:ping, _payload, socket), do: {:noreply, socket}

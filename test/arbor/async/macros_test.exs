@@ -15,6 +15,10 @@ defmodule Arbor.Async.MacrosTest do
               field :user, String.t()
             end
 
+            def mount(socket), do: {:ok, socket}
+            def render(socket), do: %{user: socket.assigns.user}
+            def handle_command(_name, _payload, socket), do: {:noreply, socket}
+
             def fetch(socket) do
               assign_async(socket, :user, fn -> {:ok, socket.assigns.user} end)
             end
@@ -35,6 +39,10 @@ defmodule Arbor.Async.MacrosTest do
             state do
               field :ok, boolean()
             end
+
+            def mount(socket), do: {:ok, socket}
+            def render(_socket), do: %{ok: true}
+            def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def warm(socket) do
               start_async(socket, :warm, &touch(socket, &1))
@@ -59,6 +67,10 @@ defmodule Arbor.Async.MacrosTest do
               field :user, String.t()
             end
 
+            def mount(socket), do: {:ok, socket}
+            def render(socket), do: %{user: socket.assigns.user}
+            def handle_command(_name, _payload, socket), do: {:noreply, socket}
+
             def fetch(socket) do
               user_id = socket.assigns[:user_id]
               assign_async(socket, :user, fn -> {:ok, user_id} end)
@@ -80,6 +92,10 @@ defmodule Arbor.Async.MacrosTest do
             state do
               field :user, String.t()
             end
+
+            def mount(socket), do: {:ok, socket}
+            def render(socket), do: %{user: socket.assigns.user}
+            def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def fetch(socket) do
               start_async(socket, :user, build_fun(socket))

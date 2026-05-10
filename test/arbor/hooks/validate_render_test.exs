@@ -1,7 +1,7 @@
-defmodule Arbor.Hooks.ValidateToStateTest do
+defmodule Arbor.Hooks.ValidateRenderTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Hooks.ValidateToState
+  alias Arbor.Hooks.ValidateRender
   alias Arbor.Socket
 
   defmodule MoneyState do
@@ -23,6 +23,10 @@ defmodule Arbor.Hooks.ValidateToStateTest do
       field :user_name, String.t()
       field :avatar_url, String.t() | nil
     end
+
+    def mount(socket), do: {:ok, socket}
+    def render(_socket), do: %{user_name: "Alice", avatar_url: nil}
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule TitleStore do
@@ -33,6 +37,10 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     state do
       field :title, String.t()
     end
+
+    def mount(socket), do: {:ok, socket}
+    def render(_socket), do: %{title: "Inbox"}
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule NullableStore do
@@ -43,6 +51,10 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     state do
       field :avatar_url, String.t() | nil
     end
+
+    def mount(socket), do: {:ok, socket}
+    def render(_socket), do: %{avatar_url: nil}
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule VariantStore do
@@ -53,6 +65,10 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     state do
       field :status, %{type: :active} | %{type: :paused, value: integer()}
     end
+
+    def mount(socket), do: {:ok, socket}
+    def render(_socket), do: %{status: %{type: :active}}
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule HeaderContainerStore do
@@ -60,33 +76,37 @@ defmodule Arbor.Hooks.ValidateToStateTest do
 
     use Arbor.Store
 
-    alias Arbor.Hooks.ValidateToStateTest.HeaderStore
+    alias Arbor.Hooks.ValidateRenderTest.HeaderStore
 
     state do
       field :header, HeaderStore.state()
     end
+
+    def mount(socket), do: {:ok, socket}
+    def render(_socket), do: %{header: %{user_name: "Alice", avatar_url: nil}}
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   test "Scenario: Invalid output is rejected before diffing" do
     assert {:error, [{"$.title", message}]} =
-             ValidateToState.validate(%{"title" => 42}, TitleStore)
+             ValidateRender.validate(%{"title" => 42}, TitleStore)
 
     assert message =~ "expected String.t(), got: 42"
   end
 
   test "Scenario: Null value is encoded as JSON null" do
     assert {:error, [{"$.avatar_url", "missing required field"}]} =
-             ValidateToState.validate(%{}, NullableStore)
+             ValidateRender.validate(%{}, NullableStore)
 
-    assert :ok = ValidateToState.validate(%{"avatar_url" => nil}, NullableStore)
+    assert :ok = ValidateRender.validate(%{"avatar_url" => nil}, NullableStore)
   end
 
   test "Scenario: Discriminated union codegen" do
     assert :ok =
-             ValidateToState.validate(%{"status" => %{"type" => "active"}}, VariantStore)
+             ValidateRender.validate(%{"status" => %{"type" => "active"}}, VariantStore)
 
     assert :ok =
-             ValidateToState.validate(
+             ValidateRender.validate(
                %{"status" => %{"type" => "paused", "value" => 3}},
                VariantStore
              )
@@ -99,7 +119,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
 
   test "Scenario: Raw map populates the field without mounting a child store" do
     assert :ok =
-             ValidateToState.validate(
+             ValidateRender.validate(
                %{"header" => %{"user_name" => "Alice", "avatar_url" => nil}},
                HeaderContainerStore
              )
@@ -109,7 +129,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     # Track A substitutes the child placeholder before this hook runs, so validation
     # sees the same wire-form map shape as the raw-map scenario.
     assert :ok =
-             ValidateToState.validate(
+             ValidateRender.validate(
                %{"header" => %{"user_name" => "Alice", "avatar_url" => nil}},
                HeaderContainerStore
              )
@@ -120,7 +140,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     attach_telemetry_handler(self())
 
     assert_raise ArgumentError, ~r/\$\.title/, fn ->
-      ValidateToState.after_serialize(:raise, %{"title" => 42}, socket)
+      ValidateRender.after_serialize(:raise, %{"title" => 42}, socket)
     end
 
     assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
@@ -133,7 +153,7 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     attach_telemetry_handler(self())
 
     assert {:cont, ^socket} =
-             ValidateToState.after_serialize(:telemetry, %{"title" => 42}, socket)
+             ValidateRender.after_serialize(:telemetry, %{"title" => 42}, socket)
 
     assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
 
@@ -145,14 +165,14 @@ defmodule Arbor.Hooks.ValidateToStateTest do
     attach_telemetry_handler(self())
 
     assert {:cont, ^socket} =
-             ValidateToState.after_serialize(:raise, %{"title" => "Inbox"}, socket)
+             ValidateRender.after_serialize(:raise, %{"title" => "Inbox"}, socket)
 
     assert_receive {:telemetry_event, [:arbor, :validate, :stop], %{count: 1}, metadata}
     assert %{store_module: TitleStore, errors: []} = metadata
   end
 
   defp attach_telemetry_handler(test_pid) do
-    handler_id = "validate-to-state-#{System.unique_integer([:positive, :monotonic])}"
+    handler_id = "validate-render-#{System.unique_integer([:positive, :monotonic])}"
 
     :telemetry.attach_many(
       handler_id,

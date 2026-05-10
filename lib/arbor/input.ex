@@ -4,7 +4,7 @@ defmodule Arbor.Input do
 
   Input modules are pure data types used as command-payload field shapes.
   They are distinct from `Arbor.State` (render output) and `Arbor.Store`
-  (mountable runtime nodes): no `mount/1`, no `to_state/1`, no commands, no
+  (mountable runtime nodes): no `mount/1`, no `render/1`, no commands, no
   streams, no child eligibility. Only typed fields and validation.
 
   Inputs participate in:

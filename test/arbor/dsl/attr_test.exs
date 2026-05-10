@@ -9,6 +9,10 @@ defmodule Arbor.DSL.AttrTest do
     attr :current_user, String.t(), required: true
     attr :selected, boolean(), default: false
     attr :on_select, (%{id: String.t()} -> any()), required: true
+
+    def mount(socket), do: {:ok, socket}
+    def render(_socket), do: %{}
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   test "attr metadata is exposed through __arbor__(:attrs)" do

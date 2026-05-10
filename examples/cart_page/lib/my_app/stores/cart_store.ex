@@ -88,7 +88,7 @@ defmodule MyApp.Stores.CartStore do
     {:reply, %{"order_id" => order_id}, socket}
   end
 
-  def to_state(socket) do
+  def render(socket) do
     %{
       lines:
         for line <- socket.assigns.lines do

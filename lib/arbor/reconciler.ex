@@ -88,7 +88,7 @@ defmodule Arbor.Reconciler do
   end
 
   @doc """
-  Runs `mount/1` when present; otherwise returns the original socket.
+  Runs the required `mount/1` callback and returns the initialized socket.
 
   ## Examples
 
@@ -101,14 +101,7 @@ defmodule Arbor.Reconciler do
   """
   @spec mount_store(Socket.t()) :: Socket.t()
   def mount_store(%Socket{module: module} = socket) when is_atom(module) do
-    result =
-      if function_exported?(module, :mount, 1) do
-        module.mount(socket)
-      else
-        {:ok, socket}
-      end
-
-    validate_callback_result!(module, :mount, 1, result)
+    validate_callback_result!(module.mount(socket), module, :mount, 1)
   end
 
   @doc """
@@ -133,7 +126,7 @@ defmodule Arbor.Reconciler do
         {:ok, Socket.assign(socket, new_assigns)}
       end
 
-    validate_callback_result!(module, :update, 2, result)
+    validate_callback_result!(result, module, :update, 2)
   end
 
   @doc """
@@ -219,14 +212,14 @@ defmodule Arbor.Reconciler do
     )
   end
 
-  @spec validate_callback_result!(module(), atom(), pos_integer(), {:ok, Socket.t()} | tuple()) ::
+  @spec validate_callback_result!({:ok, Socket.t()} | tuple(), module(), atom(), pos_integer()) ::
           Socket.t()
-  defp validate_callback_result!(module, fun, arity, {:ok, %Socket{} = socket})
+  defp validate_callback_result!({:ok, %Socket{} = socket}, module, fun, arity)
        when is_atom(module) and is_atom(fun) and is_integer(arity) do
     socket
   end
 
-  defp validate_callback_result!(module, fun, arity, other)
+  defp validate_callback_result!(other, module, fun, arity)
        when is_atom(module) and is_atom(fun) and is_integer(arity) do
     raise ArgumentError,
           "bad callback response from #{inspect(module)}.#{fun}/#{arity}: expected {:ok, %Arbor.Socket{}}, got #{inspect(other)}"

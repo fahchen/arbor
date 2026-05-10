@@ -101,7 +101,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:ok, socket}
     end
 
-    def to_state(socket) do
+    def render(socket) do
       %{
         profile: socket.assigns.profile,
         user: socket.assigns.user,
@@ -291,7 +291,7 @@ defmodule Arbor.Page.ServerAsyncTest do
 
     def mount(socket), do: {:ok, socket}
 
-    def to_state(_socket), do: %{}
+    def render(_socket), do: %{}
 
     def handle_command(:load_messages, _payload, socket) do
       {:noreply, Arbor.Async.stream_async(socket, :messages, fn -> {:ok, []} end)}
