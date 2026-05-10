@@ -47,58 +47,50 @@ defmodule Arbor.Codegen.TypeScript do
 
   @async_result_alias "AsyncResult"
 
-  @doc """
-  Returns whether `module` is TypeScript-codegen-eligible: it must be an Arbor
-  store/state module that opted into the `Arbor.Plugin.TypeScript` plugin.
-
-  ## Examples
-
-      iex> Arbor.Codegen.TypeScript.eligible?(Arbor.TestSupport.TypespecProbe)
-      true
-      iex> Arbor.Codegen.TypeScript.eligible?(Arbor.Socket)
-      false
+  @typedoc """
+  An entry produced by `Arbor.Codegen.TypeScript.Manifest.list/0` and
+  consumed by `render/1`. Pre-loaded reflection data — `render/1` performs no
+  module-callback lookups itself.
   """
-  @spec eligible?(module()) :: boolean()
-  def eligible?(module) when is_atom(module) do
-    Code.ensure_loaded?(module) and
-      function_exported?(module, :__arbor__, 1) and
-      has_ts_attribute?(module)
-  end
+  @type entry() :: {module(), %{fields: list(), commands: list()}}
 
   @doc """
-  Renders one TypeScript bundle covering every module in `modules`. Modules
-  must be already-loaded Arbor `state do` modules (filter via `eligible?/1`
-  upstream).
+  Renders one TypeScript bundle covering every `{module, data}` entry in
+  `entries`.
 
   Returns the rendered source string. Raises `ArgumentError` on a duplicate
   fully-qualified module name (defensive — real modules can't collide).
 
   ## Examples
 
-      iex> rendered = Arbor.Codegen.TypeScript.render([Arbor.TestSupport.TypespecProbe])
+      iex> entry = {Arbor.TestSupport.TypespecProbe, %{
+      ...>   fields: List.wrap(Arbor.TestSupport.TypespecProbe.__arbor__(:fields)),
+      ...>   commands: List.wrap(Arbor.TestSupport.TypespecProbe.__arbor__(:commands))
+      ...> }}
+      iex> rendered = Arbor.Codegen.TypeScript.render([entry])
       iex> String.contains?(rendered, "export namespace Arbor")
       true
       iex> String.contains?(rendered, "export type TypespecProbe = {")
       true
   """
-  @spec render([module()]) :: String.t()
-  def render(modules) when is_list(modules) do
-    modules
-    |> Enum.uniq()
-    |> Enum.sort_by(&Module.split/1)
+  @spec render([entry()]) :: String.t()
+  def render(entries) when is_list(entries) do
+    entries
+    |> Enum.uniq_by(fn {module, _data} -> module end)
+    |> Enum.sort_by(fn {module, _data} -> Module.split(module) end)
     |> validate_no_duplicates!()
     |> build_tree()
     |> emit_bundle()
   end
 
-  defp validate_no_duplicates!(modules) do
+  defp validate_no_duplicates!(entries) do
     duplicates =
-      modules
-      |> Enum.frequencies_by(&Module.split/1)
+      entries
+      |> Enum.frequencies_by(fn {module, _data} -> Module.split(module) end)
       |> Enum.filter(fn {_path, count} -> count > 1 end)
 
     case duplicates do
-      [] -> modules
+      [] -> entries
       _list -> raise ArgumentError, "duplicate Arbor module paths: #{inspect(duplicates)}"
     end
   end
@@ -107,26 +99,26 @@ defmodule Arbor.Codegen.TypeScript do
   # Module tree
   # ---------------------------------------------------------------------------
   #
-  # Builds a nested `%{segment => {children_map, leaf_module_or_nil}}` tree.
-  # `leaf_module` is non-nil at the node whose full path equals an Arbor
+  # Builds a nested `%{segment => {children_map, leaf_entry_or_nil}}` tree.
+  # `leaf_entry` is non-nil at the node whose full path equals an Arbor
   # module; the node may also have children (a module's name being a prefix
   # of another module's path is fine — TS allows declaration merging between
   # `export type X` and `export namespace X`).
-  defp build_tree(modules) do
-    Enum.reduce(modules, %{}, fn module, acc ->
-      insert_module(acc, Module.split(module), module)
+  defp build_tree(entries) do
+    Enum.reduce(entries, %{}, fn {module, _data} = entry, acc ->
+      insert_entry(acc, Module.split(module), entry)
     end)
   end
 
-  defp insert_module(tree, [last], module) do
-    Map.update(tree, last, {%{}, module}, fn {children, _existing} ->
-      {children, module}
+  defp insert_entry(tree, [last], entry) do
+    Map.update(tree, last, {%{}, entry}, fn {children, _existing} ->
+      {children, entry}
     end)
   end
 
-  defp insert_module(tree, [head | rest], module) do
-    Map.update(tree, head, {insert_module(%{}, rest, module), nil}, fn {children, leaf} ->
-      {insert_module(children, rest, module), leaf}
+  defp insert_entry(tree, [head | rest], entry) do
+    Map.update(tree, head, {insert_entry(%{}, rest, entry), nil}, fn {children, leaf} ->
+      {insert_entry(children, rest, entry), leaf}
     end)
   end
 
@@ -168,7 +160,7 @@ defmodule Arbor.Codegen.TypeScript do
     |> Enum.intersperse("\n")
   end
 
-  # Cases (segment may carry a leaf module, children namespaces, or both):
+  # Cases (segment may carry a leaf entry, children namespaces, or both):
   #
   #   * leaf only, no commands           → `export type <seg> = {...}`
   #   * leaf only, has commands          → type decl + adjacent
@@ -176,18 +168,18 @@ defmodule Arbor.Codegen.TypeScript do
   #   * children only                    → `export namespace <seg> { children }`
   #   * leaf + children (decl merging)   → type decl + `export namespace <seg>
   #                                        { children + optional Commands }`
-  defp emit_node({segment, {children, leaf_module}}, depth) do
+  defp emit_node({segment, {children, leaf_entry}}, depth) do
     indent = String.duplicate("  ", depth)
 
     cond do
-      leaf_module && map_size(children) == 0 ->
-        emit_leaf(segment, leaf_module, indent, depth)
+      leaf_entry && map_size(children) == 0 ->
+        emit_leaf(segment, leaf_entry, indent, depth)
 
-      leaf_module ->
+      leaf_entry ->
         [
-          render_state_decl_for_module(segment, leaf_module, indent),
+          render_state_decl_for_entry(segment, leaf_entry, indent),
           "\n",
-          emit_namespace_block(segment, children, leaf_module, indent, depth)
+          emit_namespace_block(segment, children, leaf_entry, indent, depth)
         ]
 
       true ->
@@ -195,9 +187,8 @@ defmodule Arbor.Codegen.TypeScript do
     end
   end
 
-  defp emit_leaf(segment, module, indent, depth) do
-    state_decl = render_state_decl_for_module(segment, module, indent)
-    commands = List.wrap(module.__arbor__(:commands))
+  defp emit_leaf(segment, {_module, %{commands: commands}} = entry, indent, depth) do
+    state_decl = render_state_decl_for_entry(segment, entry, indent)
 
     if commands == [] do
       state_decl
@@ -210,13 +201,13 @@ defmodule Arbor.Codegen.TypeScript do
     end
   end
 
-  defp emit_namespace_block(segment, children, leaf_module, indent, depth) do
+  defp emit_namespace_block(segment, children, leaf_entry, indent, depth) do
     inner_depth = depth + 1
     inner_indent = String.duplicate("  ", inner_depth)
     children_body = emit_tree(children, inner_depth)
 
     commands_body =
-      case leaf_module && List.wrap(leaf_module.__arbor__(:commands)) do
+      case leaf_entry && elem(leaf_entry, 1).commands do
         list when is_list(list) and list != [] ->
           ["\n", render_commands_type(list, inner_indent)]
 
@@ -236,16 +227,10 @@ defmodule Arbor.Codegen.TypeScript do
     ]
   end
 
-  defp render_state_decl_for_module(segment, module, indent) do
-    fields =
-      module
-      |> module_fields()
-      |> resolve_field_aliases(module)
-
+  defp render_state_decl_for_entry(segment, {module, %{fields: fields}}, indent) do
+    fields = resolve_field_aliases(fields, module)
     render_state_decl(segment, fields, indent)
   end
-
-  defp module_fields(module), do: List.wrap(module.__arbor__(:fields))
 
   # Pre-resolve every `{:__aliases__, _, parts}` node inside a module's field
   # types against the host module's parent namespaces so codegen can render
@@ -455,12 +440,4 @@ defmodule Arbor.Codegen.TypeScript do
   defp async_result_alias?({:__aliases__, _meta, [:Arbor, :AsyncResult]}), do: true
   defp async_result_alias?(Arbor.AsyncResult), do: true
   defp async_result_alias?(_other), do: false
-
-  defp has_ts_attribute?(module) do
-    case Keyword.get(module.__info__(:attributes), :__arbor_ts__) do
-      nil -> false
-      [] -> false
-      _value -> true
-    end
-  end
 end

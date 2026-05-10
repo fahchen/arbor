@@ -5,16 +5,12 @@ defmodule Arbor.Codegen.TypeScriptTest do
   alias Arbor.TestSupport.TypespecProbe
   alias Arbor.TestSupport.TypespecProbeChild
 
-  describe "eligible?/1" do
-    test "true for modules that opted into the TypeScript plugin" do
-      assert TypeScript.eligible?(TypespecProbe)
-      assert TypeScript.eligible?(TypespecProbeChild)
-    end
-
-    test "false for non-Arbor modules" do
-      refute TypeScript.eligible?(Arbor.Socket)
-      refute TypeScript.eligible?(__MODULE__)
-    end
+  defp entry(module) do
+    {module,
+     %{
+       fields: List.wrap(module.__arbor__(:fields)),
+       commands: List.wrap(module.__arbor__(:commands))
+     }}
   end
 
   describe "render_type/1" do
@@ -64,7 +60,7 @@ defmodule Arbor.Codegen.TypeScriptTest do
 
   describe "render/1" do
     test "emits a single bundle with nested namespaces mirroring the module tree" do
-      contents = TypeScript.render([TypespecProbe, TypespecProbeChild])
+      contents = TypeScript.render([entry(TypespecProbe), entry(TypespecProbeChild)])
 
       # Top-level AsyncResult preamble lives outside any namespace
       assert contents =~ "export type AsyncResult<T>"
@@ -84,7 +80,7 @@ defmodule Arbor.Codegen.TypeScriptTest do
     end
 
     test "Arbor.State module emits a type without a Commands namespace" do
-      contents = TypeScript.render([TypespecProbeChild])
+      contents = TypeScript.render([entry(TypespecProbeChild)])
 
       assert contents =~ "export type TypespecProbeChild = {"
       refute contents =~ "Commands"

@@ -1,91 +1,109 @@
 defmodule Mix.Tasks.Compile.ArborTsTest do
-  use ExUnit.Case, async: true
+  # async: false because the test scopes a manifest target_dir override via
+  # Process dict and writes the rendered bundle to the configured
+  # `:ts_codegen_output_path` (which `config/test.exs` points at
+  # `test/tmp/arbor_ts_bundle.ts`). Concurrent runs would race on that path.
+  use ExUnit.Case, async: false
 
-  alias Arbor.Codegen.TypeScript
+  alias Arbor.Codegen.TypeScript.Manifest
   alias Arbor.TestSupport.TypespecProbe
+  alias Arbor.TestSupport.TypespecProbeChild
   alias Mix.Tasks.Compile.ArborTs
 
   setup do
-    tmp = Path.join(System.tmp_dir!(), "arbor_ts_compiler_#{:erlang.unique_integer([:positive])}")
-    File.mkdir_p!(tmp)
-    on_exit(fn -> File.rm_rf!(tmp) end)
-    {:ok, tmp: tmp, output: Path.join(tmp, "arbor.ts")}
+    target =
+      Path.join(
+        System.tmp_dir!(),
+        "arbor_ts_compile_#{:erlang.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(target)
+    Process.put(:__arbor_ts_target_dir__, target)
+
+    output_path = Application.fetch_env!(:arbor, :ts_codegen_output_path)
+    File.mkdir_p!(Path.dirname(output_path))
+    File.rm(output_path)
+
+    on_exit(fn ->
+      File.rm_rf!(target)
+      File.rm(output_path)
+    end)
+
+    {:ok, target: target, output_path: output_path}
   end
 
-  describe "do_run/3 with no eligible modules" do
-    test "returns :noop without writing the bundle file when none exists", %{output: output} do
-      assert ArborTs.do_run([], [], output) == :noop
-      refute File.exists?(output)
+  describe "run/1 — empty manifest" do
+    test "returns :noop and does not create the bundle file", %{output_path: output_path} do
+      assert ArborTs.run([]) == :noop
+      refute File.exists?(output_path)
     end
 
-    test "returns :noop in --check mode when no bundle file exists", %{output: output} do
-      assert ArborTs.do_run(["--check"], [], output) == :noop
-      refute File.exists?(output)
+    test "returns :noop in --check mode", %{output_path: output_path} do
+      assert ArborTs.run(["--check"]) == :noop
+      refute File.exists?(output_path)
+    end
+  end
+
+  describe "run/1 — populated manifest" do
+    setup %{target: target} do
+      Manifest.stamp(TypespecProbe, "lib/x.ex", target)
+      Manifest.stamp(TypespecProbeChild, "lib/y.ex", target)
+      :ok
     end
 
-    test "rewrites a stale bundle when one exists on disk", %{output: output} do
-      File.write!(output, "// stale content from prior generation\n")
-      assert {:ok, []} = ArborTs.do_run([], [], output)
-      assert File.read!(output) == TypeScript.render([])
+    test "writes a fresh bundle covering every stamped module", %{output_path: output_path} do
+      assert {:ok, []} = ArborTs.run([])
+
+      contents = File.read!(output_path)
+      assert contents =~ "export type AsyncResult<T>"
+      assert contents =~ "export type TypespecProbe = {"
+      assert contents =~ "export type TypespecProbeChild = {"
     end
 
-    test "returns drift diagnostic in --check mode when a stale bundle exists", %{output: output} do
-      File.write!(output, "// stale content from prior generation\n")
+    test "returns :noop when the bundle already matches", %{output_path: output_path} do
+      assert {:ok, []} = ArborTs.run([])
+      assert ArborTs.run([]) == :noop
+      assert File.exists?(output_path)
+    end
 
-      assert {:error, [diagnostic]} = ArborTs.do_run(["--check"], [], output)
+    test "rewrites a stale bundle", %{output_path: output_path} do
+      File.write!(output_path, "// stale\n")
+      assert {:ok, []} = ArborTs.run([])
+      assert File.read!(output_path) =~ "export type TypespecProbe = {"
+    end
+
+    test "--check returns drift diagnostic on mismatch and does not write",
+         %{output_path: output_path} do
+      File.write!(output_path, "// stale\n")
+
+      assert {:error, [diagnostic]} = ArborTs.run(["--check"])
       assert diagnostic.severity == :error
       assert diagnostic.compiler_name == "arbor_ts"
-      assert File.read!(output) == "// stale content from prior generation\n"
-    end
-  end
-
-  describe "do_run/3 with eligible modules" do
-    test "writes the bundle when the file is missing", %{output: output} do
-      assert {:ok, []} = ArborTs.do_run([], [TypespecProbe], output)
-      assert File.exists?(output)
-      assert File.read!(output) == TypeScript.render([TypespecProbe])
+      assert diagnostic.file == output_path
+      assert File.read!(output_path) == "// stale\n"
     end
 
-    test "returns :noop when on-disk contents match", %{output: output} do
-      File.write!(output, TypeScript.render([TypespecProbe]))
-      assert ArborTs.do_run([], [TypespecProbe], output) == :noop
-    end
-
-    test "rewrites the bundle on drift", %{output: output} do
-      File.write!(output, "// stale\n")
-      assert {:ok, []} = ArborTs.do_run([], [TypespecProbe], output)
-      assert File.read!(output) == TypeScript.render([TypespecProbe])
-    end
-  end
-
-  describe "do_run/3 --check" do
-    test "returns :noop when bundle on disk matches the renderer", %{output: output} do
-      File.write!(output, TypeScript.render([TypespecProbe]))
-      assert ArborTs.do_run(["--check"], [TypespecProbe], output) == :noop
-    end
-
-    test "returns an error diagnostic on drift and does not touch the file", %{output: output} do
-      File.write!(output, "// stale\n")
-
-      assert {:error, [diagnostic]} = ArborTs.do_run(["--check"], [TypespecProbe], output)
-      assert diagnostic.compiler_name == "arbor_ts"
-      assert diagnostic.severity == :error
-      assert diagnostic.file == output
-      assert diagnostic.message =~ "out of date"
-      assert File.read!(output) == "// stale\n"
-    end
-
-    test "returns an error diagnostic when the file is missing", %{output: output} do
-      assert {:error, [diagnostic]} = ArborTs.do_run(["--check"], [TypespecProbe], output)
-      assert diagnostic.severity == :error
-      refute File.exists?(output)
+    test "--check returns :noop when bundle matches", %{output_path: output_path} do
+      assert {:ok, []} = ArborTs.run([])
+      assert ArborTs.run(["--check"]) == :noop
+      assert File.exists?(output_path)
     end
   end
 
   describe "manifests/0" do
-    test "returns one manifest path under the project's manifest dir" do
-      assert [path] = ArborTs.manifests()
-      assert String.ends_with?(path, "compile.arbor_ts")
+    test "returns the manifest target dir so `mix clean` removes it", %{target: target} do
+      assert ArborTs.manifests() == [target]
+    end
+  end
+
+  describe "clean/0" do
+    test "deletes the manifest target dir", %{target: target} do
+      Manifest.stamp(TypespecProbe, "lib/x.ex", target)
+      assert File.dir?(Path.join(target, inspect(TypespecProbe)))
+
+      ArborTs.clean()
+
+      refute File.exists?(target)
     end
   end
 end
