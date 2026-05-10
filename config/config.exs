@@ -6,7 +6,15 @@ import Config
 #
 # Override in an application's own config to disable validation
 # (`[]`), replace the validator, or stack additional hooks.
-default_hooks =
+
+# `:before_command` schema validation runs in every environment so malformed
+# payloads crash the runtime per BDR-0003 (let-it-crash) instead of reaching
+# user-defined `handle_command/3` clauses with the wrong shape.
+command_schema_hook =
+  {Arbor.Hooks.ValidateCommandSchema, :before_command,
+   &Arbor.Hooks.ValidateCommandSchema.before_command/3}
+
+state_validation_hooks =
   if config_env() == :dev do
     [
       {Arbor.Hooks.ValidateToState, :after_serialize,
@@ -16,4 +24,4 @@ default_hooks =
     []
   end
 
-config :arbor, :default_hooks, default_hooks
+config :arbor, :default_hooks, [command_schema_hook | state_validation_hooks]
