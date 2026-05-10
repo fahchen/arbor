@@ -2,6 +2,7 @@
   "files": [],
   "include": [],
   "references": [
-    { "path": "./packages/client/tsconfig.json" }
+    { "path": "./packages/client/tsconfig.json" },
+    { "path": "./packages/react/tsconfig.json" }
   ]
 }
