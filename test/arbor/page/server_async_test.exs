@@ -1,6 +1,10 @@
 defmodule Arbor.Page.ServerAsyncTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
+  require Logger
+
   alias Arbor.AsyncResult
   alias Arbor.Page.PatchEnvelope
   alias Arbor.Page.Server
@@ -108,6 +112,8 @@ defmodule Arbor.Page.ServerAsyncTest do
                op.op == "replace" and op.path == "/profile/result" and
                  op.value == %{"name" => "ada"}
              end)
+
+      shutdown_server(pid)
     end
   end
 
@@ -125,6 +131,8 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert Enum.any?(ops, fn op ->
                op.op == "replace" and op.path == "/cache_status" and op.value == "warm:ada"
              end)
+
+      shutdown_server(pid)
     end
   end
 
@@ -135,17 +143,22 @@ defmodule Arbor.Page.ServerAsyncTest do
       pid = start!()
       flush_initial!()
 
-      assert {:ok, _reply} = Server.command(pid, [], :raising_handle_async, %{})
+      capture_log(fn ->
+        assert {:ok, _reply} = Server.command(pid, [], :raising_handle_async, %{})
 
-      assert_receive {:telemetry, [:arbor, :async, :exception], _measurements, metadata}, 1_000
-      assert metadata.name == :raises
-      assert metadata.kind == :start
+        assert_receive {:telemetry, [:arbor, :async, :exception], _measurements, metadata}, 1_000
+        assert metadata.name == :raises
+        assert metadata.kind == :start
 
-      # Page server still alive
-      assert Process.alive?(pid)
+        # Page server still alive
+        assert Process.alive?(pid)
 
-      # Subsequent commands still work
-      assert {:ok, _reply} = Server.command(pid, [], :load_profile, %{"name" => "after_crash"})
+        # Subsequent commands still work
+        assert {:ok, _reply} = Server.command(pid, [], :load_profile, %{"name" => "after_crash"})
+        Logger.flush()
+      end)
+
+      shutdown_server(pid)
     end
   end
 
@@ -164,6 +177,8 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert Enum.any?(ops, fn op ->
                op.op == "replace" and op.path == "/profile/status" and op.value == "failed"
              end)
+
+      shutdown_server(pid)
     end
   end
 
@@ -202,5 +217,25 @@ defmodule Arbor.Page.ServerAsyncTest do
     )
 
     on_exit(fn -> :telemetry.detach(handler_id) end)
+  end
+
+  # Page-server shutdown emits a runtime log from `terminate/2`. Synchronize
+  # teardown under `capture_log/1` so repeated seeded test runs stay quiet.
+  defp shutdown_server(pid) when is_pid(pid) do
+    if Process.alive?(pid) do
+      ref = Process.monitor(pid)
+
+      capture_log(fn ->
+        GenServer.stop(pid, :shutdown)
+
+        receive do
+          {:DOWN, ^ref, _type, _object, _reason} -> :ok
+        after
+          1_000 -> :ok
+        end
+
+        Logger.flush()
+      end)
+    end
   end
 end

@@ -1,6 +1,10 @@
 defmodule Arbor.Transport.ChannelTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
+  require Logger
+
   alias Arbor.Page.PatchEnvelope
 
   defmodule TestEndpoint do
@@ -57,8 +61,33 @@ defmodule Arbor.Transport.ChannelTest do
     :ok
   end
 
+  setup do
+    Process.flag(:trap_exit, true)
+    :ok
+  end
+
+  # Channel teardown emits a `Logger.error` from the linked page server's
+  # `terminate/2`. Global `capture_log: true` is racy here because the page
+  # server lives in its own process and its log write can outlive the test
+  # body, so we synchronize the teardown explicitly under `capture_log/1`.
+  defp shutdown_channel(%Phoenix.Socket{channel_pid: channel_pid}) do
+    ref = Process.monitor(channel_pid)
+
+    capture_log(fn ->
+      Process.exit(channel_pid, :shutdown)
+
+      receive do
+        {:DOWN, ^ref, _type, _pid, _reason} -> :ok
+      after
+        1_000 -> :ok
+      end
+
+      Logger.flush()
+    end)
+  end
+
   test "join starts a page server and pushes the initial patch envelope" do
-    {:ok, _reply, _socket} =
+    {:ok, _reply, socket} =
       UserSocket
       |> socket("user_id", %{})
       |> subscribe_and_join(PageChannel, "page:home", %{})
@@ -70,6 +99,8 @@ defmodule Arbor.Transport.ChannelTest do
       "ops" => [%{op: "replace", path: "", value: %{"title" => "Inbox"}}],
       "stream_ops" => []
     })
+
+    shutdown_channel(socket)
   end
 
   test "command event flows through Arbor.Page.Server.command/4 and replies + patches" do
@@ -94,6 +125,8 @@ defmodule Arbor.Transport.ChannelTest do
       "base_version" => 1,
       "ops" => [%{op: "replace", path: "/title", value: "Outbox"}]
     })
+
+    shutdown_channel(socket)
   end
 
   test "to_wire/1 returns string-keyed envelope ready for Phoenix.Channel.push/3" do

@@ -1,6 +1,8 @@
 defmodule Arbor.Page.PatchEnvelopeTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias Arbor.Page.PatchEnvelope
   alias Arbor.Page.Server
   alias Arbor.Stream
@@ -92,7 +94,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
 
   describe "Rule: Initial state is delivered via the first patch envelope" do
     test "first envelope is base_version: 0, version: 1, single replace at root" do
-      {:ok, _pid} = Server.start_link({TitleStore, %{}, %{transport_pid: self()}})
+      {:ok, pid} = Server.start_link({TitleStore, %{}, %{transport_pid: self()}})
 
       assert_receive {:patch, envelope}
 
@@ -103,10 +105,12 @@ defmodule Arbor.Page.PatchEnvelopeTest do
                ops: [%{op: "replace", path: "", value: %{"title" => "Inbox"}}],
                stream_ops: []
              } = envelope
+
+      capture_log(fn -> GenServer.stop(pid, :shutdown) end)
     end
 
     test "mount-time stream seeds split between ops (empty list at path) and stream_ops" do
-      {:ok, _pid} = Server.start_link({SeedingStore, %{}, %{transport_pid: self()}})
+      {:ok, pid} = Server.start_link({SeedingStore, %{}, %{transport_pid: self()}})
 
       assert_receive {:patch, envelope}
 
@@ -126,6 +130,8 @@ defmodule Arbor.Page.PatchEnvelopeTest do
                %{op: "insert", stream: "messages", item_key: "messages-1"},
                %{op: "insert", stream: "messages", item_key: "messages-2"}
              ] = stream_ops
+
+      capture_log(fn -> GenServer.stop(pid, :shutdown) end)
     end
   end
 
