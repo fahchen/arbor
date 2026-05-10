@@ -41,6 +41,7 @@ If the spec feels wrong, flag the discrepancy in the PR — never silently edit 
 - **Never** use `Process.sleep` in tests — use built-in wait/retry mechanisms or assertions with timeouts
 - **Test ordering:** test cases (`describe`/`test`) at the top, helper functions and setup at the bottom. Use `setup` and `@tag` to organize test preparation — avoid inline helper calls
 - **Always** use pattern matching in test assertions — never `assert x.field == value`
+- **Test final socket state, not intermediate process.** Drive the command, sync on a barrier (terminal patch envelope or `[:arbor, :async, :stop | :exception]` telemetry), then assert directly on `socket.assigns.<field>` by reading `:sys.get_state(pid)` and walking the store registry. Don't pin patch-envelope sequencing, telemetry interleaving, or tracking-private-key shape mid-flight — those couple the suite to runtime plumbing. Lifecycle assertions (loading visibility, demonitor-before-kill) belong in small focused tests whose stated subject IS the lifecycle, not as asides in happy-path tests.
 - **Never** seed global/shared data in tests or `test/test_helper.exs` — each test must insert the rows it needs explicitly
 - **Never** use `Application.put_env` in tests — configure test values in `config/test.exs`
 - **Never** force-push (including `--force-with-lease`). To address review feedback, stack a new commit on the branch tip — do not amend and force
