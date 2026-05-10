@@ -14,6 +14,12 @@ command_schema_hook =
   {Arbor.Hooks.ValidateCommandSchema, :before_command,
    &Arbor.Hooks.ValidateCommandSchema.before_command/3}
 
+# Drains pending stream ops from each `Arbor.LiveStream` marked changed and
+# prunes the struct. Runs in every environment because the page runtime reads
+# the drained accumulator after the resolver returns to build the envelope.
+prune_streams_hook =
+  {Arbor.Hooks.PruneStreams, :after_serialize, &Arbor.Hooks.PruneStreams.after_serialize/2}
+
 state_validation_hooks =
   if config_env() == :dev do
     [
@@ -24,7 +30,9 @@ state_validation_hooks =
     []
   end
 
-config :arbor, :default_hooks, [command_schema_hook | state_validation_hooks]
+config :arbor,
+       :default_hooks,
+       [command_schema_hook, prune_streams_hook | state_validation_hooks]
 
 if File.exists?(Path.join(__DIR__, "#{config_env()}.exs")) do
   import_config "#{config_env()}.exs"
