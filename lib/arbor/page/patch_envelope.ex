@@ -32,7 +32,7 @@ defmodule Arbor.Page.PatchEnvelope do
           optional(:value) => term()
         }
 
-  @typedoc "Stream-op shape produced by the `Arbor.Stream` accumulator."
+  @typedoc "Wire stream-op shape produced by `Arbor.Page.Server` from the `Arbor.Stream` accumulator."
   @type stream_op() :: map()
 
   typed_structor do
@@ -57,7 +57,7 @@ defmodule Arbor.Page.PatchEnvelope do
     field :stream_ops, [stream_op()],
       default: [],
       doc:
-        "Ordered ops for stream-typed slots (configure/reset/insert/delete). Applied after `ops` in array order on the client (BDR-0018)."
+        "Ordered wire ops for stream-typed slots (reset/insert/delete, each tagged with `store_id`). Applied after `ops` in array order on the client (BDR-0018)."
   end
 
   @doc """

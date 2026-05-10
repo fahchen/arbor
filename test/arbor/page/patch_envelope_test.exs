@@ -132,8 +132,8 @@ defmodule Arbor.Page.PatchEnvelopeTest do
 
       # Stream content flows entirely through stream_ops.
       assert [
-               %{op: "insert", stream: "messages", item_key: "messages-1"},
-               %{op: "insert", stream: "messages", item_key: "messages-2"}
+               %{op: "insert", stream: "messages", store_id: [], item_key: "messages-1"},
+               %{op: "insert", stream: "messages", store_id: [], item_key: "messages-2"}
              ] = stream_ops
     end
   end
@@ -164,7 +164,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
       {:ok, %{}} = Server.command(pid, [], :ping, %{})
       assert_receive {:patch, env}
 
-      assert %PatchEnvelope{ops: [], stream_ops: [%{op: "insert"}]} = env
+      assert %PatchEnvelope{ops: [], stream_ops: [%{op: "insert", store_id: []}]} = env
     end
   end
 

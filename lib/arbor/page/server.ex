@@ -599,6 +599,7 @@ defmodule Arbor.Page.Server do
     case StoreRegistry.get(registry, store_id) do
       %Entry{socket: socket} = entry ->
         {entry_ops, next_socket} = Stream.flush_pending_ops(socket)
+        entry_ops = Enum.map(entry_ops, &Map.put(&1, :store_id, store_id))
 
         next_registry =
           StoreRegistry.put(registry, store_id, %{entry | socket: next_socket})

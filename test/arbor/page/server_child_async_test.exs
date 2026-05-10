@@ -214,6 +214,14 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       await_task!()
       sync_server!(pid)
 
+      assert_received {:patch,
+                       %PatchEnvelope{
+                         stream_ops: [
+                           %{op: "insert", stream: "messages", store_id: ["w1"]},
+                           %{op: "insert", stream: "messages", store_id: ["w1"]}
+                         ]
+                       }}
+
       assert_received {:telemetry, [:arbor, :async, :stop], _, %{name: :messages, status: :ok}}
       assert %AsyncResult{status: :ok, result: true} = child_assign(pid, :messages)
     end

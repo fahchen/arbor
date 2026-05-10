@@ -4,10 +4,11 @@ defmodule Arbor.Stream do
 
   Stream-typed slots (declared via `stream/2,3` inside `state do`) carry
   collections whose materialization is **owned by the client**. The server
-  queues raw delta ops (`configure`/`reset`/`insert`/`delete`) on a per-stream
+  queues raw delta ops (`reset`/`insert`/`delete`) on a per-stream
   `Arbor.Stream.Slot` struct stored under `socket.assigns.__streams__`. Each
-  cycle's queued ops drain into the patch envelope's `stream_ops` and the
-  struct is pruned (BDR-0014, BDR-0018).
+  cycle's queued ops drain into the patch envelope's `stream_ops`, where the
+  page runtime stamps each op with its owning `store_id`, and the struct is
+  pruned (BDR-0014, BDR-0018).
 
   The runtime does not keep an ordered `item_keys` list, does not decide
   upsert-vs-insert, and does not trim for `:limit` server-side. The client
@@ -58,13 +59,21 @@ defmodule Arbor.Stream do
           required(:limit) => integer() | nil
         }
 
-  @typedoc "Stream op pushed in the envelope's `stream_ops` array."
+  @typedoc "Wire stream op pushed in the envelope's `stream_ops` array."
   @type op() :: %{
           required(:op) => String.t(),
           required(:stream) => String.t(),
           required(:ref) => String.t(),
+          required(:store_id) => [String.t()],
           optional(any()) => any()
         }
+
+  @typep raw_op() :: %{
+           required(:op) => String.t(),
+           required(:stream) => String.t(),
+           required(:ref) => String.t(),
+           optional(any()) => any()
+         }
 
   @assigns_key :__streams__
   @ref_key :__ref__
@@ -237,7 +246,7 @@ defmodule Arbor.Stream do
       ops
       #=> [%{op: "insert", stream: "messages", ref: "0", item_key: "messages-1", item: %{...}, at: -1, limit: nil}]
   """
-  @spec flush_pending_ops(Socket.t()) :: {[op()], Socket.t()}
+  @spec flush_pending_ops(Socket.t()) :: {[raw_op()], Socket.t()}
   def flush_pending_ops(%Socket{} = socket) do
     socket = drain_and_prune(socket)
     drained = Socket.get_private(socket, @drained_key, [])
@@ -263,7 +272,7 @@ defmodule Arbor.Stream do
       length(Arbor.Stream.pending_ops(socket))
       #=> 1
   """
-  @spec pending_ops(Socket.t()) :: [op()]
+  @spec pending_ops(Socket.t()) :: [raw_op()]
   def pending_ops(%Socket{} = socket) do
     drained = Socket.get_private(socket, @drained_key, [])
 
