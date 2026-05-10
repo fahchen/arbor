@@ -22,7 +22,9 @@ defmodule ChatRoom.MixProject do
   defp deps do
     [
       {:arbor, path: "../.."},
-      {:phoenix_pubsub, "~> 2.1"}
+      {:phoenix, "~> 1.8"},
+      {:phoenix_pubsub, "~> 2.1"},
+      {:plug_cowboy, "~> 2.7"}
     ]
   end
 end
