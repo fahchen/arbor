@@ -406,7 +406,8 @@ defmodule Arbor.Page.ServerAsyncTest do
                  "tag" => "cancel-name"
                })
 
-      _task_pid = receive_task_pid!()
+      task_pid = receive_task_pid!()
+      task_ref = Process.monitor(task_pid)
       sync_server!(pid)
 
       assert %AsyncResult{status: :loading} = root_socket(pid).assigns.profile
@@ -414,6 +415,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert {:ok, _reply} =
                Server.command(pid, [], :cancel_profile_by_name, %{"reason" => "user_left"})
 
+      assert_receive {:DOWN, ^task_ref, _, _, _}, 200
       sync_server!(pid)
 
       socket = root_socket(pid)
@@ -430,7 +432,8 @@ defmodule Arbor.Page.ServerAsyncTest do
                  "tag" => "cancel-value"
                })
 
-      _task_pid = receive_task_pid!()
+      task_pid = receive_task_pid!()
+      task_ref = Process.monitor(task_pid)
       sync_server!(pid)
 
       assert %AsyncResult{status: :loading} = root_socket(pid).assigns.profile
@@ -438,6 +441,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert {:ok, _reply} =
                Server.command(pid, [], :cancel_profile_by_value, %{"reason" => "user_left"})
 
+      assert_receive {:DOWN, ^task_ref, _, _, _}, 200
       sync_server!(pid)
 
       socket = root_socket(pid)
