@@ -40,9 +40,18 @@ iex> flush()  # drains the post-command patch envelope
 
 ## Codegen
 
-Generate TypeScript types from this example app's `state do` declarations:
+This example wires the `:arbor_ts` Mix compiler in `mix.exs`:
+
+```elixir
+compilers: Mix.compilers() ++ [:arbor_ts]
+```
+
+Every `mix compile` regenerates `priv/codegen/ts/arbor.ts` from the
+`state do` blocks. Inspect the output:
 
 ```sh
-mix arbor.codegen.ts
-ls priv/codegen/ts/
+cat priv/codegen/ts/arbor.ts
 ```
+
+Use `mix compile.arbor_ts --check` (wired into `mix precommit`) to fail
+the build when the committed bundle is out of date.
