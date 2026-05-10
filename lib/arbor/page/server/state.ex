@@ -45,6 +45,6 @@ defmodule Arbor.Page.Server.State do
           },
           default: %{},
           doc:
-            "Aux index `task_ref => {store_id, name, kind}` rebuilt after every handler call. Lets the page server route incoming `{ref, result}` and `{:DOWN, ref, ...}` messages to the originating store entry without scanning the registry, and lets stale-ref lazy-discard telemetry attribute the dropped task to a specific node + family."
+            "Secondary index `task_ref => {store_id, name, kind}`, rebuilt after every handler call. Lets the page server route incoming `{ref, result}` and `{:DOWN, ref, ...}` messages to the originating store entry in O(1) without scanning the registry, and lets stale-ref lazy-discard telemetry attribute the dropped task to a specific node + family."
   end
 end
