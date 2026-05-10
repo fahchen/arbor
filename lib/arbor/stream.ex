@@ -453,18 +453,18 @@ defmodule Arbor.Stream do
   defp compute_item_key(opts, default_fun, item, module, name) do
     fun =
       case Keyword.fetch(opts, :item_key) do
-        {:ok, override} -> validate_item_key_override!(override, name)
+        {:ok, override} -> validate_item_key_override!(override, name, :stream_insert)
         :error -> default_fun
       end
 
     invoke_item_key!(fun, item, module, name)
   end
 
-  defp validate_item_key_override!(fun, _name) when is_function(fun, 1), do: fun
+  defp validate_item_key_override!(fun, _name, _call_site) when is_function(fun, 1), do: fun
 
-  defp validate_item_key_override!(other, name) do
+  defp validate_item_key_override!(other, name, call_site) do
     raise ArgumentError,
-          "stream_insert(:#{name}, item, item_key: ...) expects an arity-1 function, got: #{inspect(other)}"
+          "#{call_site}(:#{name}, ...) :item_key must be an arity-1 function, got: #{inspect(other)}"
   end
 
   defp invoke_item_key!(fun, item, module, name) do
@@ -542,7 +542,7 @@ defmodule Arbor.Stream do
   defp build_config_overrides(opts, name) do
     Enum.reduce(opts, %{}, fn
       {:item_key, fun}, acc ->
-        Map.put(acc, :item_key, validate_item_key_override!(fun, name))
+        Map.put(acc, :item_key, validate_item_key_override!(fun, name, :stream_configure))
 
       {:limit, limit}, acc when is_integer(limit) or is_nil(limit) ->
         Map.put(acc, :limit, limit)
