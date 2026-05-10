@@ -1,9 +1,9 @@
 defmodule Arbor.StreamTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.LiveStream
   alias Arbor.Socket
   alias Arbor.Stream
+  alias Arbor.Stream.Slot
 
   defmodule MessagesStore do
     @moduledoc false
@@ -133,11 +133,11 @@ defmodule Arbor.StreamTest do
     test "drain_and_prune empties the LiveStream pending fields", %{socket: socket} do
       socket = Stream.stream_insert(socket, :songs, %{id: "1"})
 
-      assert %LiveStream{inserts: [_one]} = socket.assigns.__streams__[:songs]
+      assert %Slot{inserts: [_one]} = socket.assigns.__streams__[:songs]
 
       socket = Stream.drain_and_prune(socket)
 
-      assert %LiveStream{inserts: [], deletes: [], reset?: false} =
+      assert %Slot{inserts: [], deletes: [], reset?: false} =
                socket.assigns.__streams__[:songs]
     end
 
@@ -162,7 +162,7 @@ defmodule Arbor.StreamTest do
 
       assert length(ops) == 1000
 
-      assert %LiveStream{inserts: [], deletes: [], reset?: false} =
+      assert %Slot{inserts: [], deletes: [], reset?: false} =
                after_flush.assigns.__streams__[:songs]
     end
   end
@@ -190,8 +190,8 @@ defmodule Arbor.StreamTest do
 
       index = socket.assigns.__streams__
       assert index.__ref__ == 2
-      assert %LiveStream{ref: 0} = index[:songs]
-      assert %LiveStream{ref: 1} = index[:messages]
+      assert %Slot{ref: 0} = index[:songs]
+      assert %Slot{ref: 1} = index[:messages]
     end
 
     test "wire ops carry the stream's ref", %{socket: socket} do

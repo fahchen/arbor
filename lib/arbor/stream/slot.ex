@@ -1,4 +1,4 @@
-defmodule Arbor.LiveStream do
+defmodule Arbor.Stream.Slot do
   @moduledoc """
   Per-stream pending-ops struct held under `socket.assigns.__streams__`.
 
@@ -66,7 +66,7 @@ defmodule Arbor.LiveStream do
 
   ## Examples
 
-      iex> stream = %Arbor.LiveStream{
+      iex> stream = %Arbor.Stream.Slot{
       ...>   name: :songs,
       ...>   item_key_fun: fn item -> "songs-" <> item.id end,
       ...>   ref: 0,
@@ -74,7 +74,7 @@ defmodule Arbor.LiveStream do
       ...>   deletes: ["songs-2"],
       ...>   reset?: true
       ...> }
-      iex> pruned = Arbor.LiveStream.prune(stream)
+      iex> pruned = Arbor.Stream.Slot.prune(stream)
       iex> {pruned.inserts, pruned.deletes, pruned.reset?}
       {[], [], false}
       iex> pruned.name

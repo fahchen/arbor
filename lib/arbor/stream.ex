@@ -5,7 +5,7 @@ defmodule Arbor.Stream do
   Stream-typed slots (declared via `stream/2,3` inside `state do`) carry
   collections whose materialization is **owned by the client**. The server
   queues raw delta ops (`configure`/`reset`/`insert`/`delete`) on a per-stream
-  `Arbor.LiveStream` struct stored under `socket.assigns.__streams__`. Each
+  `Arbor.Stream.Slot` struct stored under `socket.assigns.__streams__`. Each
   cycle's queued ops drain into the patch envelope's `stream_ops` and the
   struct is pruned (BDR-0014, BDR-0018).
 
@@ -13,7 +13,7 @@ defmodule Arbor.Stream do
   `item_keys` list, no longer decides upsert-vs-insert, and no longer trims
   for `:limit` server-side. The client materializes the stream and applies
   the per-op `:limit` field. This matches Phoenix.LiveView semantics — see
-  `phoenix_live_view/lib/phoenix_live_view/live_stream.ex`.
+  `phoenix_live_view/lib/phoenix_live_view/slot.ex`.
 
   ## Public API surface (frozen for M5+)
 
@@ -31,12 +31,12 @@ defmodule Arbor.Stream do
   `socket.assigns.__streams__` is a map with reserved sub-keys:
 
     * `__ref__` — monotonic per-page ref counter used to stamp each new
-      `Arbor.LiveStream`.
+      `Arbor.Stream.Slot`.
     * `__changed__` — `MapSet` of stream names mutated since the last prune.
       Used by `Arbor.Resolver` to know which structs to prune.
     * `__configured__` — pre-init configure opts keyed by stream name.
-      Applied when the matching `Arbor.LiveStream` is first initialized.
-    * `<atom_name>` — the per-stream `Arbor.LiveStream` struct.
+      Applied when the matching `Arbor.Stream.Slot` is first initialized.
+    * `<atom_name>` — the per-stream `Arbor.Stream.Slot` struct.
 
   Sub-keys are runtime-internal; do not read or write directly.
 
@@ -46,8 +46,8 @@ defmodule Arbor.Stream do
       #=> %Arbor.Socket{...}
   """
 
-  alias Arbor.LiveStream
   alias Arbor.Socket
+  alias Arbor.Stream.Slot
   alias Arbor.Telemetry
   alias Arbor.Wire
 
@@ -132,7 +132,7 @@ defmodule Arbor.Stream do
 
   defp initialized?(%Socket{} = socket, name) do
     case Map.get(streams_index(socket), name) do
-      %LiveStream{} -> true
+      %Slot{} -> true
       _other -> false
     end
   end
@@ -140,7 +140,7 @@ defmodule Arbor.Stream do
   @doc """
   Bulk seeds or refreshes a stream slot.
 
-  With `reset: true`, marks the stream's `LiveStream` so the flushed wire
+  With `reset: true`, marks the stream's slot so the flushed wire
   ops include a `reset` ahead of the inserts and the client clears its
   local stream before applying them.
 
@@ -184,13 +184,13 @@ defmodule Arbor.Stream do
   def stream_insert(%Socket{} = socket, name, item, opts)
       when is_atom(name) and is_list(opts) do
     socket = ensure_stream_initialized(socket, name)
-    live_stream = fetch_live_stream!(socket, name)
+    slot = fetch_slot!(socket, name)
 
-    item_key = compute_item_key(opts, live_stream.item_key_fun, item, socket.module, name)
+    item_key = compute_item_key(opts, slot.item_key_fun, item, socket.module, name)
     position = validate_position!(Keyword.get(opts, :at, -1))
     limit = validate_limit!(Keyword.get(opts, :limit, nil))
 
-    update_live_stream(socket, name, fn ls ->
+    update_slot(socket, name, fn ls ->
       %{ls | inserts: [{item_key, position, item, limit} | ls.inserts]}
     end)
   end
@@ -206,8 +206,8 @@ defmodule Arbor.Stream do
   @spec stream_delete(Socket.t(), stream_name(), term()) :: Socket.t()
   def stream_delete(%Socket{} = socket, name, item) when is_atom(name) do
     socket = ensure_stream_initialized(socket, name)
-    live_stream = fetch_live_stream!(socket, name)
-    item_key = compute_item_key([], live_stream.item_key_fun, item, socket.module, name)
+    slot = fetch_slot!(socket, name)
+    item_key = compute_item_key([], slot.item_key_fun, item, socket.module, name)
     stream_delete_by_item_key(socket, name, item_key)
   end
 
@@ -223,7 +223,7 @@ defmodule Arbor.Stream do
       when is_atom(name) and is_binary(item_key) do
     socket = ensure_stream_initialized(socket, name)
 
-    update_live_stream(socket, name, fn ls ->
+    update_slot(socket, name, fn ls ->
       %{ls | deletes: [item_key | ls.deletes]}
     end)
   end
@@ -259,7 +259,7 @@ defmodule Arbor.Stream do
   @doc """
   Returns the queued stream ops for the current cycle (not yet flushed).
 
-  Reads pending fields from each `Arbor.LiveStream` plus any already-drained
+  Reads pending fields from each `Arbor.Stream.Slot` plus any already-drained
   ops on the socket-private accumulator. Useful for tests and debugging.
 
   ## Examples
@@ -276,13 +276,13 @@ defmodule Arbor.Stream do
       socket
       |> streams_index()
       |> stream_entries()
-      |> Enum.flat_map(fn {_name, %LiveStream{} = ls} -> build_ops(ls) end)
+      |> Enum.flat_map(fn {_name, %Slot{} = ls} -> build_ops(ls) end)
 
     drained ++ live
   end
 
   @doc """
-  Drains pending ops from every `Arbor.LiveStream` marked changed, appends
+  Drains pending ops from every `Arbor.Stream.Slot` marked changed, appends
   them to the socket-private accumulator, prunes each struct, and clears
   the `__changed__` set. Invoked by `Arbor.Resolver`.
 
@@ -307,9 +307,9 @@ defmodule Arbor.Stream do
       |> Enum.sort_by(fn name -> Map.fetch!(index, name).ref end)
       |> Enum.reduce({[], index}, fn name, {ops_acc, idx_acc} ->
         case Map.get(idx_acc, name) do
-          %LiveStream{} = ls ->
+          %Slot{} = ls ->
             ops = build_ops(ls)
-            {ops_acc ++ ops, Map.put(idx_acc, name, LiveStream.prune(ls))}
+            {ops_acc ++ ops, Map.put(idx_acc, name, Slot.prune(ls))}
 
           nil ->
             {ops_acc, idx_acc}
@@ -362,10 +362,10 @@ defmodule Arbor.Stream do
   defp stream_entries(index) do
     index
     |> Enum.filter(fn
-      {key, %LiveStream{}} when is_atom(key) -> not reserved_key?(key)
+      {key, %Slot{}} when is_atom(key) -> not reserved_key?(key)
       _other -> false
     end)
-    |> Enum.sort_by(fn {_name, %LiveStream{ref: ref}} -> ref end)
+    |> Enum.sort_by(fn {_name, %Slot{ref: ref}} -> ref end)
   end
 
   defp reserved_key?(@ref_key), do: true
@@ -375,7 +375,7 @@ defmodule Arbor.Stream do
 
   defp ensure_stream_initialized(%Socket{} = socket, name) do
     case Map.get(streams_index(socket), name) do
-      %LiveStream{} ->
+      %Slot{} ->
         socket
 
       nil ->
@@ -387,7 +387,7 @@ defmodule Arbor.Stream do
 
         {ref, index} = next_ref(index)
 
-        live_stream = %LiveStream{
+        slot = %Slot{
           name: name,
           item_key_fun: Map.fetch!(merged, :item_key),
           ref: ref,
@@ -398,7 +398,7 @@ defmodule Arbor.Stream do
 
         index = stamp_limit_default(index, name, Map.get(merged, :limit))
 
-        next_index = Map.put(index, name, live_stream)
+        next_index = Map.put(index, name, slot)
 
         put_streams_index(socket, next_index)
     end
@@ -426,24 +426,24 @@ defmodule Arbor.Stream do
     end
   end
 
-  defp fetch_live_stream!(%Socket{} = socket, name) do
+  defp fetch_slot!(%Socket{} = socket, name) do
     Map.fetch!(streams_index(socket), name)
   end
 
-  defp update_live_stream(%Socket{} = socket, name, fun) when is_function(fun, 1) do
+  defp update_slot(%Socket{} = socket, name, fun) when is_function(fun, 1) do
     update_streams_index(socket, fn index ->
-      live_stream = Map.fetch!(index, name)
-      next_live_stream = fun.(live_stream)
+      slot = Map.fetch!(index, name)
+      next_slot = fun.(slot)
       changed = Map.get(index, @changed_key, MapSet.new())
 
       index
-      |> Map.put(name, next_live_stream)
+      |> Map.put(name, next_slot)
       |> Map.put(@changed_key, MapSet.put(changed, name))
     end)
   end
 
   defp mark_reset(%Socket{} = socket, name) do
-    update_live_stream(socket, name, fn ls -> %{ls | reset?: true} end)
+    update_slot(socket, name, fn ls -> %{ls | reset?: true} end)
   end
 
   # ---------------------------------------------------------------------------
@@ -508,7 +508,7 @@ defmodule Arbor.Stream do
   # Internal: op builders
   # ---------------------------------------------------------------------------
 
-  defp build_ops(%LiveStream{} = ls) do
+  defp build_ops(%Slot{} = ls) do
     name_str = Atom.to_string(ls.name)
     ref = Integer.to_string(ls.ref)
 
