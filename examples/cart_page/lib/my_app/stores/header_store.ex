@@ -10,6 +10,7 @@ defmodule MyApp.Stores.HeaderStore do
     field :user_name, String.t() | nil
   end
 
+  @impl Arbor.Store
   def mount(socket) do
     user = socket.assigns.current_user
 
@@ -21,6 +22,7 @@ defmodule MyApp.Stores.HeaderStore do
     {:ok, socket}
   end
 
+  @impl Arbor.Store
   def update(params, socket) do
     user = Map.get(params, :current_user)
 
@@ -32,7 +34,11 @@ defmodule MyApp.Stores.HeaderStore do
     {:ok, socket}
   end
 
-  def to_state(socket) do
+  @impl Arbor.Store
+  def render(socket) do
     %{signed_in: socket.assigns.signed_in, user_name: socket.assigns.user_name}
   end
+
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end

@@ -24,6 +24,7 @@ defmodule Bench.RuntimeStore do
     payload :note, String.t()
   end
 
+  @impl Arbor.Store
   def mount(socket) do
     {:ok,
      socket
@@ -31,15 +32,18 @@ defmodule Bench.RuntimeStore do
      |> Arbor.Socket.assign(:note, "init")}
   end
 
+  @impl Arbor.Store
   def handle_command(:bump, _payload, socket) do
     {:noreply, Arbor.Socket.update_assign(socket, :counter, &(&1 + 1))}
   end
 
+  @impl Arbor.Store
   def handle_command(:rename, %{note: note}, socket) do
     {:noreply, Arbor.Socket.assign(socket, :note, note)}
   end
 
-  def to_state(socket) do
+  @impl Arbor.Store
+  def render(socket) do
     %{counter: socket.assigns.counter, note: socket.assigns.note}
   end
 end

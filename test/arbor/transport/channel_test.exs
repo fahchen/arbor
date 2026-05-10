@@ -36,13 +36,16 @@ defmodule Arbor.Transport.ChannelTest do
       field :title, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "Inbox")}
-    def to_state(socket), do: %{title: socket.assigns.title}
+    @impl Arbor.Store
+    def render(socket), do: %{title: socket.assigns.title}
 
     command :rename do
       payload :title, String.t()
     end
 
+    @impl Arbor.Store
     def handle_command(:rename, %{"title" => title}, socket),
       do: {:noreply, Arbor.Socket.assign(socket, :title, title)}
   end

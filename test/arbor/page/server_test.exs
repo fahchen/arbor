@@ -17,13 +17,18 @@ defmodule Arbor.Page.ServerTest do
       field :status, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       {:ok, Arbor.Socket.assign(socket, :status, "mounted")}
     end
 
-    def to_state(socket) do
+    @impl Arbor.Store
+    def render(socket) do
       %{status: socket.assigns.status}
     end
+
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule TerminatesRootStore do
@@ -33,14 +38,20 @@ defmodule Arbor.Page.ServerTest do
       field :status, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       {:ok, Arbor.Socket.assign(socket, status: "mounted")}
     end
 
-    def to_state(socket) do
+    @impl Arbor.Store
+    def render(socket) do
       %{status: socket.assigns.status}
     end
 
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+
+    @impl Arbor.Store
     def terminate(reason, socket) do
       send(socket.assigns.test_pid, {:root_terminate, reason, socket.assigns.status})
       :ok
@@ -86,7 +97,7 @@ defmodule Arbor.Page.ServerTest do
            }
   end
 
-  test "default hooks include ValidateCommandSchema everywhere and ValidateToState in dev" do
+  test "default hooks include ValidateCommandSchema everywhere and ValidateRender in dev/test" do
     default_hooks = Application.get_env(:arbor, :default_hooks, [])
 
     assert Enum.any?(default_hooks, fn
@@ -94,14 +105,14 @@ defmodule Arbor.Page.ServerTest do
              _other -> false
            end)
 
-    if Mix.env() == :dev do
+    if Mix.env() in [:dev, :test] do
       assert Enum.any?(default_hooks, fn
-               {Arbor.Hooks.ValidateToState, :after_serialize, _fun} -> true
+               {Arbor.Hooks.ValidateRender, :after_serialize, _fun} -> true
                _other -> false
              end)
     else
       refute Enum.any?(default_hooks, fn
-               {Arbor.Hooks.ValidateToState, :after_serialize, _fun} -> true
+               {Arbor.Hooks.ValidateRender, :after_serialize, _fun} -> true
                _other -> false
              end)
     end
@@ -125,17 +136,23 @@ defmodule Arbor.Page.ServerTest do
       field :counter, integer()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       {:ok, Arbor.Socket.assign(socket, :counter, 0)}
     end
 
+    @impl Arbor.Store
     def handle_info(:bump, socket) do
       {:noreply, Arbor.Socket.update_assign(socket, :counter, &(&1 + 1))}
     end
 
-    def to_state(socket) do
+    @impl Arbor.Store
+    def render(socket) do
       %{counter: socket.assigns.counter}
     end
+
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   test "catch-all handle_info dispatches to root store and emits [:arbor, :pubsub, :receive]" do
@@ -172,6 +189,7 @@ defmodule Arbor.Page.ServerTest do
 
     command(:do_thing)
 
+    @impl Arbor.Store
     def mount(socket) do
       socket = Arbor.Socket.assign(socket, :status, "ready")
 
@@ -183,11 +201,13 @@ defmodule Arbor.Page.ServerTest do
       {:ok, socket}
     end
 
+    @impl Arbor.Store
     def handle_command(:do_thing, _payload, socket) do
       {:noreply, socket}
     end
 
-    def to_state(socket) do
+    @impl Arbor.Store
+    def render(socket) do
       %{status: socket.assigns.status}
     end
   end

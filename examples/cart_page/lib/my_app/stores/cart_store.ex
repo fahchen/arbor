@@ -47,6 +47,7 @@ defmodule MyApp.Stores.CartStore do
 
   command(:checkout)
 
+  @impl Arbor.Store
   def mount(socket) do
     lines = Persistence.load_cart(socket.assigns.cart_id)
 
@@ -61,6 +62,7 @@ defmodule MyApp.Stores.CartStore do
     {:ok, socket}
   end
 
+  @impl Arbor.Store
   def handle_command(:add_item, %{"sku" => sku}, socket) do
     case Catalog.fetch(sku) do
       {:ok, product} ->
@@ -72,11 +74,13 @@ defmodule MyApp.Stores.CartStore do
     end
   end
 
+  @impl Arbor.Store
   def handle_command(:remove_line, %{"id" => id}, socket) do
     next_lines = Enum.reject(socket.assigns.lines, &(&1.id == id))
     {:noreply, Arbor.Socket.assign(socket, :lines, next_lines)}
   end
 
+  @impl Arbor.Store
   def handle_command(:checkout, _payload, socket) do
     order_id = "order-" <> Integer.to_string(System.unique_integer([:positive]))
 
@@ -88,7 +92,8 @@ defmodule MyApp.Stores.CartStore do
     {:reply, %{"order_id" => order_id}, socket}
   end
 
-  def to_state(socket) do
+  @impl Arbor.Store
+  def render(socket) do
     %{
       lines:
         for line <- socket.assigns.lines do

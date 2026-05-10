@@ -16,6 +16,13 @@ defmodule Arbor.TestSupport.ChildStore do
   state do
     field :id, String.t()
   end
+
+  @impl Arbor.Store
+  def mount(socket), do: {:ok, socket}
+  @impl Arbor.Store
+  def render(socket), do: %{id: Map.get(socket.assigns, :id, socket.id || "")}
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
 defmodule Arbor.TestSupport.ExampleStore do
@@ -46,6 +53,26 @@ defmodule Arbor.TestSupport.ExampleStore do
   command :apply_filters do
     payload(:status, %{type: :active} | %{type: :paused, value: integer()})
   end
+
+  @impl Arbor.Store
+  def mount(socket), do: {:ok, socket}
+
+  @impl Arbor.Store
+  def render(_socket) do
+    %{
+      messages: [],
+      events: [],
+      load_state: nil,
+      child: %{id: "child"},
+      money: %{amount: 0},
+      status: %{type: :active},
+      tags: [],
+      meta: %{}
+    }
+  end
+
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
 defmodule Arbor.TestSupport.ExampleState do
@@ -68,6 +95,13 @@ defmodule Arbor.TestSupport.StreamOnlyStore do
   state do
     stream(:notes, String.t(), limit: 50)
   end
+
+  @impl Arbor.Store
+  def mount(socket), do: {:ok, socket}
+  @impl Arbor.Store
+  def render(_socket), do: %{notes: []}
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
 defmodule Arbor.TestSupport.AsyncStreamStore do
@@ -83,6 +117,13 @@ defmodule Arbor.TestSupport.AsyncStreamStore do
       limit: -200
     )
   end
+
+  @impl Arbor.Store
+  def mount(socket), do: {:ok, socket}
+  @impl Arbor.Store
+  def render(_socket), do: %{loaded: nil}
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
 defmodule Arbor.TestSupport.StreamStateModule do
@@ -112,6 +153,13 @@ defmodule Arbor.TestSupport.MultiCommandStore do
     payload(:status, %{type: :active} | %{type: :paused, value: integer()})
     payload(:include_archived, boolean())
   end
+
+  @impl Arbor.Store
+  def mount(socket), do: {:ok, socket}
+  @impl Arbor.Store
+  def render(socket), do: %{id: Map.get(socket.assigns, :id, "")}
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
 defmodule Arbor.CompileTimeDslTest do
@@ -226,6 +274,30 @@ defmodule Arbor.CompileTimeDslTest do
         Code.compile_string(source)
       end
     end)
+  end
+
+  test "missing required Arbor.Store callbacks warn at compile time" do
+    source = """
+    defmodule Arbor.TestSupport.MissingStoreCallbacks do
+      @moduledoc false
+      use Arbor.Store
+
+      state do
+        field :id, String.t()
+      end
+    end
+    """
+
+    stderr =
+      capture_io(:stderr, fn ->
+        Code.compile_string(source)
+      end)
+
+    assert stderr =~ "function mount/1 required by behaviour Arbor.Store is not implemented"
+    assert stderr =~ "function render/1 required by behaviour Arbor.Store is not implemented"
+
+    assert stderr =~
+             "function handle_command/3 required by behaviour Arbor.Store is not implemented"
   end
 
   describe "stream declarations inside state do" do

@@ -4,7 +4,7 @@ defmodule MyApp.Stores.CartLineStore do
   mirrors it into typed `state do` output. Demonstrates Arbor's
   identity-stable child reconciliation — the runtime keeps the same child
   socket alive across re-renders as long as `(parent_path, MyApp.Stores.CartLineStore, line.id)`
-  keeps appearing in the parent's `to_state/1`.
+  keeps appearing in the parent's `render/1`.
   """
 
   use Arbor.Store
@@ -19,11 +19,14 @@ defmodule MyApp.Stores.CartLineStore do
     field :qty, integer()
   end
 
+  @impl Arbor.Store
   def mount(socket), do: {:ok, mirror_line(socket, socket.assigns.line)}
 
+  @impl Arbor.Store
   def update(params, socket), do: {:ok, mirror_line(socket, params.line)}
 
-  def to_state(socket) do
+  @impl Arbor.Store
+  def render(socket) do
     %{
       id: socket.assigns.id,
       sku: socket.assigns.sku,
@@ -32,6 +35,9 @@ defmodule MyApp.Stores.CartLineStore do
       qty: socket.assigns.qty
     }
   end
+
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
   defp mirror_line(socket, line) do
     socket

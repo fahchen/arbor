@@ -10,10 +10,10 @@ defmodule Arbor.Lifecycle do
   | `:after_command`   | 3     | `(command_name, payload, socket)`       |
   | `:handle_async`    | 3     | `(name, async_result, socket)`          |
   | `:handle_info`     | 2     | `(message, socket)`                     |
-  | `:after_to_state`  | 2     | `(resolved_elixir_term, socket)`        |
+  | `:after_render`   | 2     | `(resolved_elixir_term, socket)`        |
   | `:after_serialize` | 2     | `(wire_term, socket)`                   |
 
-  `:after_to_state` runs after `Arbor.Resolver` substitutes child placeholders;
+  `:after_render` runs after `Arbor.Resolver` substitutes child placeholders;
   it sees the Elixir-form output (atom keys, structs, atom values).
   `:after_serialize` runs after `Arbor.Wire.to_wire/1` converts the resolved
   output to wire form (string keys, plain maps, atoms-as-strings).
@@ -26,7 +26,7 @@ defmodule Arbor.Lifecycle do
           | :after_command
           | :handle_async
           | :handle_info
-          | :after_to_state
+          | :after_render
           | :after_serialize
 
   @type hook_id() :: term()
@@ -40,7 +40,7 @@ defmodule Arbor.Lifecycle do
     :after_command,
     :handle_async,
     :handle_info,
-    :after_to_state,
+    :after_render,
     :after_serialize
   ]
   @stage_arity %{
@@ -48,7 +48,7 @@ defmodule Arbor.Lifecycle do
     after_command: 3,
     handle_async: 3,
     handle_info: 2,
-    after_to_state: 2,
+    after_render: 2,
     after_serialize: 2
   }
 
@@ -59,10 +59,10 @@ defmodule Arbor.Lifecycle do
 
       iex> socket = %Arbor.Socket{}
       iex> socket =
-      ...>   Arbor.Lifecycle.attach_hook(socket, :audit, :after_to_state, fn _output, socket ->
+      ...>   Arbor.Lifecycle.attach_hook(socket, :audit, :after_render, fn _output, socket ->
       ...>     {:cont, socket}
       ...>   end)
-      iex> Arbor.Socket.get_private(socket, :hooks)[:after_to_state] |> length()
+      iex> Arbor.Socket.get_private(socket, :hooks)[:after_render] |> length()
       1
   """
   @spec attach_hook(Socket.t(), hook_id(), stage(), hook_fun()) :: Socket.t()
@@ -86,10 +86,10 @@ defmodule Arbor.Lifecycle do
   ## Examples
 
       iex> socket =
-      ...>   Arbor.Lifecycle.attach_hook(%Arbor.Socket{}, :audit, :after_to_state, fn _output, socket ->
+      ...>   Arbor.Lifecycle.attach_hook(%Arbor.Socket{}, :audit, :after_render, fn _output, socket ->
       ...>     {:cont, socket}
       ...>   end)
-      iex> socket = Arbor.Lifecycle.detach_hook(socket, :audit, :after_to_state)
+      iex> socket = Arbor.Lifecycle.detach_hook(socket, :audit, :after_render)
       iex> Arbor.Socket.get_private(socket, :hooks)
       %{}
   """
@@ -118,10 +118,10 @@ defmodule Arbor.Lifecycle do
   ## Examples
 
       iex> socket =
-      ...>   Arbor.Lifecycle.attach_hook(%Arbor.Socket{}, :mark, :after_to_state, fn _output, socket ->
+      ...>   Arbor.Lifecycle.attach_hook(%Arbor.Socket{}, :mark, :after_render, fn _output, socket ->
       ...>     {:cont, Arbor.Socket.assign(socket, :seen?, true)}
       ...>   end)
-      iex> {:cont, socket} = Arbor.Lifecycle.run_hooks(socket, :after_to_state, [%{title: "Inbox"}], false)
+      iex> {:cont, socket} = Arbor.Lifecycle.run_hooks(socket, :after_render, [%{title: "Inbox"}], false)
       iex> socket.assigns.seen?
       true
   """
@@ -160,7 +160,7 @@ defmodule Arbor.Lifecycle do
   ## Examples
 
       iex> Arbor.Lifecycle.stages()
-      [:before_command, :after_command, :handle_async, :handle_info, :after_to_state, :after_serialize]
+      [:before_command, :after_command, :handle_async, :handle_info, :after_render, :after_serialize]
   """
   @spec stages() :: [stage()]
   def stages, do: @stages
@@ -174,7 +174,7 @@ defmodule Arbor.Lifecycle do
   | `:after_command`   | 3     | `(command_name, payload, socket)`       |
   | `:handle_async`    | 3     | `(name, async_result, socket)`          |
   | `:handle_info`     | 2     | `(message, socket)`                     |
-  | `:after_to_state`  | 2     | `(resolved_elixir_term, socket)`        |
+  | `:after_render`   | 2     | `(resolved_elixir_term, socket)`        |
   | `:after_serialize` | 2     | `(wire_term, socket)`                   |
 
   ## Examples

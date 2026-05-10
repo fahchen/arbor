@@ -47,7 +47,7 @@ defmodule MyApp.Stores.CartStore do
     {:noreply, Arbor.Socket.update_assign(socket, :items, &[CartItemState.new(sku) | &1])}
   end
 
-  def to_state(socket), do: %{items: socket.assigns.items}
+  def render(socket), do: %{items: socket.assigns.items}
 end
 ```
 
@@ -127,4 +127,4 @@ Per BDR-0003, reconnect rebuilds the page from scratch. There is no in-memory ch
 
 - Do **not** call into the runtime to persist on its behalf — there is no API.
 - Do **not** write to `socket.private` for app-level persistence state. That namespace is reserved (hook table, async ref tracking, pending stream ops). Use a dedicated assign.
-- Do **not** introduce a `:persist` hook stage. The six public stages (`:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_to_state`, `:after_serialize`) are stable per BDR-0004; persistence rides on `:after_command`.
+- Do **not** introduce a `:persist` hook stage. The six public stages (`:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`, `:after_serialize`) are stable per BDR-0004; persistence rides on `:after_command`.

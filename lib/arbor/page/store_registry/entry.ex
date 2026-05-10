@@ -35,7 +35,7 @@ defmodule Arbor.Page.StoreRegistry.Entry do
     field :resolved_state, resolved_state(),
       default: nil,
       doc:
-        "Last resolved render output (Elixir form) for this node. Reused when memoization skips `update/2` and `to_state/1` (BDR-0013)."
+        "Last resolved render output (Elixir form) for this node. Reused when memoization skips `update/2` and `render/1` (BDR-0013)."
 
     field :wire_state, wire_state() | nil,
       default: nil,

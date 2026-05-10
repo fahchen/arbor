@@ -18,7 +18,12 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
 
     command :no_payload
 
-    def to_state(socket), do: %{query: Map.get(socket.assigns, :query, "")}
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
+    def render(socket), do: %{query: Map.get(socket.assigns, :query, "")}
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule HostStore do
@@ -29,7 +34,12 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
       field :ok, boolean()
     end
 
-    def to_state(_socket), do: %{ok: true}
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
+    def render(_socket), do: %{ok: true}
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   describe "Scenario: Payload conforms to the declared schema" do
@@ -191,7 +201,12 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
       payload :tags, list(String.t())
     end
 
-    def to_state(_socket), do: %{ok: true}
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
+    def render(_socket), do: %{ok: true}
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   describe "nested data structures" do

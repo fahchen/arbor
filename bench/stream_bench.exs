@@ -22,14 +22,17 @@ defmodule Bench.StreamStore do
     payload :n, integer()
   end
 
+  @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
 
+  @impl Arbor.Store
   def handle_command(:bulk_insert, %{"n" => n}, socket) do
     items = for k <- 1..n, do: %{id: Integer.to_string(k), body: "row-#{k}"}
     {:noreply, Arbor.Stream.stream(socket, :items, items)}
   end
 
-  def to_state(socket), do: %{items: Map.get(socket.assigns, :items, [])}
+  @impl Arbor.Store
+  def render(socket), do: %{items: Map.get(socket.assigns, :items, [])}
 end
 
 defmodule Bench.StreamHelpers do

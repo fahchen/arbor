@@ -41,6 +41,7 @@ defmodule MyApp.Stores.ChatRoomStore do
     payload :body, String.t()
   end
 
+  @impl Arbor.Store
   def mount(socket) do
     Phoenix.PubSub.subscribe(MyApp.PubSub, "room:" <> socket.assigns.room_id)
 
@@ -61,6 +62,7 @@ defmodule MyApp.Stores.ChatRoomStore do
 
   # Silent stream refresh — no loading flash. Emits a `reset` op + per-item
   # inserts in the same envelope.
+  @impl Arbor.Store
   def handle_command(:reload, _payload, socket) do
     items = Chat.recent(socket.assigns.room_id, 50)
     {:noreply, Arbor.Stream.stream(socket, :messages, items, reset: true)}
@@ -68,6 +70,7 @@ defmodule MyApp.Stores.ChatRoomStore do
 
   # Loading-flash stream refresh — re-emits AsyncResult.loading(prior) and
   # then writes ok(prior, true) when the task completes (BDR-0022).
+  @impl Arbor.Store
   def handle_command(:refresh, _payload, socket) do
     room_id = socket.assigns.room_id
 
@@ -80,6 +83,7 @@ defmodule MyApp.Stores.ChatRoomStore do
   # `start_async/3` kicks off a fire-and-forget send. The result routes to
   # `handle_async/3` below — `socket.assigns` is NOT mutated by start_async
   # itself, only by what handle_async writes.
+  @impl Arbor.Store
   def handle_command(:send_message, %{"body" => body}, socket) do
     room_id = socket.assigns.room_id
 
@@ -98,15 +102,18 @@ defmodule MyApp.Stores.ChatRoomStore do
   # different case: the `handle_async/3` clause itself raising — the runtime
   # catches that and the page survives. This example does not raise from
   # `handle_async/3`.
+  @impl Arbor.Store
   def handle_async(:send_message, {:ok, {:ok, %MessageState{id: id}}}, socket) do
     {:noreply, Arbor.Socket.assign(socket, :last_send_status, %{type: :ok, id: id})}
   end
 
+  @impl Arbor.Store
   def handle_async(:send_message, {:ok, {:error, reason}}, socket) do
     status = %{type: :failed, reason: Atom.to_string(reason)}
     {:noreply, Arbor.Socket.assign(socket, :last_send_status, status)}
   end
 
+  @impl Arbor.Store
   def handle_async(:send_message, {:exit, reason}, socket) do
     status = %{type: :failed, reason: inspect(reason)}
     {:noreply, Arbor.Socket.assign(socket, :last_send_status, status)}
@@ -116,6 +123,7 @@ defmodule MyApp.Stores.ChatRoomStore do
   # PubSub messages — application-owned (BDR-0005)
   # ---------------------------------------------------------------------------
 
+  @impl Arbor.Store
   def handle_info({:message_received, %MessageState{} = msg}, socket) do
     {:noreply, Arbor.Stream.stream_insert(socket, :messages, msg, at: 0, limit: -100)}
   end
@@ -124,7 +132,8 @@ defmodule MyApp.Stores.ChatRoomStore do
   # Render output
   # ---------------------------------------------------------------------------
 
-  def to_state(socket) do
+  @impl Arbor.Store
+  def render(socket) do
     %{
       # Stream-typed fields are forced to `[]` on the wire by `Arbor.Wire`
       # (BDR-0014/0018) — content flows via stream_ops. `socket.assigns.messages`
@@ -139,6 +148,7 @@ defmodule MyApp.Stores.ChatRoomStore do
   # Cancel any in-flight send when the page goes down so the task does not
   # outlive the runtime. `cancel_async/2` is a no-op when the name is not
   # tracked.
+  @impl Arbor.Store
   def terminate(_reason, socket) do
     Arbor.Async.cancel_async(socket, :send_message)
     :ok

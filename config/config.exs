@@ -20,10 +20,10 @@ command_schema_hook =
 # prune step lives in the runtime.
 
 state_validation_hooks =
-  if config_env() == :dev do
+  if config_env() in [:dev, :test] do
     [
-      {Arbor.Hooks.ValidateToState, :after_serialize,
-       &Arbor.Hooks.ValidateToState.after_serialize(:raise, &1, &2)}
+      {Arbor.Hooks.ValidateRender, :after_serialize,
+       &Arbor.Hooks.ValidateRender.after_serialize(:raise, &1, &2)}
     ]
   else
     []
