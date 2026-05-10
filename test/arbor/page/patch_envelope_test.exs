@@ -1,8 +1,6 @@
 defmodule Arbor.Page.PatchEnvelopeTest do
   use ExUnit.Case, async: true
 
-  import ExUnit.CaptureLog
-
   alias Arbor.Page.PatchEnvelope
   alias Arbor.Page.Server
   alias Arbor.Stream
@@ -87,14 +85,9 @@ defmodule Arbor.Page.PatchEnvelopeTest do
     def handle_command(:ping, _payload, socket), do: {:noreply, socket}
   end
 
-  setup do
-    Process.flag(:trap_exit, true)
-    :ok
-  end
-
   describe "Rule: Initial state is delivered via the first patch envelope" do
     test "first envelope is base_version: 0, version: 1, single replace at root" do
-      {:ok, pid} = Server.start_link({TitleStore, %{}, %{transport_pid: self()}})
+      _pid = start_supervised!({Server, {TitleStore, %{}, %{transport_pid: self()}}})
 
       assert_receive {:patch, envelope}
 
@@ -105,12 +98,10 @@ defmodule Arbor.Page.PatchEnvelopeTest do
                ops: [%{op: "replace", path: "", value: %{"title" => "Inbox"}}],
                stream_ops: []
              } = envelope
-
-      capture_log(fn -> GenServer.stop(pid, :shutdown) end)
     end
 
     test "mount-time stream seeds split between ops (empty list at path) and stream_ops" do
-      {:ok, pid} = Server.start_link({SeedingStore, %{}, %{transport_pid: self()}})
+      _pid = start_supervised!({Server, {SeedingStore, %{}, %{transport_pid: self()}}})
 
       assert_receive {:patch, envelope}
 
@@ -130,14 +121,12 @@ defmodule Arbor.Page.PatchEnvelopeTest do
                %{op: "insert", stream: "messages", item_key: "messages-1"},
                %{op: "insert", stream: "messages", item_key: "messages-2"}
              ] = stream_ops
-
-      capture_log(fn -> GenServer.stop(pid, :shutdown) end)
     end
   end
 
   describe "Rule: Version increments by 1 per emitted envelope" do
     test "subsequent envelope's base_version equals the prior version" do
-      {:ok, pid} = Server.start_link({TitleStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {TitleStore, %{}, %{transport_pid: self()}}})
       assert_receive {:patch, %PatchEnvelope{version: 1}}
 
       {:ok, %{}} = Server.command(pid, [], :rename, %{"title" => "Outbox"})
@@ -148,33 +137,30 @@ defmodule Arbor.Page.PatchEnvelopeTest do
                version: 2,
                ops: [%{op: "replace", path: "/title", value: "Outbox"}]
              } = env2
-
-      GenServer.stop(pid)
     end
   end
 
   describe "Rule: Stream-only render cycles still emit envelopes" do
     test "handler that only mutates a stream emits envelope with ops: []" do
-      {:ok, pid} = Server.start_link({StreamOnlyHandlerStore, %{}, %{transport_pid: self()}})
+      pid =
+        start_supervised!({Server, {StreamOnlyHandlerStore, %{}, %{transport_pid: self()}}})
+
       assert_receive {:patch, %PatchEnvelope{version: 1}}
 
       {:ok, %{}} = Server.command(pid, [], :ping, %{})
       assert_receive {:patch, env}
 
       assert %PatchEnvelope{ops: [], stream_ops: [%{op: "insert"}]} = env
-      GenServer.stop(pid)
     end
   end
 
   describe "Rule: idle render cycles emit nothing" do
     test "handler that returns socket unchanged with no stream ops emits no envelope" do
-      {:ok, pid} = Server.start_link({NoopStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {NoopStore, %{}, %{transport_pid: self()}}})
       assert_receive {:patch, %PatchEnvelope{version: 1}}
 
       {:ok, %{}} = Server.command(pid, [], :ping, %{})
       refute_receive {:patch, _}, 100
-
-      GenServer.stop(pid)
     end
   end
 end

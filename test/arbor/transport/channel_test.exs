@@ -113,7 +113,7 @@ defmodule Arbor.Transport.ChannelTest do
 
     ref =
       push(socket, "command", %{
-        "path" => [],
+        "store_id" => [],
         "name" => "rename",
         "payload" => %{"title" => "Outbox"}
       })

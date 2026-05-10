@@ -13,7 +13,7 @@ exclude_test_files = {:files, %{excluded: ["test/"]}}
         excluded: [~r"/_build/", ~r"/deps/", ~r"/node_modules/"]
       },
       plugins: [],
-      requires: [],
+      requires: ["priv/credo_checks/double_reverse.ex"],
       strict: true,
       parse_timeout: 5000,
       color: true,
@@ -91,6 +91,7 @@ exclude_test_files = {:files, %{excluded: ["test/"]}}
           {Credo.Check.Refactor.RejectReject, []},
           {Credo.Check.Refactor.RedundantWithClauseResult, []},
           {Credo.Check.Refactor.AppendSingleItem, []},
+          {Arbor.CredoChecks.DoubleReverse, []},
           {Credo.Check.Refactor.DoubleBooleanNegation, []},
           {Credo.Check.Refactor.FilterReject, []},
           {Credo.Check.Refactor.IoPuts, []},

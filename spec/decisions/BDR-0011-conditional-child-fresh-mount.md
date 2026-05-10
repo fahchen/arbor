@@ -3,7 +3,7 @@ id: BDR-0011
 title: A child that disappears from its parent's render is unmounted; reappearance triggers a fresh mount
 status: accepted
 date: 2026-05-08
-summary: Identity does not survive an absence in render output. When (parent_path, module, id) is missing for one cycle and reappears later, the runtime treats it as a new node, mirroring Phoenix.LiveComponent.
+summary: Identity does not survive an absence in render output. When a `store_id` is missing for one cycle and reappears later, the runtime treats it as a new node, mirroring Phoenix.LiveComponent.
 ---
 
 ## Scope

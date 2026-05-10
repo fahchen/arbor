@@ -58,7 +58,7 @@ defmodule Arbor.MixProject do
         "deps.unlock --unused",
         "format",
         "credo --strict",
-        "arbor.codegen.ts --check",
+        "compile.arbor_ts --check",
         "dialyzer",
         "test"
       ],

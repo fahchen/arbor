@@ -1,6 +1,8 @@
 defmodule Arbor.StreamAsyncTest do
   use ExUnit.Case, async: true
 
+  import Arbor.AsyncTestHelpers
+
   alias Arbor.Async
   alias Arbor.AsyncResult
   alias Arbor.Socket
@@ -20,8 +22,14 @@ defmodule Arbor.StreamAsyncTest do
 
   describe "stream_async/3 happy path" do
     test "initializes the stream slot before task completion" do
-      socket = base_socket()
-      socket = Async.stream_async(socket, :messages, fn -> {:ok, [%{id: "1", body: "hi"}]} end)
+      socket =
+        Async.stream_async(
+          base_socket(),
+          :messages,
+          instant(fn ->
+            {:ok, [%{id: "1", body: "hi"}]}
+          end)
+        )
 
       assert %AsyncResult{status: :loading} = socket.assigns.messages
       assert %{messages: %Stream.Slot{}} = socket.assigns[Stream.assigns_key()]
@@ -29,12 +37,18 @@ defmodule Arbor.StreamAsyncTest do
     end
 
     test "writes loading and seeds stream on success" do
-      socket = base_socket()
+      socket =
+        Async.stream_async(
+          base_socket(),
+          :messages,
+          instant(fn ->
+            {:ok, [%{id: "1", body: "hi"}]}
+          end)
+        )
 
-      socket = Async.stream_async(socket, :messages, fn -> {:ok, [%{id: "1", body: "hi"}]} end)
       assert %AsyncResult{status: :loading} = socket.assigns.messages
 
-      {classified, entry} = await_task(socket, :messages)
+      {classified, entry} = drain_task_result!(socket, :messages)
       socket = Async.apply_task_result(socket, :messages, entry, classified)
 
       assert %AsyncResult{status: :ok, result: true, reason: nil} = socket.assigns.messages
@@ -44,14 +58,16 @@ defmodule Arbor.StreamAsyncTest do
     end
 
     test "stream opts pass through to stream/4" do
-      socket = base_socket()
-
       socket =
-        Async.stream_async(socket, :messages, fn ->
-          {:ok, [%{id: "1", body: "hi"}], at: 0, limit: -100}
-        end)
+        Async.stream_async(
+          base_socket(),
+          :messages,
+          instant(fn ->
+            {:ok, [%{id: "1", body: "hi"}], at: 0, limit: -100}
+          end)
+        )
 
-      {classified, entry} = await_task(socket, :messages)
+      {classified, entry} = drain_task_result!(socket, :messages)
       socket = Async.apply_task_result(socket, :messages, entry, classified)
 
       assert [%{op: "insert", at: 0}] = Stream.pending_ops(socket)
@@ -60,10 +76,10 @@ defmodule Arbor.StreamAsyncTest do
 
   describe "stream_async/3 failure" do
     test "{:error, reason} writes failed and leaves stream untouched" do
-      socket = base_socket()
-      socket = Async.stream_async(socket, :messages, fn -> {:error, :rate_limited} end)
-      {classified, entry} = await_task(socket, :messages)
+      socket =
+        Async.stream_async(base_socket(), :messages, instant(fn -> {:error, :rate_limited} end))
 
+      {classified, entry} = drain_task_result!(socket, :messages)
       socket = Async.apply_task_result(socket, :messages, entry, classified)
 
       assert %AsyncResult{status: :failed, reason: {:error, :rate_limited}} =
@@ -73,9 +89,8 @@ defmodule Arbor.StreamAsyncTest do
     end
 
     test "invalid shape raises inside the task and surfaces as failed {:exit, ...}" do
-      socket = base_socket()
-      socket = Async.stream_async(socket, :messages, fn -> [%{id: "1"}] end)
-      {classified, entry} = await_task(socket, :messages)
+      socket = Async.stream_async(base_socket(), :messages, instant(fn -> [%{id: "1"}] end))
+      {classified, entry} = drain_task_result!(socket, :messages)
 
       socket = Async.apply_task_result(socket, :messages, entry, classified)
 
@@ -90,7 +105,7 @@ defmodule Arbor.StreamAsyncTest do
       socket =
         base_socket()
         |> Socket.assign(:messages, prior)
-        |> Async.stream_async(:messages, fn -> {:ok, []} end, reset: true)
+        |> Async.stream_async(:messages, instant(fn -> {:ok, []} end), reset: true)
 
       assert %AsyncResult{status: :loading, result: nil} = socket.assigns.messages
     end
@@ -100,14 +115,14 @@ defmodule Arbor.StreamAsyncTest do
     %Socket{module: MessagesStore, parent_path: [], id: ""}
   end
 
-  defp await_task(socket, name) do
+  defp instant(fun), do: instrument(self(), fun)
+
+  defp drain_task_result!(socket, name) do
+    await_task!()
+
     {:ok, entry} = Async.fetch_tracking(socket, name)
     ref = entry.ref
-
-    receive do
-      {^ref, classified} -> {classified, entry}
-    after
-      1_000 -> flunk("no task result for #{inspect(name)}")
-    end
+    assert_received {^ref, classified}
+    {classified, entry}
   end
 end

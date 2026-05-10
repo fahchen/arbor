@@ -14,7 +14,7 @@ defmodule Arbor.Page.StoreRegistryTest do
   defmodule ProductStore do
   end
 
-  test "put/get/delete/keys manage logical store entries by identity" do
+  test "put/get/delete/keys manage logical store entries by store_id" do
     registry = StoreRegistry.new()
 
     root_entry = %Entry{
@@ -35,20 +35,19 @@ defmodule Arbor.Page.StoreRegistryTest do
 
     registry =
       registry
-      |> StoreRegistry.put([], RootStore, "", root_entry)
-      |> StoreRegistry.put([], FiltersStore, "filters", child_entry)
+      |> StoreRegistry.put([], root_entry)
+      |> StoreRegistry.put(["filters"], child_entry)
 
-    assert Enum.sort(StoreRegistry.keys(registry)) ==
-             Enum.sort([{[], RootStore, ""}, {[], FiltersStore, "filters"}])
+    assert Enum.sort(StoreRegistry.keys(registry)) == Enum.sort([[], ["filters"]])
 
-    assert StoreRegistry.get(registry, [], RootStore, "") == root_entry
-    assert StoreRegistry.get(registry, [], FiltersStore, "filters") == child_entry
+    assert StoreRegistry.get(registry, []) == root_entry
+    assert StoreRegistry.get(registry, ["filters"]) == child_entry
 
-    registry = StoreRegistry.delete(registry, [], FiltersStore, "filters")
-    refute StoreRegistry.get(registry, [], FiltersStore, "filters")
+    registry = StoreRegistry.delete(registry, ["filters"])
+    refute StoreRegistry.get(registry, ["filters"])
   end
 
-  test "path_lookup resolves root and nested child paths" do
+  test "get/2 resolves root and nested store_ids directly (no scan)" do
     root_entry = %Entry{
       socket: %Socket{id: "", parent_path: [], module: RootStore, assigns: %{}, private: %{}},
       module: RootStore
@@ -78,16 +77,13 @@ defmodule Arbor.Page.StoreRegistryTest do
 
     registry =
       StoreRegistry.new()
-      |> StoreRegistry.put([], RootStore, "", root_entry)
-      |> StoreRegistry.put([], FiltersStore, "filters", filters_entry)
-      |> StoreRegistry.put(["filters", "products"], ProductStore, "prod_123", product_entry)
+      |> StoreRegistry.put([], root_entry)
+      |> StoreRegistry.put(["filters"], filters_entry)
+      |> StoreRegistry.put(["filters", "products", "prod_123"], product_entry)
 
-    assert StoreRegistry.path_lookup(registry, []) == root_entry
-    assert StoreRegistry.path_lookup(registry, ["filters"]) == filters_entry
-
-    assert StoreRegistry.path_lookup(registry, ["filters", "products", "prod_123"]) ==
-             product_entry
-
-    refute StoreRegistry.path_lookup(registry, ["filters", "missing"])
+    assert StoreRegistry.get(registry, []) == root_entry
+    assert StoreRegistry.get(registry, ["filters"]) == filters_entry
+    assert StoreRegistry.get(registry, ["filters", "products", "prod_123"]) == product_entry
+    refute StoreRegistry.get(registry, ["filters", "missing"])
   end
 end

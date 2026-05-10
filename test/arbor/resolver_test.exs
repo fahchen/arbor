@@ -354,7 +354,7 @@ defmodule Arbor.ResolverTest do
       assert {:ok, %{header: %{user_name: "Alice"}}, _socket, resolved_registry} =
                Resolver.resolve(socket, registry)
 
-      assert StoreRegistry.get(resolved_registry, [], HeaderStore, "header")
+      assert StoreRegistry.get(resolved_registry, ["header"])
     end
 
     test "Render output uses raw maps for nested store types" do
@@ -364,7 +364,7 @@ defmodule Arbor.ResolverTest do
       assert {:ok, %{header: %{user_name: "Alice"}}, _socket, resolved_registry} =
                Resolver.resolve(socket, registry)
 
-      assert StoreRegistry.keys(resolved_registry) == [{[], RawMapRootStore, ""}]
+      assert StoreRegistry.keys(resolved_registry) == [[]]
     end
 
     test "Resolver evaluates child placeholders before the parent's output is finalized" do
@@ -372,7 +372,11 @@ defmodule Arbor.ResolverTest do
       registry = registry(socket)
 
       assert {:ok, resolved_root, _socket, _registry} = Resolver.resolve(socket, registry)
-      assert resolved_root == %{header: %{user_name: "Alice"}}
+
+      assert resolved_root == %{
+               header: %{user_name: "Alice", __arbor_store_id__: ["header"]},
+               __arbor_store_id__: []
+             }
     end
 
     test "Reordering a keyed list preserves child assigns" do
@@ -416,14 +420,13 @@ defmodule Arbor.ResolverTest do
                Resolver.resolve(next_socket, registry)
 
       assert_receive :mounted_v2
-      refute StoreRegistry.get(next_registry, [], FilterStoreV1, "filters")
-      assert StoreRegistry.get(next_registry, [], FilterStoreV2, "filters")
+      assert %Entry{module: FilterStoreV2} = StoreRegistry.get(next_registry, ["filters"])
     end
 
     test "Duplicate ids in a list reconcile to a hard runtime error" do
       socket = root_socket(DuplicateRootStore)
 
-      assert_raise ArgumentError, ~r/duplicate child identity/, fn ->
+      assert_raise ArgumentError, ~r/duplicate child store_id/, fn ->
         Resolver.resolve(socket, registry(socket))
       end
     end
@@ -459,14 +462,14 @@ defmodule Arbor.ResolverTest do
       registry = registry(socket)
 
       assert {:ok, _resolved, socket, registry} = Resolver.resolve(socket, registry)
-      assert StoreRegistry.get(registry, [], HeaderStore, "header")
+      assert StoreRegistry.get(registry, ["header"])
 
       next_socket = Socket.assign(socket, :show?, false)
 
       assert {:ok, %{child: nil}, _socket, next_registry} =
                Resolver.resolve(next_socket, registry)
 
-      refute StoreRegistry.get(next_registry, [], HeaderStore, "header")
+      refute StoreRegistry.get(next_registry, ["header"])
     end
 
     test "A store may omit update/2; the default merges new_assigns into socket.assigns" do
@@ -538,7 +541,7 @@ defmodule Arbor.ResolverTest do
       assert {:ok, _resolved, dropped_socket, dropped_registry} =
                Resolver.resolve(dropped_socket, registry)
 
-      refute StoreRegistry.get(dropped_registry, [], ListChildStore, "n")
+      refute StoreRegistry.get(dropped_registry, ["n"])
 
       remount_socket = Socket.assign(dropped_socket, :show?, true)
 
@@ -554,7 +557,7 @@ defmodule Arbor.ResolverTest do
       assert {:ok, %{title: "ready"}, _socket, resolved_registry} =
                Resolver.resolve(Reconciler.mount_store(socket), registry(socket))
 
-      assert StoreRegistry.keys(resolved_registry) == [{[], MountInertRootStore, ""}]
+      assert StoreRegistry.keys(resolved_registry) == [[]]
     end
   end
 
@@ -654,16 +657,14 @@ defmodule Arbor.ResolverTest do
       assert %Entry{
                resolved_state: %{header: %{user_name: "Alice"}},
                wire_state: %{"header" => %{"user_name" => "Alice"}}
-             } = StoreRegistry.get(registry, [], RawMapRootStore, "")
+             } = StoreRegistry.get(registry, [])
     end
   end
 
   defp registry(%Socket{} = socket) do
     StoreRegistry.put(
       StoreRegistry.new(),
-      socket.parent_path,
-      socket.module,
-      socket.id || "",
+      Socket.store_id(socket),
       %Entry{
         socket: socket,
         module: socket.module

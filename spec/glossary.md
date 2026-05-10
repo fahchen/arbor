@@ -5,16 +5,17 @@ Shared domain terminology for Arbor specifications.
 | Term | Definition |
 |------|------------|
 | Page runtime | The BEAM process owning the store tree for one connected client session. |
-| Store node | A runtime instance of a store module, identified by `(parent_path, module, id)`. |
-| Store registry | The runtime-internal table of currently mounted store nodes, updated after each render+reconcile cycle and consulted for path resolution. |
-| Path | An ordered list of segments that walks the resolved render output from the root store down to a child store. |
-| Identity | The tuple `(parent_path, module, id)` that names a child store node within its parent. The `id` is constrained to a binary (string). |
-| Command envelope | The wire shape carrying `path`, `command`, and `payload` (no application-layer sequence number). |
+| Store node | A runtime instance of a store module, identified by its `store_id`. |
+| Store registry | The runtime-internal table of currently mounted store nodes, keyed by `store_id`, updated after each render+reconcile cycle and consulted by the command router. |
+| `store_id` | The runtime identity of a store node: an array of local `id` strings traced from the root down to that node. The root has `store_id = []`. The `local id` segment is constrained to a binary (string) and must be unique among siblings under one parent (regardless of module). |
+| `__arbor_store_id__` | Reserved field name on every resolved store-node render output that carries the node's `store_id` array. Clients echo this value verbatim in command envelopes; they never construct ids themselves. The `__arbor_*` prefix is reserved — user `state do` declarations may not use it. |
+| Identity | Synonym for `store_id`. The store `module` is metadata attached to the entry, not part of identity. |
+| Command envelope | The wire shape carrying `store_id` (an array of local id strings), `command`, and `payload` (no application-layer sequence number). |
 | Reply | The transport-level (Phoenix Channel ref-based) response to a command push; carries `status: "ok" \| "error"` and a `payload` map. |
 | Patch push | A separate transport push delivering one patch envelope. |
 | Patch envelope | The wire shape `{type: "patch", base_version, version, ops, stream_ops}`. `ops` is an RFC 6902 array (`add`/`remove`/`replace` only). `stream_ops` is defined by streams/lifecycle. `version` is the post-application monotonic counter; `base_version` is `version - 1`. |
 | Diff engine | Runtime component that compares the previous and next resolved root render output and emits the structural minimal sequence of RFC 6902 ops. No threshold, no subtree-replace fallback, no special-case array strategy. |
-| JSON Pointer | RFC 6901 string syntax used for `path` values in JSON Patch ops; runtime relies on a library for encoding (including `~0`/`~1` escapes). |
+| JSON Pointer | RFC 6901 string syntax used for the `path` field of JSON Patch ops, addressing positions inside the resolved render tree. Distinct from `store_id`, which is the array runtime identity of a store node. Runtime relies on a library for encoding (including `~0`/`~1` escapes). |
 | Version counter | Monotonic integer per page runtime starting at `0` and incrementing per emitted patch envelope. Resets on reconnect (fresh runtime starts at 0). |
 | Initial state delivery | First patch envelope after a fresh mount carries `base_version: 0, version: 1, ops: [{op: "replace", path: "", value: <full root>}]`. No separate "snapshot" envelope type. |
 | Transport | The connecting layer (Phoenix Channel over WebSocket) responsible for delivery, ordering, and ref correlation. |
@@ -26,7 +27,7 @@ Shared domain terminology for Arbor specifications.
 | `assigns` | The state map on `socket`. Holds parent-passed values (declared via `attr`) and store-internal values together; LV-aligned single namespace. |
 | `attr` | Compile-time declaration on a store module that names a parent-supplied assign and optionally specifies `required: true`, a typespec, and a `default:` value. Mirrors `Phoenix.Component.attr/3`. Function-valued attrs are how callbacks are passed and declared. |
 | `state do` | The compile-time declaration of a store's public render-output shape. Validated by the render-output validation hook; codegen target for Elixir typespecs and TypeScript. Field types may include primitives, `list(...)`, nested `Arbor.State` modules, nested store `state()` references, native Elixir typespec unions for variants, `stream :name, T, opts` declarations, and `AsyncResult.of(...)` markers (defined in their own features). |
-| `child(Module, id: ..., assigns)` | A render-time placeholder. The runtime resolves it into a child store node identified by `(parent_path, Module, id)` and substitutes the child's render output. `child/2` is a plain function returning a sentinel; sentinels found in render output are resolved, sentinels elsewhere are inert data. |
+| `child(Module, id: ..., assigns)` | A render-time placeholder. The runtime resolves it into a child store node identified by `store_id` (parent's `store_id ++ [local id]`) and substitutes the child's render output. `child/2` is a plain function returning a sentinel; sentinels found in render output are resolved, sentinels elsewhere are inert data. |
 | Resolver | The runtime component that walks the rendered structure, resolves `child(...)` placeholders bottom-up, and produces the final concrete output. |
 | `Arbor.State` | Module type for reusable output structures. No lifecycle, no commands, no runtime identity. Cannot be referenced via `child(...)`. |
 | Lifecycle | For child stores: `mount(socket)` and `update(new_assigns, socket)`, both required to return `{:ok, socket}`. No per-child unmount/terminate. The root page store may additionally define `terminate(reason, socket)`. |

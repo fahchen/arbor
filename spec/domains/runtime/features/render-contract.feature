@@ -35,7 +35,7 @@ Feature: Render Contract
       When the runtime resolves the root output
       Then each child store's render runs before the root's output is treated as complete
 
-  Rule: Child store identity is (parent_path, module, id), and assigns survive identity-stable re-renders
+  Rule: Child store identity is store_id (parent's store_id ++ [local id]); module is metadata, not part of identity
 
     Scenario: Reordering a keyed list preserves child assigns
       Given the root renders a list of children keyed [{id: "a"}, {id: "b"}] under the same parent
@@ -44,17 +44,37 @@ Feature: Render Contract
       Then both children's assigns are preserved
       And neither mount is invoked
 
-    Scenario: Changing a child's module remounts a fresh node
+    Scenario: Changing a child's module on the same store_id remounts a fresh node
       Given a child(FilterStoreV1, id: "filters") rendered last cycle
       When this cycle the parent renders child(FilterStoreV2, id: "filters")
       Then the V1 node is discarded
       And a fresh V2 node mounts with no preserved assigns
 
-  Rule: Two child(...) with identical (parent_path, module, id) in one render is an error
+  Rule: Two child(...) with the same store_id in one render is an error (regardless of module)
 
-    Scenario: Duplicate ids in a list reconcile to a hard runtime error
+    Scenario: Duplicate ids under the same parent reconcile to a hard runtime error
       When a single render output contains two child(SameModule, id: "static") entries under the same parent
-      Then the runtime raises during reconcile with the conflicting path
+      Then the runtime raises during reconcile with the conflicting store_id
+
+    Scenario: Two children with the same id but different modules under the same parent also raise
+      When a single render output contains child(ModuleA, id: "static") and child(ModuleB, id: "static") under the same parent
+      Then the runtime raises during reconcile with the conflicting store_id
+
+  Rule: Each resolved store-node render output carries __arbor_store_id__
+
+    Scenario: Root output exposes its store_id
+      When the runtime resolves the root render output
+      Then the output map contains "__arbor_store_id__" set to []
+
+    Scenario: Child output exposes its store_id
+      Given the root renders child(FilterStore, id: "filters") under field "filters"
+      When the runtime resolves the child render output
+      Then the child output map contains "__arbor_store_id__" set to ["filters"]
+
+    Scenario: __arbor_* prefix is reserved in state declarations
+      Given a store declares field :__arbor_custom, String.t() inside state do
+      Then the compile-time check rejects the declaration
+      And points the author at the reserved prefix rule
 
   Rule: A child(...) must declare an id, and the id must be a string
 

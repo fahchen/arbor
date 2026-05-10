@@ -1,6 +1,7 @@
 defmodule Arbor.Page.ServerAsyncTest do
   use ExUnit.Case, async: true
 
+  import Arbor.AsyncTestHelpers
   import ExUnit.CaptureLog
 
   require Logger
@@ -15,6 +16,8 @@ defmodule Arbor.Page.ServerAsyncTest do
   defmodule AsyncStore do
     @moduledoc false
     use Arbor.Store
+
+    import Arbor.AsyncTestHelpers
 
     state do
       field :profile, Arbor.AsyncResult.of(%{name: String.t()})
@@ -109,73 +112,70 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     def handle_command(:load_profile, %{"name" => name}, socket) do
-      socket = Arbor.Async.assign_async(socket, :profile, fn -> {:ok, %{name: name}} end)
-      {:noreply, socket}
+      fun = instrument(test_pid(socket), fn -> {:ok, %{name: name}} end)
+      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
     def handle_command(:load_profile_blocked, %{"name" => name, "tag" => tag}, socket) do
-      test_pid = socket.assigns["test_pid"]
-
-      socket =
-        Arbor.Async.assign_async(socket, :profile, fn ->
-          block_then_return(test_pid, {:profile, tag}, {:ok, %{name: name}})
+      fun =
+        instrument(test_pid(socket), fn ->
+          receive do
+            {:continue, ^tag} -> {:ok, %{name: name}}
+          end
         end)
 
-      {:noreply, socket}
+      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
     def handle_command(:load_profile_bad_return, _payload, socket) do
-      {:noreply, Arbor.Async.assign_async(socket, :profile, fn -> 123 end)}
+      fun = instrument(test_pid(socket), fn -> 123 end)
+      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
     def handle_command(:load_profile_raise, _payload, socket) do
-      {:noreply, Arbor.Async.assign_async(socket, :profile, fn -> raise "boom" end)}
+      fun = instrument(test_pid(socket), fn -> raise "boom" end)
+      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
     def handle_command(:load_profile_exit, _payload, socket) do
-      {:noreply, Arbor.Async.assign_async(socket, :profile, fn -> exit(:boom) end)}
+      fun = instrument(test_pid(socket), fn -> exit(:boom) end)
+      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
     def handle_command(:load_identity, _payload, socket) do
-      socket =
-        Arbor.Async.assign_async(socket, [:user, :org], fn ->
-          {:ok, %{user: "ada", org: "arbor"}}
-        end)
-
-      {:noreply, socket}
+      fun = instrument(test_pid(socket), fn -> {:ok, %{user: "ada", org: "arbor"}} end)
+      {:noreply, Arbor.Async.assign_async(socket, [:user, :org], fun)}
     end
 
     def handle_command(:load_identity_missing_key, _payload, socket) do
-      socket =
-        Arbor.Async.assign_async(socket, [:user, :org], fn ->
-          {:ok, %{user: "ada"}}
-        end)
-
-      {:noreply, socket}
+      fun = instrument(test_pid(socket), fn -> {:ok, %{user: "ada"}} end)
+      {:noreply, Arbor.Async.assign_async(socket, [:user, :org], fun)}
     end
 
     def handle_command(:start_warm, %{"name" => name}, socket) do
-      socket = Arbor.Async.start_async(socket, :warm_cache, fn -> {:warmed, name} end)
-      {:noreply, socket}
+      fun = instrument(test_pid(socket), fn -> {:warmed, name} end)
+      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
     end
 
     def handle_command(:start_warm_blocked, %{"name" => name, "tag" => tag}, socket) do
-      test_pid = socket.assigns["test_pid"]
-
-      socket =
-        Arbor.Async.start_async(socket, :warm_cache, fn ->
-          block_then_return(test_pid, {:warm_cache, tag}, {:warmed, name})
+      fun =
+        instrument(test_pid(socket), fn ->
+          receive do
+            {:continue, ^tag} -> {:warmed, name}
+          end
         end)
 
-      {:noreply, socket}
+      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
     end
 
     def handle_command(:start_warm_raise, _payload, socket) do
-      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fn -> raise "boom" end)}
+      fun = instrument(test_pid(socket), fn -> raise "boom" end)
+      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
     end
 
     def handle_command(:start_warm_exit, _payload, socket) do
-      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fn -> exit(:boom) end)}
+      fun = instrument(test_pid(socket), fn -> exit(:boom) end)
+      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
     end
 
     def handle_command(:cancel_warm, %{"reason" => reason}, socket) do
@@ -183,8 +183,8 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     def handle_command(:raising_handle_async, _payload, socket) do
-      socket = Arbor.Async.start_async(socket, :raises, fn -> :ok end)
-      {:noreply, socket}
+      fun = instrument(test_pid(socket), fn -> :ok end)
+      {:noreply, Arbor.Async.start_async(socket, :raises, fun)}
     end
 
     def handle_command(:cancel_profile_by_name, %{"reason" => reason}, socket) do
@@ -200,55 +200,67 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     def handle_command(:stream_messages, %{"mode" => "ok"}, socket) do
-      {:noreply,
-       Arbor.Async.stream_async(socket, :messages, fn ->
-         {:ok, [%{id: "m1", body: "First"}, %{id: "m2", body: "Second"}]}
-       end)}
+      fun =
+        instrument(test_pid(socket), fn ->
+          {:ok, [%{id: "m1", body: "First"}, %{id: "m2", body: "Second"}]}
+        end)
+
+      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
     def handle_command(:stream_messages, %{"mode" => "ok_with_opts"}, socket) do
-      {:noreply,
-       Arbor.Async.stream_async(socket, :messages, fn ->
-         {:ok, [%{id: "m1", body: "First"}, %{id: "m2", body: "Second"}], at: 0, limit: -100}
-       end)}
+      fun =
+        instrument(test_pid(socket), fn ->
+          {:ok, [%{id: "m1", body: "First"}, %{id: "m2", body: "Second"}], at: 0, limit: -100}
+        end)
+
+      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
     def handle_command(:stream_messages, %{"mode" => "ok_with_reset"}, socket) do
-      {:noreply,
-       Arbor.Async.stream_async(socket, :messages, fn ->
-         {:ok, [%{id: "m3", body: "Reset First"}, %{id: "m4", body: "Reset Second"}], reset: true}
-       end)}
+      fun =
+        instrument(test_pid(socket), fn ->
+          {:ok, [%{id: "m3", body: "Reset First"}, %{id: "m4", body: "Reset Second"}],
+           reset: true}
+        end)
+
+      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
     def handle_command(:stream_messages, %{"mode" => "error"}, socket) do
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fn -> {:error, :rate_limited} end)}
+      fun = instrument(test_pid(socket), fn -> {:error, :rate_limited} end)
+      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
     def handle_command(:stream_messages, %{"mode" => "bad_return"}, socket) do
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fn -> 123 end)}
+      fun = instrument(test_pid(socket), fn -> 123 end)
+      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
     def handle_command(:stream_messages, %{"mode" => "not_enumerable"}, socket) do
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fn -> {:ok, 123} end)}
+      fun = instrument(test_pid(socket), fn -> {:ok, 123} end)
+      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
     def handle_command(:stream_messages, %{"mode" => "raise"}, socket) do
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fn -> raise "boom" end)}
+      fun = instrument(test_pid(socket), fn -> raise "boom" end)
+      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
     def handle_command(:stream_messages, %{"mode" => "exit"}, socket) do
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fn -> exit(:boom) end)}
+      fun = instrument(test_pid(socket), fn -> exit(:boom) end)
+      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
     def handle_command(:stream_messages_blocked, %{"tag" => tag}, socket) do
-      test_pid = socket.assigns["test_pid"]
-
-      socket =
-        Arbor.Async.stream_async(socket, :messages, fn ->
-          block_then_return(test_pid, {:messages, tag}, {:ok, [%{id: "m5", body: "Blocked"}]})
+      fun =
+        instrument(test_pid(socket), fn ->
+          receive do
+            {:continue, ^tag} -> {:ok, [%{id: "m5", body: "Blocked"}]}
+          end
         end)
 
-      {:noreply, socket}
+      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
     def handle_command(:cancel_messages, %{"reason" => reason}, socket) do
@@ -268,13 +280,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       raise "boom-in-handle-async"
     end
 
-    defp block_then_return(test_pid, key, result) do
-      send(test_pid, {:task_ready, key, self()})
-
-      receive do
-        {:continue_task, ^key} -> result
-      end
-    end
+    defp test_pid(socket), do: socket.assigns["test_pid"]
   end
 
   defmodule MissingStreamStore do
@@ -292,30 +298,20 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
   end
 
-  setup do
-    Process.flag(:trap_exit, true)
-    :ok
-  end
-
   describe "assign_async/3,4" do
     test "writes the final ok value onto the socket" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :load_profile, %{"name" => "ada"})
+      await_task!()
+      sync_server!(pid)
 
       assert %AsyncResult{status: :ok, result: %{name: "ada"}, reason: nil} =
-               await_root_socket!(
-                 pid,
-                 &match?(%AsyncResult{status: :ok, result: %{name: "ada"}}, &1.assigns.profile)
-               ).assigns.profile
-
-      shutdown_server(pid)
+               root_socket(pid).assigns.profile
     end
 
     test "exposes the loading state while a task is still running" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :load_profile_blocked, %{
@@ -323,107 +319,86 @@ defmodule Arbor.Page.ServerAsyncTest do
                  "tag" => "loading"
                })
 
-      assert_receive {:patch, %PatchEnvelope{}}, 1_000
+      task_pid = receive_task_pid!()
+      sync_server!(pid)
 
       assert %AsyncResult{status: :loading, result: %{name: "cached"}, reason: nil} =
                root_socket(pid).assigns.profile
 
-      continue_task!(:profile, "loading")
+      ref = Process.monitor(task_pid)
+      send(task_pid, {:continue, "loading"})
+      assert_receive {:DOWN, ^ref, _, _, _}, 200
+      sync_server!(pid)
 
       assert %AsyncResult{status: :ok, result: %{name: "ada"}, reason: nil} =
-               await_root_socket!(
-                 pid,
-                 &match?(%AsyncResult{status: :ok, result: %{name: "ada"}}, &1.assigns.profile)
-               ).assigns.profile
-
-      shutdown_server(pid)
+               root_socket(pid).assigns.profile
     end
 
     test "writes all keys for multi-key tasks" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :load_identity, %{})
+      await_task!()
+      sync_server!(pid)
 
-      socket =
-        await_root_socket!(pid, fn socket ->
-          match?(%AsyncResult{status: :ok, result: "ada"}, socket.assigns.user) and
-            match?(%AsyncResult{status: :ok, result: "arbor"}, socket.assigns.org)
-        end)
-
+      socket = root_socket(pid)
       assert %AsyncResult{status: :ok, result: "ada"} = socket.assigns.user
       assert %AsyncResult{status: :ok, result: "arbor"} = socket.assigns.org
-
-      shutdown_server(pid)
     end
 
     test "marks invalid return values as failed" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :load_profile_bad_return, %{})
-
-      socket = await_root_socket!(pid, &match?(%AsyncResult{status: :failed}, &1.assigns.profile))
+      await_task!()
+      sync_server!(pid)
 
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
-               socket.assigns.profile
-
-      shutdown_server(pid)
+               root_socket(pid).assigns.profile
     end
 
     test "marks missing multi-key results as failed" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :load_identity_missing_key, %{})
+      await_task!()
+      sync_server!(pid)
 
-      socket =
-        await_root_socket!(pid, fn socket ->
-          match?(%AsyncResult{status: :failed}, socket.assigns.user) and
-            match?(%AsyncResult{status: :failed}, socket.assigns.org)
-        end)
+      socket = root_socket(pid)
 
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
                socket.assigns.user
 
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
                socket.assigns.org
-
-      shutdown_server(pid)
     end
 
     test "marks raised exceptions as failed exits" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :load_profile_raise, %{})
-
-      socket = await_root_socket!(pid, &match?(%AsyncResult{status: :failed}, &1.assigns.profile))
+      await_task!()
+      sync_server!(pid)
 
       assert %AsyncResult{
                status: :failed,
                reason: {:exit, {:error, %RuntimeError{message: "boom"}, _stack}}
-             } = socket.assigns.profile
-
-      shutdown_server(pid)
+             } = root_socket(pid).assigns.profile
     end
 
     test "marks exited tasks as failed exits" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :load_profile_exit, %{})
+      await_task!()
+      sync_server!(pid)
 
-      socket = await_root_socket!(pid, &match?(%AsyncResult{status: :failed}, &1.assigns.profile))
-
-      assert %AsyncResult{status: :failed, reason: {:exit, :boom}} = socket.assigns.profile
-
-      shutdown_server(pid)
+      assert %AsyncResult{status: :failed, reason: {:exit, :boom}} =
+               root_socket(pid).assigns.profile
     end
 
     test "cancel_async by name resolves the tracked assign to failed" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :load_profile_blocked, %{
@@ -431,30 +406,23 @@ defmodule Arbor.Page.ServerAsyncTest do
                  "tag" => "cancel-name"
                })
 
-      assert %AsyncResult{status: :loading} =
-               await_root_socket!(
-                 pid,
-                 &match?(%AsyncResult{status: :loading}, &1.assigns.profile)
-               ).assigns.profile
+      _task_pid = receive_task_pid!()
+      sync_server!(pid)
+
+      assert %AsyncResult{status: :loading} = root_socket(pid).assigns.profile
 
       assert {:ok, _reply} =
                Server.command(pid, [], :cancel_profile_by_name, %{"reason" => "user_left"})
 
-      socket =
-        await_root_socket!(
-          pid,
-          &match?(%AsyncResult{status: :failed, reason: {:exit, :user_left}}, &1.assigns.profile)
-        )
+      sync_server!(pid)
 
+      socket = root_socket(pid)
       assert %AsyncResult{status: :failed, reason: {:exit, :user_left}} = socket.assigns.profile
       assert %{} = Async.tracking(socket)
-
-      shutdown_server(pid)
     end
 
     test "cancel_async by AsyncResult pre-writes the failure and drops tracking" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :load_profile_blocked, %{
@@ -462,110 +430,114 @@ defmodule Arbor.Page.ServerAsyncTest do
                  "tag" => "cancel-value"
                })
 
-      assert %AsyncResult{status: :loading} =
-               await_root_socket!(
-                 pid,
-                 &match?(%AsyncResult{status: :loading}, &1.assigns.profile)
-               ).assigns.profile
+      _task_pid = receive_task_pid!()
+      sync_server!(pid)
+
+      assert %AsyncResult{status: :loading} = root_socket(pid).assigns.profile
 
       assert {:ok, _reply} =
                Server.command(pid, [], :cancel_profile_by_value, %{"reason" => "user_left"})
 
-      socket =
-        await_root_socket!(
-          pid,
-          &match?(%AsyncResult{status: :failed, reason: {:exit, :user_left}}, &1.assigns.profile)
-        )
+      sync_server!(pid)
 
+      socket = root_socket(pid)
       assert %AsyncResult{status: :failed, reason: {:exit, :user_left}} = socket.assigns.profile
       assert %{} = Async.tracking(socket)
-
-      shutdown_server(pid)
     end
   end
 
   describe "start_async/3,4" do
     test "does not mutate assigns before handle_async runs" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :start_warm_blocked, %{"name" => "ada", "tag" => "warm"})
 
-      refute_receive {:patch, _envelope}, 100
+      task_pid = receive_task_pid!()
+      sync_server!(pid)
+
+      # start_async does not pre-write assigns; cache_status stays "cold".
+      refute_received {:patch, _envelope}
       assert %{assigns: %{cache_status: "cold"}} = root_socket(pid)
 
-      continue_task!(:warm_cache, "warm")
+      ref = Process.monitor(task_pid)
+      send(task_pid, {:continue, "warm"})
+      assert_receive {:DOWN, ^ref, _, _, _}, 200
+      sync_server!(pid)
 
-      assert %{assigns: %{cache_status: "warm:ada"}} =
-               await_root_socket!(pid, &match?("warm:ada", &1.assigns.cache_status))
-
-      shutdown_server(pid)
+      assert %{assigns: %{cache_status: "warm:ada"}} = root_socket(pid)
     end
 
     test "delivers raised task failures to handle_async/3" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :start_warm_raise, %{})
+      await_task!()
+      sync_server!(pid)
 
-      socket = await_root_socket!(pid, &String.starts_with?(&1.assigns.cache_status, "exit:"))
-      assert "exit:" <> reason = socket.assigns.cache_status
+      assert "exit:" <> reason = root_socket(pid).assigns.cache_status
       assert reason =~ "RuntimeError"
       assert reason =~ "boom"
-
-      shutdown_server(pid)
     end
 
     test "delivers task exits to handle_async/3" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :start_warm_exit, %{})
+      await_task!()
+      sync_server!(pid)
 
-      assert %{assigns: %{cache_status: "exit::boom"}} =
-               await_root_socket!(pid, &match?("exit::boom", &1.assigns.cache_status))
-
-      shutdown_server(pid)
+      assert %{assigns: %{cache_status: "exit::boom"}} = root_socket(pid)
     end
 
     test "delivers cancel exits to handle_async/3" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :start_warm_blocked, %{"name" => "ada", "tag" => "cancel"})
 
+      task_pid = receive_task_pid!()
+      sync_server!(pid)
+
+      ref = Process.monitor(task_pid)
+
       assert {:ok, _reply} =
                Server.command(pid, [], :cancel_warm, %{"reason" => "user_navigated"})
 
-      assert %{assigns: %{cache_status: "exit::user_navigated"}} =
-               await_root_socket!(pid, &match?("exit::user_navigated", &1.assigns.cache_status))
+      assert_receive {:DOWN, ^ref, _, _, _}, 200
+      sync_server!(pid)
 
-      shutdown_server(pid)
+      assert %{assigns: %{cache_status: "exit::user_navigated"}} = root_socket(pid)
     end
 
     test "same-name overwrite keeps the latest result and lazy-discards the stale task" do
       attach_telemetry_handler!([:arbor, :async, :lazy_discard])
 
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
-               Server.command(pid, [], :start_warm_blocked, %{"name" => "first", "tag" => "first"})
+               Server.command(pid, [], :start_warm_blocked, %{
+                 "name" => "first",
+                 "tag" => "first"
+               })
+
+      first_task = receive_task_pid!()
+      sync_server!(pid)
 
       assert {:ok, _reply} = Server.command(pid, [], :start_warm, %{"name" => "second"})
+      await_task!()
+      sync_server!(pid)
 
-      assert %{assigns: %{cache_status: "warm:second"}} =
-               await_root_socket!(pid, &match?("warm:second", &1.assigns.cache_status))
-
-      continue_task!(:warm_cache, "first")
-
-      assert_receive {:telemetry, [:arbor, :async, :lazy_discard], _measurements, metadata}, 1_000
-      assert %{name: :warm_cache, kind: :start} = metadata
       assert %{assigns: %{cache_status: "warm:second"}} = root_socket(pid)
 
-      shutdown_server(pid)
+      first_ref = Process.monitor(first_task)
+      send(first_task, {:continue, "first"})
+      assert_receive {:DOWN, ^first_ref, _, _, _}, 200
+      sync_server!(pid)
+
+      assert_received {:telemetry, [:arbor, :async, :lazy_discard], _measurements, metadata}
+      assert %{name: :warm_cache, kind: :start} = metadata
+      assert %{assigns: %{cache_status: "warm:second"}} = root_socket(pid)
     end
   end
 
@@ -574,37 +546,36 @@ defmodule Arbor.Page.ServerAsyncTest do
       attach_telemetry_handler!([:arbor, :async, :exception])
 
       pid = start!()
-      flush_initial!()
 
       capture_log(fn ->
         assert {:ok, _reply} = Server.command(pid, [], :raising_handle_async, %{})
+        await_task!()
+        sync_server!(pid)
 
-        assert_receive {:telemetry, [:arbor, :async, :exception], _measurements, metadata}, 1_000
+        assert_received {:telemetry, [:arbor, :async, :exception], _measurements, metadata}
         assert metadata.name == :raises
         assert metadata.kind == :start
         assert is_list(metadata.stacktrace)
 
-        # Page server still alive
         assert Process.alive?(pid)
         assert %{assigns: %{cache_status: "cold"}} = root_socket(pid)
 
         # Subsequent commands still work
         assert {:ok, _reply} = Server.command(pid, [], :start_warm, %{"name" => "after_crash"})
+        await_task!()
+        sync_server!(pid)
 
-        assert %{assigns: %{cache_status: "warm:after_crash"}} =
-                 await_root_socket!(pid, &match?("warm:after_crash", &1.assigns.cache_status))
-
+        assert %{assigns: %{cache_status: "warm:after_crash"}} = root_socket(pid)
         Logger.flush()
       end)
-
-      shutdown_server(pid)
     end
   end
 
   describe "stream_async/3,4" do
     test "raises before spawning when no stream slot is declared" do
+      Process.flag(:trap_exit, true)
       pid = start!(MissingStreamStore)
-      flush_initial!()
+      Process.link(pid)
 
       capture_log(fn ->
         assert catch_exit(Server.command(pid, [], :load_messages, %{}))
@@ -616,338 +587,218 @@ defmodule Arbor.Page.ServerAsyncTest do
 
     test "writes the final ok status onto the socket" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :stream_messages, %{"mode" => "ok"})
+      await_task!()
+      sync_server!(pid)
 
       assert %AsyncResult{status: :ok, result: true, reason: nil} =
-               await_root_socket!(
-                 pid,
-                 &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
-               ).assigns.messages
-
-      shutdown_server(pid)
+               root_socket(pid).assigns.messages
     end
 
     test "shows loading while the stream task is running" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :stream_messages_blocked, %{"tag" => "loading"})
 
+      task_pid = receive_task_pid!()
+      sync_server!(pid)
+
       assert %AsyncResult{status: :loading, result: nil, reason: nil} =
                root_socket(pid).assigns.messages
 
-      continue_task!(:messages, "loading")
+      ref = Process.monitor(task_pid)
+      send(task_pid, {:continue, "loading"})
+      assert_receive {:DOWN, ^ref, _, _, _}, 200
+      sync_server!(pid)
 
       assert %AsyncResult{status: :ok, result: true, reason: nil} =
-               await_root_socket!(
-                 pid,
-                 &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
-               ).assigns.messages
-
-      shutdown_server(pid)
+               root_socket(pid).assigns.messages
     end
 
     test "emits insert ops with returned stream opts" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :stream_messages, %{"mode" => "ok_with_opts"})
 
-      assert_receive {:patch, %PatchEnvelope{stream_ops: stream_ops}}, 1_000
+      await_task!()
+      sync_server!(pid)
+
+      assert_received {:patch, %PatchEnvelope{stream_ops: stream_ops}}
 
       assert [
                %{op: "insert", at: 0, limit: -100, item_key: "messages-m1"},
                %{op: "insert", at: 0, limit: -100, item_key: "messages-m2"}
              ] = stream_ops
 
-      assert %AsyncResult{status: :ok, result: true} =
-               await_root_socket!(
-                 pid,
-                 &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
-               ).assigns.messages
-
-      shutdown_server(pid)
+      assert %AsyncResult{status: :ok, result: true} = root_socket(pid).assigns.messages
     end
 
     test "emits a reset op when the task returns reset stream opts" do
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :stream_messages, %{"mode" => "ok_with_reset"})
 
-      assert_receive {:patch, %PatchEnvelope{stream_ops: stream_ops}}, 1_000
+      await_task!()
+      sync_server!(pid)
+
+      assert_received {:patch, %PatchEnvelope{stream_ops: stream_ops}}
       assert [%{op: "reset", stream: "messages"}, %{op: "insert"}, %{op: "insert"}] = stream_ops
 
-      assert %AsyncResult{status: :ok, result: true} =
-               await_root_socket!(
-                 pid,
-                 &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
-               ).assigns.messages
-
-      shutdown_server(pid)
+      assert %AsyncResult{status: :ok, result: true} = root_socket(pid).assigns.messages
     end
 
     test "writes failed on {:error, reason} and leaves the stream slot untouched" do
       attach_telemetry_handler!([:arbor, :async, :stop])
 
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :stream_messages, %{"mode" => "error"})
+      await_task!()
+      sync_server!(pid)
 
-      assert_receive {:telemetry, [:arbor, :async, :stop], _measurements,
-                      %{name: :messages, kind: :stream}},
-                     1_000
-
-      socket =
-        await_root_socket_poll!(
-          pid,
-          &match?(
-            %AsyncResult{status: :failed, reason: {:error, :rate_limited}},
-            Map.get(&1.assigns, :messages)
-          )
-        )
+      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+                       %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{status: :failed, reason: {:error, :rate_limited}} =
-               socket.assigns.messages
+               root_socket(pid).assigns.messages
 
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
-
-      shutdown_server(pid)
     end
 
     test "marks invalid return values as failed" do
       attach_telemetry_handler!([:arbor, :async, :stop])
 
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :stream_messages, %{"mode" => "bad_return"})
+      await_task!()
+      sync_server!(pid)
 
-      assert_receive {:telemetry, [:arbor, :async, :stop], _measurements,
-                      %{name: :messages, kind: :stream}},
-                     1_000
-
-      socket =
-        await_root_socket_poll!(
-          pid,
-          &match?(%AsyncResult{status: :failed}, Map.get(&1.assigns, :messages))
-        )
+      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+                       %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
-               socket.assigns.messages
+               root_socket(pid).assigns.messages
 
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
-
-      shutdown_server(pid)
     end
 
     test "marks non-enumerable stream results as failed" do
       attach_telemetry_handler!([:arbor, :async, :stop])
 
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :stream_messages, %{"mode" => "not_enumerable"})
 
-      assert_receive {:telemetry, [:arbor, :async, :stop], _measurements,
-                      %{name: :messages, kind: :stream}},
-                     1_000
+      await_task!()
+      sync_server!(pid)
 
-      socket =
-        await_root_socket_poll!(
-          pid,
-          &match?(%AsyncResult{status: :failed}, Map.get(&1.assigns, :messages))
-        )
+      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+                       %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
-               socket.assigns.messages
+               root_socket(pid).assigns.messages
 
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
-
-      shutdown_server(pid)
     end
 
     test "marks raised stream tasks as failed" do
       attach_telemetry_handler!([:arbor, :async, :stop])
 
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :stream_messages, %{"mode" => "raise"})
+      await_task!()
+      sync_server!(pid)
 
-      assert_receive {:telemetry, [:arbor, :async, :stop], _measurements,
-                      %{name: :messages, kind: :stream}},
-                     1_000
-
-      socket =
-        await_root_socket_poll!(
-          pid,
-          &match?(%AsyncResult{status: :failed}, Map.get(&1.assigns, :messages))
-        )
+      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+                       %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{
                status: :failed,
                reason: {:exit, {:error, %RuntimeError{message: "boom"}, _stack}}
-             } = socket.assigns.messages
-
-      shutdown_server(pid)
+             } = root_socket(pid).assigns.messages
     end
 
     test "marks exited stream tasks as failed" do
       attach_telemetry_handler!([:arbor, :async, :stop])
 
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, [], :stream_messages, %{"mode" => "exit"})
+      await_task!()
+      sync_server!(pid)
 
-      assert_receive {:telemetry, [:arbor, :async, :stop], _measurements,
-                      %{name: :messages, kind: :stream}},
-                     1_000
+      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+                       %{name: :messages, kind: :stream}}
 
-      socket =
-        await_root_socket_poll!(
-          pid,
-          &match?(
-            %AsyncResult{status: :failed, reason: {:exit, :boom}},
-            Map.get(&1.assigns, :messages)
-          )
-        )
-
-      assert %AsyncResult{status: :failed, reason: {:exit, :boom}} = socket.assigns.messages
-
-      shutdown_server(pid)
+      assert %AsyncResult{status: :failed, reason: {:exit, :boom}} =
+               root_socket(pid).assigns.messages
     end
 
     test "cancel_async by name resolves the stream assign to failed" do
       attach_telemetry_handler!([:arbor, :async, :stop])
 
       pid = start!()
-      flush_initial!()
 
       assert {:ok, _reply} =
                Server.command(pid, [], :stream_messages_blocked, %{"tag" => "cancel"})
 
-      assert %AsyncResult{status: :loading} =
-               await_root_socket!(
-                 pid,
-                 &match?(%AsyncResult{status: :loading}, Map.get(&1.assigns, :messages))
-               ).assigns.messages
+      task_pid = receive_task_pid!()
+      sync_server!(pid)
+
+      assert %AsyncResult{status: :loading} = root_socket(pid).assigns.messages
+
+      ref = Process.monitor(task_pid)
 
       assert {:ok, _reply} =
                Server.command(pid, [], :cancel_messages, %{"reason" => "user_navigated"})
 
-      assert_receive {:telemetry, [:arbor, :async, :stop], _measurements,
-                      %{name: :messages, kind: :stream}},
-                     1_000
+      assert_receive {:DOWN, ^ref, _, _, _}, 200
+      sync_server!(pid)
 
-      socket =
-        await_root_socket_poll!(
-          pid,
-          &match?(
-            %AsyncResult{status: :failed, reason: {:exit, :user_navigated}},
-            Map.get(&1.assigns, :messages)
-          )
-        )
+      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+                       %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{status: :failed, reason: {:exit, :user_navigated}} =
-               socket.assigns.messages
+               root_socket(pid).assigns.messages
 
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
-
-      shutdown_server(pid)
     end
   end
 
   defp start!(store \\ AsyncStore) do
-    {:ok, pid} =
-      Server.start_link(
-        {store, %{"page_id" => "p1", "test_pid" => self()}, %{transport_pid: self()}}
+    pid =
+      start_supervised!(
+        {Server, {store, %{"page_id" => "p1", "test_pid" => self()}, %{transport_pid: self()}}}
       )
 
+    flush_initial!(pid)
     pid
   end
 
-  defp flush_initial! do
-    assert_receive {:patch, %PatchEnvelope{base_version: 0, version: 1}}, 1_000
-  end
-
-  defp await_root_socket!(pid, predicate, timeout \\ 1_000) when is_function(predicate, 1) do
-    deadline = System.monotonic_time(:millisecond) + timeout
-    do_await_root_socket(pid, predicate, deadline)
-  end
-
-  defp await_root_socket_poll!(pid, predicate, timeout \\ 1_000) when is_function(predicate, 1) do
-    deadline = System.monotonic_time(:millisecond) + timeout
-    do_await_root_socket_poll(pid, predicate, deadline)
-  end
-
-  defp do_await_root_socket(pid, predicate, deadline) do
-    socket = root_socket(pid)
-
-    if predicate.(socket) do
-      socket
-    else
-      remaining = deadline - System.monotonic_time(:millisecond)
-
-      if remaining <= 0 do
-        flunk("socket state did not settle: #{inspect(socket.assigns)}")
-      end
-
-      receive do
-        {:patch, _envelope} -> do_await_root_socket(pid, predicate, deadline)
-      after
-        remaining ->
-          flunk("socket state did not settle: #{inspect(socket.assigns)}")
-      end
-    end
+  defp flush_initial!(pid) do
+    sync_server!(pid)
+    assert_received {:patch, %PatchEnvelope{base_version: 0, version: 1}}
   end
 
   defp root_socket(pid) do
     state = :sys.get_state(pid)
-    %StoreRegistry.Entry{socket: socket} = StoreRegistry.path_lookup(state.store_registry, [])
+    %StoreRegistry.Entry{socket: socket} = StoreRegistry.get(state.store_registry, [])
     socket
-  end
-
-  defp do_await_root_socket_poll(pid, predicate, deadline) do
-    socket = root_socket(pid)
-
-    if predicate.(socket) do
-      socket
-    else
-      remaining = deadline - System.monotonic_time(:millisecond)
-
-      if remaining <= 0 do
-        flunk("socket state did not settle: #{inspect(socket.assigns)}")
-      end
-
-      receive do
-      after
-        min(remaining, 10) ->
-          do_await_root_socket_poll(pid, predicate, deadline)
-      end
-    end
   end
 
   defp root_stream_slot(pid, name) do
     root_socket(pid).assigns[Stream.assigns_key()][name]
-  end
-
-  defp continue_task!(prefix, tag) do
-    key = {prefix, tag}
-    assert_receive {:task_ready, ^key, task_pid}, 1_000
-    send(task_pid, {:continue_task, key})
   end
 
   defp attach_telemetry_handler!(event) do
@@ -964,25 +815,5 @@ defmodule Arbor.Page.ServerAsyncTest do
     )
 
     on_exit(fn -> :telemetry.detach(handler_id) end)
-  end
-
-  # Page-server shutdown emits a runtime log from `terminate/2`. Synchronize
-  # teardown under `capture_log/1` so repeated seeded test runs stay quiet.
-  defp shutdown_server(pid) when is_pid(pid) do
-    if Process.alive?(pid) do
-      ref = Process.monitor(pid)
-
-      capture_log(fn ->
-        GenServer.stop(pid, :shutdown)
-
-        receive do
-          {:DOWN, ^ref, _type, _object, _reason} -> :ok
-        after
-          1_000 -> :ok
-        end
-
-        Logger.flush()
-      end)
-    end
   end
 end
