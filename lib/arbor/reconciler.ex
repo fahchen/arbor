@@ -44,16 +44,34 @@ defmodule Arbor.Reconciler do
 
     case StoreRegistry.get(registry, parent_path, child.module, id) do
       %Entry{} = entry ->
-        if Socket.consumed_keys_changed?(parent_socket, consumed_keys) do
-          next_socket = update_store(entry.socket, assigns)
-          {:update, identity, next_socket, consumed_keys}
-        else
-          {:reuse, identity, %{entry | consumed_keys: consumed_keys}, consumed_keys}
+        cond do
+          Socket.consumed_keys_changed?(parent_socket, consumed_keys) ->
+            next_socket = update_store(entry.socket, assigns)
+            {:update, identity, next_socket, consumed_keys}
+
+          # Child has internal mutations queued (from a command handler, an
+          # async result write, or a stream insert) since the last render. The
+          # parent did not change so `update/2` does not run, but the child
+          # still needs to re-render so its new state surfaces in the wire diff.
+          child_socket_dirty?(entry.socket) ->
+            {:update, identity, entry.socket, consumed_keys}
+
+          true ->
+            {:reuse, identity, %{entry | consumed_keys: consumed_keys}, consumed_keys}
         end
 
       nil ->
         {:mount, identity, new_child_socket(parent_path, child.module, id, assigns),
          consumed_keys}
+    end
+  end
+
+  @spec child_socket_dirty?(Socket.t()) :: boolean()
+  defp child_socket_dirty?(%Socket{assigns: assigns}) do
+    case Map.get(assigns, :__changed__) do
+      nil -> false
+      changed when changed == %{} -> false
+      _changed -> true
     end
   end
 
