@@ -2,7 +2,7 @@ defmodule Arbor.Plugin.TypeScript do
   @moduledoc """
   TypedStructor plugin that marks an Arbor `state do` block as eligible for
   TypeScript codegen and snapshots the normalized field metadata onto a
-  persisted module attribute so the `mix arbor.codegen.ts` task can locate
+  persisted module attribute so the `mix compile.arbor_ts` compiler can locate
   every TS-eligible Arbor module from a freshly-loaded application without
   re-walking the typed_structor AST.
 
