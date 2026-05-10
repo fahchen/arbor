@@ -1,5 +1,16 @@
 export type StoreId = readonly string[]
 
+// Consumers augment this via `declare module "@arbor/client"`.
+export interface ArborStoreMap {}
+
+export type ArborStoreModule = keyof ArborStoreMap & string
+
+export type ArborStoreState<M extends ArborStoreModule> =
+  ArborStoreMap[M] extends { state: infer State } ? State : never
+
+export type ArborStoreCommands<M extends ArborStoreModule> =
+  ArborStoreMap[M] extends { commands: infer Commands } ? Commands : never
+
 export type ArborAsyncFailure =
   | { kind: "error"; value: unknown }
   | { kind: "exit"; value: unknown }

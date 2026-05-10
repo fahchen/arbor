@@ -4,6 +4,10 @@ export type { ClientEventMap } from "./events"
 export { applyPatch, parsePointer } from "./patch"
 export { applyStreamOps, getStream, pruneStreams } from "./streams"
 export type {
+  ArborStoreCommands,
+  ArborStoreMap,
+  ArborStoreModule,
+  ArborStoreState,
   ArborAsyncFailure,
   AsyncResult,
   JsonPatchOp,
@@ -14,7 +18,7 @@ export type {
 } from "./types"
 
 import type { ArborClient } from "./client"
-import type { StoreId } from "./types"
+import type { ArborStoreCommands, ArborStoreModule, ArborStoreState, StoreId } from "./types"
 
 export interface BoundStore<
   TState,
@@ -29,6 +33,15 @@ export interface BoundStore<
   ): Promise<Reply>
 }
 
+export function bindStore<M extends ArborStoreModule>(
+  client: ArborClient,
+  storeId: StoreId
+): BoundStore<
+  ArborStoreState<M>,
+  ArborStoreCommands<M> extends Record<string, Record<string, unknown>>
+    ? ArborStoreCommands<M>
+    : {}
+>
 export function bindStore<
   TState,
   TCommands extends Record<string, Record<string, unknown>> = {}
