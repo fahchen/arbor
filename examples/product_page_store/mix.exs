@@ -7,6 +7,7 @@ defmodule ProductPageStore.MixProject do
       version: "0.1.0",
       elixir: "~> 1.19",
       start_permanent: false,
+      compilers: Mix.compilers() ++ [:arbor_ts],
       deps: deps()
     ]
   end
