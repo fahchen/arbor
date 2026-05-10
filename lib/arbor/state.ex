@@ -24,12 +24,17 @@ defmodule Arbor.State do
       Module.register_attribute(__MODULE__, :__arbor_fields__, accumulate: false)
       Module.register_attribute(__MODULE__, :__arbor_commands__, accumulate: true)
       Module.register_attribute(__MODULE__, :__arbor_attrs__, accumulate: true)
+      Module.put_attribute(__MODULE__, :__arbor_kind__, :state)
 
       @after_verify {Arbor.Type, :verify_module!}
 
       @doc false
       @spec __arbor_runtime_module__() :: boolean()
       def __arbor_runtime_module__, do: true
+
+      @doc false
+      @spec __arbor_kind__() :: :state
+      def __arbor_kind__, do: :state
 
       @before_compile Arbor.Plugin.Reflection
     end

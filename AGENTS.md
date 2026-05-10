@@ -56,8 +56,15 @@ If the spec feels wrong, flag the discrepancy in the PR — never silently edit 
 - `:after_to_state` runs on the resolved Elixir term (atom keys, structs, atom values); `:after_serialize` runs on the wire term (string keys, plain maps, atoms-as-strings) produced by `Arbor.Wire.to_wire/1`
 - Hook return: `{:cont, socket} | {:halt, socket} | {:halt, reply, socket}`
 - Child identity is `{parent_path, module, id}`; `id` must be a binary (BDR-0011)
-- `Module.__arbor__/1` reflection keys: `:fields`, `:commands`, `:streams`, `:attrs`, `{:type, name}`
+- `Module.__arbor__/1` reflection keys: `:fields`, `:commands`, `:streams`, `:attrs`, `{:type, name}`. Singular variants `__arbor__/2` accept `:field | :command | :stream | :attr` plus a name and return `{:ok, def} | :error`
 - typed_structor evaluates field opts eagerly — `Arbor.DSL.State.field/3` wraps opts in `Macro.escape/1` so `item_key: &…` captures survive into reflection. Don't strip this
+- Module-kind contract:
+
+  | use directive    | role                   | DSL block | reflection callback           |
+  | ---------------- | ---------------------- | --------- | ----------------------------- |
+  | use Arbor.Store  | store + lifecycle      | state do  | __arbor_validate_state__/1    |
+  | use Arbor.State  | render output type     | state do  | __arbor_validate_state__/1    |
+  | use Arbor.Input  | input data type        | input do  | __arbor_validate_input__/1    |
 
 ## Workflow
 
