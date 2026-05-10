@@ -6,12 +6,27 @@ import App from "./App"
 import { client } from "./arbor"
 import "./App.css"
 
-await client.connect()
+const root = createRoot(document.getElementById("root")!)
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <ArborProvider client={client}>
-      <App />
-    </ArborProvider>
-  </StrictMode>
-)
+try {
+  await client.connect()
+
+  root.render(
+    <StrictMode>
+      <ArborProvider client={client}>
+        <App />
+      </ArborProvider>
+    </StrictMode>
+  )
+} catch (error) {
+  root.render(
+    <div style={{ padding: 24, fontFamily: "system-ui" }}>
+      <h1>Connect failed</h1>
+      <p>
+        The Arbor demo backend isn&apos;t reachable. Start the Phoenix endpoint with{" "}
+        <code>mix run --no-halt</code> and reload.
+      </p>
+      <pre style={{ whiteSpace: "pre-wrap", color: "#a00" }}>{String(error)}</pre>
+    </div>
+  )
+}

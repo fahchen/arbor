@@ -104,11 +104,11 @@ export default function App() {
                 </li>
               ))}
             </ul>
+          ) : onlineUsers?.status === "loading" || !onlineUsers ? (
+            <p className="muted">Loading online users…</p>
           ) : (
             <p className="muted">
-              {onlineUsers?.status === "failed"
-                ? "Presence fetch failed."
-                : "Presence is loading through Arbor.Async.assign_async/3."}
+              Presence fetch failed.
             </p>
           )}
         </article>

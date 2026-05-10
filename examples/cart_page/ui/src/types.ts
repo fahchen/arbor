@@ -1,5 +1,5 @@
 export type StoreState = {
-  __arbor_store_id__: string[]
+  __arbor_store_id__: readonly string[]
 }
 
 export type HeaderState = StoreState & {
