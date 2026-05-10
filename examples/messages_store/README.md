@@ -34,9 +34,21 @@ iex> flush()  # patch envelope with stream insert
 
 ## Codegen
 
-Generate TypeScript types from this example app:
+Add the `:arbor_ts` Mix compiler to the example app's `mix.exs`:
+
+```elixir
+def project do
+  [
+    ...,
+    compilers: Mix.compilers() ++ [:arbor_ts]
+  ]
+end
+```
+
+Then `mix compile` keeps `priv/codegen/ts/arbor.ts` in sync. Regenerate
+explicitly with `mix compile.arbor_ts`:
 
 ```sh
-mix arbor.codegen.ts
+mix compile.arbor_ts
 ls priv/codegen/ts/
 ```

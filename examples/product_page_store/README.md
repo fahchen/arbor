@@ -40,9 +40,22 @@ iex> flush()  # drains the post-command patch envelope
 
 ## Codegen
 
-Generate TypeScript types from this example app's `state do` declarations:
+Add the `:arbor_ts` Mix compiler to the example app's `mix.exs`:
+
+```elixir
+def project do
+  [
+    ...,
+    compilers: Mix.compilers() ++ [:arbor_ts]
+  ]
+end
+```
+
+Then `mix compile` keeps `priv/codegen/ts/arbor.ts` in sync with this
+example's `state do` declarations. Regenerate explicitly with
+`mix compile.arbor_ts`:
 
 ```sh
-mix arbor.codegen.ts
+mix compile.arbor_ts
 ls priv/codegen/ts/
 ```
