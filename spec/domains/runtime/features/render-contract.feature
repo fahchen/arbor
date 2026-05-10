@@ -15,16 +15,16 @@ Feature: Render Contract
       Then the runtime exposes an Elixir typespec equivalent to %{status: String.t()}
       And the codegen produces TypeScript shape { status: string }
 
-  Rule: to_state(socket) returns a value matching the state shape, with child(...) placeholders allowed
+  Rule: render(socket) returns a value matching the state shape, with child(...) placeholders allowed
 
     Scenario: Render output uses child placeholders for nested store fields
       Given a store declares field "header" typed as HeaderStore.state()
-      When to_state(socket) returns %{header: child(HeaderStore, id: "header", current_user: u)}
+      When render(socket) returns %{header: child(HeaderStore, id: "header", current_user: u)}
       Then the resolver substitutes the child's render output into the header field
 
     Scenario: Render output uses raw maps for nested store types
       Given a store declares field "header" typed as HeaderStore.state()
-      When to_state(socket) returns %{header: %{user_name: "Alice", avatar_url: nil}}
+      When render(socket) returns %{header: %{user_name: "Alice", avatar_url: nil}}
       Then validation accepts the raw map as long as it conforms to HeaderStore.state()
       And no child store node is mounted for the header field
 
@@ -93,12 +93,12 @@ Feature: Render Contract
       Given a child identity that does not yet exist
       When the parent's render emits a child(...) placeholder for that identity
       Then mount(socket) runs once
-      And to_state(socket) runs after mount
+      And render(socket) runs after mount
 
     Scenario: Subsequent parent re-renders trigger update
       Given a mounted child receives the same identity in a later parent render with new parent-passed assigns
       Then update(new_assigns, socket) runs
-      And to_state(socket) runs after update returns {:ok, socket}
+      And render(socket) runs after update returns {:ok, socket}
 
     Scenario: Disappearance silently discards the node
       Given a mounted child node
@@ -120,7 +120,7 @@ Feature: Render Contract
       Given a store does not define update/2
       When the parent re-renders with new parent-passed assigns
       Then the runtime merges new_assigns into socket.assigns automatically
-      And to_state(socket) runs against the merged assigns
+      And render(socket) runs against the merged assigns
 
   Rule: attr declares a parent-supplied assign with required, type, and default options
 
@@ -162,7 +162,7 @@ Feature: Render Contract
         | handle_async    |
         | handle_info     |
 
-  Rule: A child whose consumed assigns are not in __changed__ skips update/2 and to_state/1
+  Rule: A child whose consumed assigns are not in __changed__ skips update/2 and render/1
 
     Scenario: Unrelated sibling mutates assigns this child does not consume
       Given a sibling's command mutates only :sibling_field via assign/3
@@ -170,7 +170,7 @@ Feature: Render Contract
       When the runtime walks the tree
       Then __changed__ contains :sibling_field but not :title or :unread_count
       And this child's update/2 is not invoked
-      And this child's to_state/1 is not invoked
+      And this child's render/1 is not invoked
       And the previously resolved output for this child is reused
 
     Scenario: assign/3 with the same value is a no-op (no entry recorded in __changed__)
@@ -178,7 +178,7 @@ Feature: Render Contract
       When the macro inspects the prior value
       Then the new value is === to the prior value
       And no entry is added to socket.assigns.__changed__
-      And the child whose only consumed key is :status skips its update/2 and to_state/1
+      And the child whose only consumed key is :status skips its update/2 and render/1
 
     Scenario: __changed__ is reset after each render cycle
       Given socket.assigns.__changed__ is %{title: "old"} after a handler's assign/3 call
@@ -206,7 +206,7 @@ Feature: Render Contract
       When the child runs socket.assigns.missing.(payload)
       Then the runtime raises a "missing callback" error pointing at the offending call site
 
-  Rule: Render-output validation is run by the to_state validation hook after child resolution
+  Rule: Render-output validation is run by the render validation hook after child resolution
 
     Scenario: Invalid output is rejected before diffing
       Given a store declares field :title, String.t()
@@ -216,15 +216,15 @@ Feature: Render Contract
   Rule: Render-output validation is default-on in dev/test, telemetry-only in prod
 
     Scenario: Validation behaviour depends on environment
-      Given the page runtime's :after_to_state hook list configures Arbor.Hooks.ValidateToState for dev/test
+      Given the page runtime's :after_serialize hook list configures Arbor.Hooks.ValidateRender for dev/test
       When validation finds a shape mismatch in dev
       Then the runtime raises
       And in prod the same misshape is recorded as telemetry without raising
 
-  Rule: A to_state/1 exception terminates the page runtime
+  Rule: A render/1 exception terminates the page runtime
 
     Scenario: Render raise crashes the runtime
-      When to_state/1 raises a KeyError
+      When render/1 raises a KeyError
       Then the page runtime exits
       And the supervisor restarts a fresh runtime
       And the next reconnect re-runs mount/1 from scratch
@@ -236,12 +236,12 @@ Feature: Render Contract
       Then MoneyState has no commands, no attr, no lifecycle, no runtime identity
       And child(MoneyState, id: ...) is rejected
 
-  Rule: to_state/1 must be free of observable side effects
+  Rule: render/1 must be free of observable side effects
 
     Scenario: Database writes inside render are a contract violation
-      Given a to_state/1 implementation calls Repo.insert!/1
+      Given a render/1 implementation calls Repo.insert!/1
       Then the implementation violates the contract
-      And the runtime is permitted to invoke to_state/1 multiple times for diagnostic or telemetry purposes
+      And the runtime is permitted to invoke render/1 multiple times for diagnostic or telemetry purposes
 
   Rule: mount/1 and update/2 must return {:ok, socket}; non-conforming returns raise
 
@@ -284,4 +284,4 @@ Feature: Render Contract
       Given mount/1 calls assign(socket, :tmp, child(SomeStore, id: "x"))
       Then the runtime does not raise or warn
       And the sentinel sits in socket.assigns.tmp as inert data
-      And no child node is mounted unless that value reaches to_state/1's output later
+      And no child node is mounted unless that value reaches render/1's output later

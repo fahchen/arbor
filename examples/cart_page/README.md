@@ -26,8 +26,8 @@ CartPageStore (root)              ← attrs: cart_id, current_user (or nil)
 | `attr :name, type, required: true` plus `default: nil`        | `cart_id` required, `current_user` defaults to nil            |
 | `command :name do payload ... end`                            | `:add_item`, `:remove_line`, `:checkout`                      |
 | `command :name` (no payload)                                  | `:checkout`                                                   |
-| `child(Module, id: ..., ...)` placeholder                     | `CartStore.to_state/1` per-line, `CartPageStore.to_state/1` per-widget |
-| `(parent_path, module, id)` identity stability                | `CartLineStore` is keyed by `line.id` at the `child(...)` placement; identity stability is observed on the parent's `to_state/1` call site. The leaf itself is render-only by design. |
+| `child(Module, id: ..., ...)` placeholder                     | `CartStore.render/1` per-line, `CartPageStore.render/1` per-widget |
+| `(parent_path, module, id)` identity stability                | `CartLineStore` is keyed by `line.id` at the `child(...)` placement; identity stability is observed on the parent's `render/1` call site. The leaf itself is render-only by design. |
 | `Arbor.Lifecycle.attach_hook/4` — `:before_command`           | `CartStore` `:authz` hook                                     |
 | `attach_hook/4` — `:after_command`                            | `CartStore` `:audit` and `:persist` hooks                     |
 | Halt-with-reply (BDR-0008) → `[:arbor, :auth, :deny]`         | Unauthenticated `:checkout` returns `%{"error" => "must_sign_in"}` |

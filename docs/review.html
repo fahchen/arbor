@@ -719,7 +719,7 @@
   <!-- ============= 2. MENTAL ============= -->
   <section id="mental">
     <h2><span class="num">02</span>Mental model</h2>
-    <p>A page is a <em>tree of stores</em>. Each node owns a slice of the wire shape; children are placed explicitly by the parent's <code>to_state/1</code>; identity is the tuple <code>(parent_path, module, id)</code>.</p>
+    <p>A page is a <em>tree of stores</em>. Each node owns a slice of the wire shape; children are placed explicitly by the parent's <code>render/1</code>; identity is the tuple <code>(parent_path, module, id)</code>.</p>
 
     <figure class="figure">
       <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Arbor store tree">
@@ -781,7 +781,7 @@
     <h3>One map, two roles</h3>
     <p>A single <code>socket.assigns</code> map (LV-aligned, see <a href="https://hexdocs.pm/phoenix/1.8.7/Phoenix.Socket.html#module-socket-fields">Phoenix.Socket fields</a>) holds parent-supplied values <em>and</em> store-internal state. The <code>attr</code> macro is a compile-time annotation: it enforces required parents at the parent's <code>child(...)</code> call site, and contributes to typespec and TypeScript codegen — but at runtime everything flows into <code>socket.assigns</code>.</p>
 
-    <p>The public shape — what the client sees — is a separate concern declared by <strong>the state block</strong> (<code>state do … end</code>). The <code>to_state/1</code> function projects <code>socket.assigns</code> into that shape; nothing else reaches the wire. Whenever <code>assigns</code> change, the runtime re-runs <code>to_state/1</code> and diffs the result against the previous output.</p>
+    <p>The public shape — what the client sees — is a separate concern declared by <strong>the state block</strong> (<code>state do … end</code>). The <code>render/1</code> function projects <code>socket.assigns</code> into that shape; nothing else reaches the wire. Whenever <code>assigns</code> change, the runtime re-runs <code>render/1</code> and diffs the result against the previous output.</p>
 
     <p class="pull">
       “The state block declares the public output shape. <code>socket.assigns</code> is the private workshop. The same contract drives validation, JSON Patch diffing, Elixir typespecs, and TypeScript codegen.”
@@ -793,7 +793,7 @@
     <table>
       <thead><tr><th>Field</th><th>Type</th><th>Purpose</th></tr></thead>
       <tbody>
-        <tr><td><code>assigns</code></td><td><code>map()</code></td><td>The single state container. Holds parent-supplied values (declared via <code>attr</code>) and store-internal values (set in <code>mount/1</code> and handlers). The only field <code>to_state/1</code> reads from.</td></tr>
+        <tr><td><code>assigns</code></td><td><code>map()</code></td><td>The single state container. Holds parent-supplied values (declared via <code>attr</code>) and store-internal values (set in <code>mount/1</code> and handlers). The only field <code>render/1</code> reads from.</td></tr>
         <tr><td><code>id</code></td><td><code>String.t()</code></td><td>The store node's id within its parent (the second component of the identity tuple). For the root page store, this is the page identifier; for children it's the value passed through <code>child(Module, id: ..., ...)</code>.</td></tr>
         <tr><td><code>parent_path</code></td><td><code>[atom() \| String.t()]</code></td><td>Ordered path from the root to this node's parent. Combined with <code>module</code> and <code>id</code> forms the runtime identity used for memoization and command routing.</td></tr>
         <tr><td><code>module</code></td><td><code>module()</code></td><td>The store module owning this node. Read-only.</td></tr>
@@ -904,7 +904,7 @@
         <tr><td><code>command</code></td><td>Client-callable command and its payload schema. A built-in hook validates payloads on <code>:before_command</code>.</td></tr>
         <tr><td><code>stream</code></td><td>Stream slot. Configures <code>:item_key</code> and <code>:limit</code>. The server retains only an ordered set of item keys after flush.</td></tr>
         <tr><td><code>attach_hook</code></td><td>The sole extension primitive. Attach at any node, in any handler, on any of the five stages.</td></tr>
-        <tr><td><code>to_state(socket)</code></td><td>Returns a value matching the state block. May contain <code>child(...)</code> placeholders the runtime resolves bottom-up.</td></tr>
+        <tr><td><code>render(socket)</code></td><td>Returns a value matching the state block. May contain <code>child(...)</code> placeholders the runtime resolves bottom-up.</td></tr>
       </tbody>
     </table>
   </section>
@@ -1005,7 +1005,7 @@
       <tbody>
         <tr><td><code>mount/1</code></td><td><code>(socket)</code></td><td><code>{:ok, socket}</code></td></tr>
         <tr><td><code>update/2</code></td><td><code>(new_assigns, socket)</code></td><td><code>{:ok, socket}</code></td></tr>
-        <tr><td><code>to_state/1</code></td><td><code>(socket)</code></td><td>state map matching the state block</td></tr>
+        <tr><td><code>render/1</code></td><td><code>(socket)</code></td><td>state map matching the state block</td></tr>
         <tr><td><code>handle_command/3</code></td><td><code>(name, payload, socket)</code></td><td><code>{:noreply, socket}</code> · <code>{:reply, payload, socket}</code></td></tr>
         <tr><td><code>handle_info/2</code></td><td><code>(message, socket)</code></td><td><code>{:noreply, socket}</code></td></tr>
         <tr><td><code>handle_async/3</code></td><td><code>(name, result, socket)</code></td><td><code>{:noreply, socket}</code></td></tr>
@@ -1022,7 +1022,7 @@
         <tr><td><code>:after_command</code></td><td><code>(name, reply, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
         <tr><td><code>:handle_async</code></td><td><code>(name, result, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
         <tr><td><code>:handle_info</code></td><td><code>(message, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
-        <tr><td><code>:after_to_state</code></td><td><code>(state_output, socket)</code></td><td><code>socket</code> (read-only stage; LV-aligned)</td></tr>
+        <tr><td><code>:after_render</code></td><td><code>(state_output, socket)</code></td><td><code>socket</code> (read-only stage; LV-aligned)</td></tr>
       </tbody>
     </table>
 
@@ -1032,7 +1032,7 @@
   socket
   |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:audit</span>,      <span class="tk-atom">:before_command</span>, <span class="tk-kw">&amp;</span><span class="tk-mod">Audit</span>.<span class="tk-fn">log</span>/<span class="tk-num">3</span>)
   |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:rate_limit</span>, <span class="tk-atom">:before_command</span>, <span class="tk-kw">&amp;</span><span class="tk-mod">RateLimit</span>.<span class="tk-fn">check</span>/<span class="tk-num">3</span>)
-  |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:trace</span>,      <span class="tk-atom">:after_to_state</span>,    <span class="tk-kw">&amp;</span><span class="tk-mod">Trace</span>.<span class="tk-fn">snapshot</span>/<span class="tk-num">2</span>)
+  |&gt; <span class="tk-fn">attach_hook</span>(<span class="tk-atom">:trace</span>,      <span class="tk-atom">:after_render</span>,    <span class="tk-kw">&amp;</span><span class="tk-mod">Trace</span>.<span class="tk-fn">snapshot</span>/<span class="tk-num">2</span>)
   |&gt; <span class="tk-kw">then</span>(<span class="tk-kw">&amp;</span>{<span class="tk-atom">:ok</span>, <span class="tk-kw">&amp;1</span>})
 <span class="tk-kw">end</span>
 </code></pre>

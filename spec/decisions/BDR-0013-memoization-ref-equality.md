@@ -3,13 +3,13 @@ id: BDR-0013
 title: Child memoization uses LV-style __changed__ dirty-flag tracking
 status: accepted
 date: 2026-05-09
-summary: Arbor mirrors Phoenix.LiveView's per-key change tracking. The `assign/3` macro records each mutated key in `socket.assigns.__changed__`; the runtime skips a child's `update/2` and `to_state/1` when none of the keys the child consumes appear in `__changed__`. After each render cycle the runtime resets `__changed__` to `%{}`.
+summary: Arbor mirrors Phoenix.LiveView's per-key change tracking. The `assign/3` macro records each mutated key in `socket.assigns.__changed__`; the runtime skips a child's `update/2` and `render/1` when none of the keys the child consumes appear in `__changed__`. After each render cycle the runtime resets `__changed__` to `%{}`.
 ---
 
 ## Scope
 
 **Feature**: domains/runtime/features/render-contract.feature
-**Rule**: A child whose consumed assigns are not in __changed__ skips update/2 and to_state/1
+**Rule**: A child whose consumed assigns are not in __changed__ skips update/2 and render/1
 
 ## Context
 
@@ -29,10 +29,10 @@ Adopt the LV pattern verbatim:
 
 - `socket.assigns.__changed__` is a map of keys mutated since the previous render cycle.
 - `assign/3` and `update_assign/3` write to this map; explicit no-op writes (same value) record nothing.
-- `Arbor.changed?(assigns, key)` and friends inspect the map; the runtime uses these to decide whether a child's `update/2` and `to_state/1` need to run.
+- `Arbor.changed?(assigns, key)` and friends inspect the map; the runtime uses these to decide whether a child's `update/2` and `render/1` need to run.
 - After each render cycle the runtime clears `__changed__` to `%{}` before processing the next message.
 
-A child whose declared consumption set (via `attr` and explicit `assign` reads in its `to_state/1`) intersects `__changed__` runs; otherwise it short-circuits and reuses its prior resolved output.
+A child whose declared consumption set (via `attr` and explicit `assign` reads in its `render/1`) intersects `__changed__` runs; otherwise it short-circuits and reuses its prior resolved output.
 
 ## Rejected Alternatives
 
@@ -40,4 +40,4 @@ A child whose declared consumption set (via `attr` and explicit `assign` reads i
 
 **Deep-equal comparison.** Rejected — same cost as a structural compare, and per-cycle deep-equal at every child boundary becomes the dominant cost on a wide tree.
 
-**No memoization.** Rejected — re-running every child's `to_state/1` on every cycle scales poorly with tree depth/width. The `__changed__` mechanism is the canonical LV-aligned answer.
+**No memoization.** Rejected — re-running every child's `render/1` on every cycle scales poorly with tree depth/width. The `__changed__` mechanism is the canonical LV-aligned answer.
