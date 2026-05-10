@@ -200,3 +200,32 @@ export namespace MyApp {
 
 `mix compile.arbor_ts --check` (wired into `mix precommit`) fails the
 build when the committed bundle drifts from the source.
+
+## Frontend
+
+The example ships a small React UI under `ui/`.
+
+In one terminal, start the Phoenix endpoint:
+
+```sh
+mix run --no-halt
+```
+
+In another terminal, start the Vite dev server:
+
+```sh
+cd ui
+pnpm install
+pnpm dev
+```
+
+Open http://localhost:4101.
+
+For a production-style build:
+
+```sh
+cd ui
+pnpm build
+```
+
+That writes static assets to `priv/static/` which the Phoenix endpoint serves.

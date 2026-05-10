@@ -9,12 +9,12 @@ defmodule MyApp.Stores.CartPageStore do
   alias MyApp.Stores.CartStore
   alias MyApp.Stores.HeaderStore
 
-  attr :cart_id, String.t(), required: true
-  attr :current_user, map() | nil, default: nil
+  attr(:cart_id, String.t(), required: true)
+  attr(:current_user, map() | nil, default: nil)
 
   state do
-    field :header, HeaderStore.state()
-    field :cart, CartStore.state()
+    field(:header, HeaderStore.state())
+    field(:cart, CartStore.state())
   end
 
   @impl Arbor.Store

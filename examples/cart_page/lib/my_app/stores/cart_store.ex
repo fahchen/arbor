@@ -25,24 +25,27 @@ defmodule MyApp.Stores.CartStore do
   alias MyApp.Persistence
   alias MyApp.Stores.CartLineStore
 
-  attr :cart_id, String.t(), required: true
-  attr :current_user, map() | nil, default: nil
+  attr(:cart_id, String.t(), required: true)
+  attr(:current_user, map() | nil, default: nil)
 
   state do
-    field :lines, list(CartLineStore.state())
-    field :subtotal_cents, integer()
-    field :status,
-          %{type: :open}
-          | %{type: :checking_out}
-          | %{type: :checked_out, order_id: String.t()}
+    field(:lines, list(CartLineStore.state()))
+    field(:subtotal_cents, integer())
+
+    field(
+      :status,
+      %{type: :open}
+      | %{type: :checking_out}
+      | %{type: :checked_out, order_id: String.t()}
+    )
   end
 
   command :add_item do
-    payload :sku, String.t()
+    payload(:sku, String.t())
   end
 
   command :remove_line do
-    payload :id, String.t()
+    payload(:id, String.t())
   end
 
   command(:checkout)

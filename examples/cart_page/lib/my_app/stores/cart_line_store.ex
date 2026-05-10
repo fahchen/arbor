@@ -9,14 +9,14 @@ defmodule MyApp.Stores.CartLineStore do
 
   use Arbor.Store
 
-  attr :line, map(), required: true
+  attr(:line, map(), required: true)
 
   state do
-    field :id, String.t()
-    field :sku, String.t()
-    field :name, String.t()
-    field :price_cents, integer()
-    field :qty, integer()
+    field(:id, String.t())
+    field(:sku, String.t())
+    field(:name, String.t())
+    field(:price_cents, integer())
+    field(:qty, integer())
   end
 
   @impl Arbor.Store

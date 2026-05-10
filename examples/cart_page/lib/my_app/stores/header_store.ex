@@ -3,11 +3,11 @@ defmodule MyApp.Stores.HeaderStore do
 
   use Arbor.Store
 
-  attr :current_user, map() | nil, default: nil
+  attr(:current_user, map() | nil, default: nil)
 
   state do
-    field :signed_in, boolean()
-    field :user_name, String.t() | nil
+    field(:signed_in, boolean())
+    field(:user_name, String.t() | nil)
   end
 
   @impl Arbor.Store
