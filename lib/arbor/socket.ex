@@ -201,6 +201,24 @@ defmodule Arbor.Socket do
   end
 
   @doc """
+  Returns whether any assign key is marked as changed since the last render cycle.
+
+  ## Examples
+
+      iex> Arbor.Socket.any_changed?(%Arbor.Socket{})
+      false
+      iex> socket = Arbor.Socket.assign(%Arbor.Socket{}, :title, "Inbox")
+      iex> Arbor.Socket.any_changed?(socket)
+      true
+  """
+  @spec any_changed?(t()) :: boolean()
+  def any_changed?(%__MODULE__{} = socket) do
+    socket
+    |> ensure_changed()
+    |> map_size() > 0
+  end
+
+  @doc """
   Reads a private runtime value.
 
   ## Examples

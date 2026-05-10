@@ -69,16 +69,8 @@ defmodule Arbor.Reconciler do
   end
 
   @spec child_store_dirty?(Socket.t()) :: boolean()
-  defp child_store_dirty?(%Socket{assigns: assigns} = socket) do
-    assigns_changed?(assigns) or stream_changed?(socket)
-  end
-
-  defp assigns_changed?(assigns) do
-    case Map.get(assigns, :__changed__) do
-      nil -> false
-      changed when changed == %{} -> false
-      _changed -> true
-    end
+  defp child_store_dirty?(%Socket{} = socket) do
+    Socket.any_changed?(socket) or stream_changed?(socket)
   end
 
   defp stream_changed?(%Socket{} = socket) do
