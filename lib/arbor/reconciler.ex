@@ -42,7 +42,7 @@ defmodule Arbor.Reconciler do
     id = validate_id!(child)
     assigns = normalize_child_assigns(child.module, child.assigns)
     consumed_keys = Map.keys(assigns)
-    store_id = parent_path ++ [id]
+    store_id = Enum.reverse([id | Enum.reverse(parent_path)])
 
     case StoreRegistry.get(registry, store_id) do
       %Entry{module: existing_module} = entry when existing_module == child.module ->

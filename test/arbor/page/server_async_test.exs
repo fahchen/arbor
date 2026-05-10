@@ -304,7 +304,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  pid,
                  &match?(%AsyncResult{status: :ok, result: %{name: "ada"}}, &1.assigns.profile)
                ).assigns.profile
-
     end
 
     test "exposes the loading state while a task is still running" do
@@ -329,7 +328,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  pid,
                  &match?(%AsyncResult{status: :ok, result: %{name: "ada"}}, &1.assigns.profile)
                ).assigns.profile
-
     end
 
     test "writes all keys for multi-key tasks" do
@@ -346,7 +344,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %AsyncResult{status: :ok, result: "ada"} = socket.assigns.user
       assert %AsyncResult{status: :ok, result: "arbor"} = socket.assigns.org
-
     end
 
     test "marks invalid return values as failed" do
@@ -359,7 +356,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
                socket.assigns.profile
-
     end
 
     test "marks missing multi-key results as failed" do
@@ -379,7 +375,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
                socket.assigns.org
-
     end
 
     test "marks raised exceptions as failed exits" do
@@ -394,7 +389,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                status: :failed,
                reason: {:exit, {:error, %RuntimeError{message: "boom"}, _stack}}
              } = socket.assigns.profile
-
     end
 
     test "marks exited tasks as failed exits" do
@@ -406,7 +400,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       socket = await_root_socket!(pid, &match?(%AsyncResult{status: :failed}, &1.assigns.profile))
 
       assert %AsyncResult{status: :failed, reason: {:exit, :boom}} = socket.assigns.profile
-
     end
 
     test "cancel_async by name resolves the tracked assign to failed" do
@@ -436,7 +429,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %AsyncResult{status: :failed, reason: {:exit, :user_left}} = socket.assigns.profile
       assert %{} = Async.tracking(socket)
-
     end
 
     test "cancel_async by AsyncResult pre-writes the failure and drops tracking" do
@@ -466,7 +458,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %AsyncResult{status: :failed, reason: {:exit, :user_left}} = socket.assigns.profile
       assert %{} = Async.tracking(socket)
-
     end
   end
 
@@ -485,7 +476,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %{assigns: %{cache_status: "warm:ada"}} =
                await_root_socket!(pid, &match?("warm:ada", &1.assigns.cache_status))
-
     end
 
     test "delivers raised task failures to handle_async/3" do
@@ -498,7 +488,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert "exit:" <> reason = socket.assigns.cache_status
       assert reason =~ "RuntimeError"
       assert reason =~ "boom"
-
     end
 
     test "delivers task exits to handle_async/3" do
@@ -509,7 +498,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %{assigns: %{cache_status: "exit::boom"}} =
                await_root_socket!(pid, &match?("exit::boom", &1.assigns.cache_status))
-
     end
 
     test "delivers cancel exits to handle_async/3" do
@@ -524,7 +512,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %{assigns: %{cache_status: "exit::user_navigated"}} =
                await_root_socket!(pid, &match?("exit::user_navigated", &1.assigns.cache_status))
-
     end
 
     test "same-name overwrite keeps the latest result and lazy-discards the stale task" do
@@ -546,7 +533,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert_receive {:telemetry, [:arbor, :async, :lazy_discard], _measurements, metadata}, 1_000
       assert %{name: :warm_cache, kind: :start} = metadata
       assert %{assigns: %{cache_status: "warm:second"}} = root_socket(pid)
-
     end
   end
 
@@ -577,7 +563,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
         Logger.flush()
       end)
-
     end
   end
 
@@ -605,7 +590,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  pid,
                  &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
                ).assigns.messages
-
     end
 
     test "shows loading while the stream task is running" do
@@ -625,7 +609,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  pid,
                  &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
                ).assigns.messages
-
     end
 
     test "emits insert ops with returned stream opts" do
@@ -647,7 +630,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  pid,
                  &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
                ).assigns.messages
-
     end
 
     test "emits a reset op when the task returns reset stream opts" do
@@ -665,7 +647,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  pid,
                  &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
                ).assigns.messages
-
     end
 
     test "writes failed on {:error, reason} and leaves the stream slot untouched" do
@@ -694,7 +675,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
-
     end
 
     test "marks invalid return values as failed" do
@@ -720,7 +700,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
-
     end
 
     test "marks non-enumerable stream results as failed" do
@@ -747,7 +726,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
-
     end
 
     test "marks raised stream tasks as failed" do
@@ -772,7 +750,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                status: :failed,
                reason: {:exit, {:error, %RuntimeError{message: "boom"}, _stack}}
              } = socket.assigns.messages
-
     end
 
     test "marks exited stream tasks as failed" do
@@ -797,7 +774,6 @@ defmodule Arbor.Page.ServerAsyncTest do
         )
 
       assert %AsyncResult{status: :failed, reason: {:exit, :boom}} = socket.assigns.messages
-
     end
 
     test "cancel_async by name resolves the stream assign to failed" do
@@ -836,7 +812,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
-
     end
   end
 
@@ -932,5 +907,4 @@ defmodule Arbor.Page.ServerAsyncTest do
 
     on_exit(fn -> :telemetry.detach(handler_id) end)
   end
-
 end

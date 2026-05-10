@@ -18,8 +18,7 @@ defmodule Arbor.Page.Server.State do
 
     field :store_registry, StoreRegistry.t(),
       enforce: true,
-      doc:
-        "Runtime-internal table of currently mounted store nodes keyed by `store_id`."
+      doc: "Runtime-internal table of currently mounted store nodes keyed by `store_id`."
 
     field :version, non_neg_integer(),
       default: 0,

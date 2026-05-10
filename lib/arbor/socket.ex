@@ -80,7 +80,10 @@ defmodule Arbor.Socket do
 
   def store_id(%__MODULE__{parent_path: parent_path, id: id})
       when is_list(parent_path) and is_binary(id) do
-    Enum.map(parent_path, &to_string/1) ++ [id]
+    parent_path
+    |> Enum.map(&to_string/1)
+    |> Enum.reverse()
+    |> then(&Enum.reverse([id | &1]))
   end
 
   @doc """
