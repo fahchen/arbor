@@ -2,20 +2,29 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { useAsyncResult, useCommand, useStore, useStream } from "@arbor/react"
 
-import type { ChatRoomCommands, ChatRoomState, MessageState, OnlineUser } from "./types"
+import "./generated/arbor"
+import type * as ArborTypes from "./generated/arbor"
 
 const ROOT_STORE_ID = [] as const
+type OnlineUser = { id: string; name: string }
 
 export default function App() {
-  const room = useStore<ChatRoomState>(ROOT_STORE_ID)
-  const messages = useStream<MessageState>(ROOT_STORE_ID, "messages")
+  const room = useStore<"MyApp.Stores.ChatRoomStore">(ROOT_STORE_ID)
+  const messages = useStream<"MyApp.Stores.ChatRoomStore", ArborTypes.MyApp.MessageState>(
+    ROOT_STORE_ID,
+    "messages"
+  )
+  // Codegen currently reflects `list(map())` here, so keep the item shape explicit at the hook.
   const onlineUsers = useAsyncResult<OnlineUser[]>(ROOT_STORE_ID, "online_users")
-  const reload = useCommand<ChatRoomCommands, "reload", Record<string, never>>(ROOT_STORE_ID, "reload")
-  const refresh = useCommand<ChatRoomCommands, "refresh", Record<string, never>>(
+  const reload = useCommand<"MyApp.Stores.ChatRoomStore", "reload", Record<string, never>>(
+    ROOT_STORE_ID,
+    "reload"
+  )
+  const refresh = useCommand<"MyApp.Stores.ChatRoomStore", "refresh", Record<string, never>>(
     ROOT_STORE_ID,
     "refresh"
   )
-  const sendMessage = useCommand<ChatRoomCommands, "send_message", { queued: boolean }>(
+  const sendMessage = useCommand<"MyApp.Stores.ChatRoomStore", "send_message", { queued: boolean }>(
     ROOT_STORE_ID,
     "send_message"
   )
@@ -167,7 +176,7 @@ export default function App() {
   )
 }
 
-function renderSendStatus(status: ChatRoomState["last_send_status"]): string {
+function renderSendStatus(status: ArborTypes.MyApp.Stores.ChatRoomStore["last_send_status"]): string {
   switch (status.type) {
     case "idle":
       return "idle"

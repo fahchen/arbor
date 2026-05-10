@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import { useCommand, useStore } from "@arbor/react"
 
-import type { CartCommands, CartPageState } from "./types"
+import "./generated/arbor"
 
 const ROOT_STORE_ID = [] as const
 
@@ -13,17 +13,20 @@ const PRODUCT_OPTIONS = [
 ] as const
 
 export default function App() {
-  const page = useStore<CartPageState>(ROOT_STORE_ID)
+  const page = useStore<"MyApp.Stores.CartPageStore">(ROOT_STORE_ID)
   const cartStoreId = page?.cart?.__arbor_store_id__ ?? ROOT_STORE_ID
-  const addItem = useCommand<CartCommands, "add_item", Record<string, never> | { error: string }>(
+  const addItem = useCommand<"MyApp.Stores.CartStore", "add_item", Record<string, never> | { error: string }>(
     cartStoreId,
     "add_item"
   )
-  const removeLine = useCommand<CartCommands, "remove_line", Record<string, never>>(
+  const removeLine = useCommand<"MyApp.Stores.CartStore", "remove_line", Record<string, never>>(
     cartStoreId,
     "remove_line"
   )
-  const checkout = useCommand<CartCommands, "checkout", { order_id?: string; error?: string }>(cartStoreId, "checkout")
+  const checkout = useCommand<"MyApp.Stores.CartStore", "checkout", { order_id?: string; error?: string }>(
+    cartStoreId,
+    "checkout"
+  )
 
   const [sku, setSku] = useState<(typeof PRODUCT_OPTIONS)[number]["sku"]>("mug")
   const [feedback, setFeedback] = useState<string>("")

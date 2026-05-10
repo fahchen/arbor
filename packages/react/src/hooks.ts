@@ -1,12 +1,27 @@
 import { useCallback } from "react"
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector"
 
-import type { AsyncResult, StoreId, StreamEntry } from "@arbor/client"
+import type {
+  ArborStoreCommands,
+  ArborStoreModule,
+  ArborStoreState,
+  AsyncResult,
+  StoreId,
+  StreamEntry
+} from "@arbor/client"
 
 import { useArborClient } from "./provider"
 
 const identitySelector = <S, T = S>(value: S): T => value as unknown as T
 
+export function useStore<M extends ArborStoreModule>(
+  storeId: StoreId
+): ArborStoreState<M> | undefined;
+export function useStore<M extends ArborStoreModule, Selected>(
+  storeId: StoreId,
+  selector: (state: ArborStoreState<M> | undefined) => Selected,
+  equalityFn?: (a: Selected, b: Selected) => boolean
+): Selected;
 export function useStore<TState>(storeId: StoreId): TState | undefined;
 export function useStore<TState, Selected>(
   storeId: StoreId,
@@ -39,6 +54,11 @@ export function useStore<TState, Selected = TState | undefined>(
 }
 
 export function useCommand<
+  M extends ArborStoreModule,
+  K extends keyof ArborStoreCommands<M> & string,
+  Reply = unknown
+>(storeId: StoreId, name: K): (payload: ArborStoreCommands<M>[K]) => Promise<Reply>;
+export function useCommand<
   TCommands extends Record<string, Record<string, unknown>>,
   K extends keyof TCommands & string,
   Reply = unknown
@@ -64,6 +84,10 @@ export function useAsyncResult<T>(storeId: StoreId, key: string): AsyncResult<T>
   )
 }
 
+export function useStream<M extends ArborStoreModule, T>(
+  storeId: StoreId,
+  name: string
+): readonly StreamEntry<T>[];
 export function useStream<T>(storeId: StoreId, name: string): readonly StreamEntry<T>[] {
   const client = useArborClient()
   const storeIdKey = JSON.stringify(storeId)
