@@ -1,9 +1,9 @@
-defmodule ProductPageStore.MixProject do
+defmodule CartPage.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :product_page_store,
+      app: :cart_page,
       version: "0.1.0",
       elixir: "~> 1.19",
       start_permanent: false,
@@ -12,7 +12,12 @@ defmodule ProductPageStore.MixProject do
     ]
   end
 
-  def application, do: [extra_applications: [:logger]]
+  def application do
+    [
+      extra_applications: [:logger],
+      mod: {MyApp.Application, []}
+    ]
+  end
 
   defp deps do
     [

@@ -1,5 +1,8 @@
 defmodule MyApp.MessageState do
-  @moduledoc "Reusable Arbor.State module describing one chat message."
+  @moduledoc """
+  Reusable Arbor.State module describing one chat message. Used as the
+  per-item type of the `:messages` stream slot.
+  """
 
   use Arbor.State
 
