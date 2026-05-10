@@ -9,8 +9,7 @@ defmodule Arbor.Async.Macros do
 
   ## Socket-capture warning
 
-  Mirrors `Phoenix.LiveView`'s warning. Closing over `socket` inside the
-  task fun risks data races: the task runs concurrently with the next
+  Closing over `socket` inside the task fun risks data races: the task runs concurrently with the next
   handler, so the captured `socket` is a frozen snapshot whose `assigns`
   may already be stale. Recommended fix: bind the values you need to
   local variables before the fn.
@@ -86,8 +85,8 @@ defmodule Arbor.Async.Macros do
     :ok
   end
 
-  # Mirrors LV's `validate_function_env/3`: only walk literal `fn …` or `&…`
-  # captures so calls like `start_async(socket, :foo, build_fn(socket))` —
+  # Only walk literal `fn …` or `&…` captures so calls like
+  # `start_async(socket, :foo, build_fn(socket))` —
   # where `socket` flows through a helper rather than being captured by the
   # task fun — don't trigger a false warning.
   @spec captures_socket?(Macro.t()) :: boolean()

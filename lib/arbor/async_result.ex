@@ -3,8 +3,7 @@ defmodule Arbor.AsyncResult do
   Three-field struct that tracks the lifecycle of an asynchronously-resolved
   socket assignment.
 
-  Mirrors `Phoenix.LiveComponent.AsyncResult`/`Phoenix.LiveView.AsyncResult`:
-  every assign written via `Arbor.Async.assign_async/3,4` (or seeded by
+  Every assign written via `Arbor.Async.assign_async/3,4` (or seeded by
   `Arbor.Async.stream_async/3,4`) flows through one of the three statuses
   below so the client can pattern-match on a discriminated union.
 

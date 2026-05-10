@@ -1,8 +1,7 @@
 defmodule Arbor.Async do
   @moduledoc """
-  Async lifecycle API for Arbor stores. Mirrors `Phoenix.LiveView`'s
-  `assign_async/3,4`, `start_async/3,4`, `cancel_async/2,3`, and
-  `stream_async/3,4` (LV 1.1+).
+  Async lifecycle API for Arbor stores. Exposes `assign_async/3,4`,
+  `start_async/3,4`, `cancel_async/2,3`, and `stream_async/3,4`.
 
   ## Public API surface (frozen for M5+)
 
