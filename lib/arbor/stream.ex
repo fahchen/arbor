@@ -33,7 +33,7 @@ defmodule Arbor.Stream do
     * `__ref__` — monotonic per-page ref counter used to stamp each new
       `Arbor.LiveStream`.
     * `__changed__` — `MapSet` of stream names mutated since the last prune.
-      Used by `Arbor.Hooks.PruneStreams` to know which structs to prune.
+      Used by `Arbor.Resolver` to know which structs to prune.
     * `__configured__` — pre-init configure opts keyed by stream name.
       Applied when the matching `Arbor.LiveStream` is first initialized.
     * `<atom_name>` — the per-stream `Arbor.LiveStream` struct.
@@ -87,7 +87,7 @@ defmodule Arbor.Stream do
 
   @doc """
   Returns the reserved socket-private key holding the drained stream ops
-  (populated by `Arbor.Hooks.PruneStreams` and consumed by the page server).
+  (populated by `Arbor.Resolver` and consumed by the page server).
   """
   @spec drained_key() :: :__arbor_drained_stream_ops__
   def drained_key, do: @drained_key
@@ -229,7 +229,7 @@ defmodule Arbor.Stream do
   end
 
   @doc """
-  Drains the per-socket accumulator populated by `Arbor.Hooks.PruneStreams`
+  Drains the per-socket accumulator populated by `Arbor.Resolver`
   and returns the wire ops for this cycle.
 
   Called by the page runtime once per render cycle, immediately after the
@@ -284,7 +284,7 @@ defmodule Arbor.Stream do
   @doc """
   Drains pending ops from every `Arbor.LiveStream` marked changed, appends
   them to the socket-private accumulator, prunes each struct, and clears
-  the `__changed__` set. Invoked by `Arbor.Hooks.PruneStreams`.
+  the `__changed__` set. Invoked by `Arbor.Resolver`.
 
   Streams not in `__changed__` are left untouched.
   """
@@ -333,7 +333,7 @@ defmodule Arbor.Stream do
   @doc """
   Returns the names of streams marked changed (mutated since the last prune).
 
-  Exposed for `Arbor.Hooks.PruneStreams` and tests.
+  Exposed for `Arbor.Resolver` and tests.
 
   ## Examples
 

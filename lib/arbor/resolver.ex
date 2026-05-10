@@ -28,6 +28,7 @@ defmodule Arbor.Resolver do
   alias Arbor.Page.StoreRegistry.Entry
   alias Arbor.Reconciler
   alias Arbor.Socket
+  alias Arbor.Stream
   alias Arbor.Telemetry
   alias Arbor.Wire
 
@@ -101,8 +102,15 @@ defmodule Arbor.Resolver do
 
     next_socket =
       case Lifecycle.run_hooks(after_to_state_socket, :after_serialize, [wire_state], false) do
-        {:cont, %Socket{} = hooked_socket} -> Socket.reset_changed(hooked_socket)
-        {:halt, %Socket{} = hooked_socket} -> Socket.reset_changed(hooked_socket)
+        {:cont, %Socket{} = hooked_socket} ->
+          hooked_socket
+          |> Stream.drain_and_prune()
+          |> Socket.reset_changed()
+
+        {:halt, %Socket{} = hooked_socket} ->
+          hooked_socket
+          |> Stream.drain_and_prune()
+          |> Socket.reset_changed()
       end
 
     next_registry =
