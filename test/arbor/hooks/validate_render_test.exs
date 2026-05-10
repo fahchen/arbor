@@ -150,6 +150,21 @@ defmodule Arbor.Hooks.ValidateRenderTest do
              )
   end
 
+  test "Scenario: runtime store id metadata is ignored during validation" do
+    assert :ok =
+             ValidateRender.validate(
+               %{
+                 "header" => %{
+                   "user_name" => "Alice",
+                   "avatar_url" => nil,
+                   "__arbor_store_id__" => ["header"]
+                 },
+                 "__arbor_store_id__" => []
+               },
+               HeaderContainerStore
+             )
+  end
+
   test "Scenario: Validation exception telemetry is emitted before raise mode raises" do
     socket = %Socket{module: TitleStore, assigns: %{}, private: %{}}
     attach_telemetry_handler(self())

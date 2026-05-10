@@ -97,7 +97,7 @@ defmodule Arbor.Page.ServerTest do
            }
   end
 
-  test "default hooks include ValidateCommandSchema everywhere and ValidateRender in dev" do
+  test "default hooks include ValidateCommandSchema everywhere and ValidateRender in dev/test" do
     default_hooks = Application.get_env(:arbor, :default_hooks, [])
 
     assert Enum.any?(default_hooks, fn
@@ -105,7 +105,7 @@ defmodule Arbor.Page.ServerTest do
              _other -> false
            end)
 
-    if Mix.env() == :dev do
+    if Mix.env() in [:dev, :test] do
       assert Enum.any?(default_hooks, fn
                {Arbor.Hooks.ValidateRender, :after_serialize, _fun} -> true
                _other -> false

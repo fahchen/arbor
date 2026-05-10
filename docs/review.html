@@ -1022,7 +1022,8 @@
         <tr><td><code>:after_command</code></td><td><code>(name, reply, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
         <tr><td><code>:handle_async</code></td><td><code>(name, result, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
         <tr><td><code>:handle_info</code></td><td><code>(message, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
-        <tr><td><code>:after_render</code></td><td><code>(state_output, socket)</code></td><td><code>socket</code> (read-only stage; LV-aligned)</td></tr>
+        <tr><td><code>:after_render</code></td><td><code>(state_output, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
+        <tr><td><code>:after_serialize</code></td><td><code>(wire_output, socket)</code></td><td><code>{:cont, socket}</code> · <code>{:halt, socket}</code></td></tr>
       </tbody>
     </table>
 
