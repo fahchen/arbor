@@ -1,6 +1,6 @@
 # Persistence pattern (application-owned)
 
-Arbor does not ship a `Arbor.Persistence` module, behaviour, or adapter. This is a deliberate scope decision recorded in `spec/backlog.md`: persistence is an application concern, not a runtime primitive. Hook stages and the `socket` extension points already give applications everything they need.
+Arbor does not ship an `Arbor.Persistence` module, behaviour, or adapter. This is a deliberate scope decision recorded in `spec/backlog.md`: persistence is an application concern, not a runtime primitive. Hook stages and the `socket` extension points already give applications everything they need.
 
 This document is the reference for that pattern: load on `mount/1`, save on `attach_hook(:persist, :after_command, …)`.
 
@@ -13,7 +13,7 @@ This document is the reference for that pattern: load on `mount/1`, save on `att
 
 ## Save: `attach_hook(:persist, :after_command, …)`
 
-`:after_command` hooks are arity 3, called as `(command_name, payload, socket)`. Return shape is `{:cont, socket}` or `{:halt, socket}`.
+`:after_command` hooks are arity 3, called as `(command_name, payload, socket)`. Return shape is `{:cont, socket}` or `{:halt, socket}`. `use Arbor.Store` does **not** import socket / lifecycle helpers — call the fully-qualified `Arbor.Socket.*` and `Arbor.Lifecycle.*` functions.
 
 ```elixir
 defmodule MyApp.Stores.CartStore do
@@ -32,8 +32,8 @@ defmodule MyApp.Stores.CartStore do
 
     socket =
       socket
-      |> assign(:items, items)
-      |> attach_hook(:persist, :after_command, &persist/3)
+      |> Arbor.Socket.assign(:items, items)
+      |> Arbor.Lifecycle.attach_hook(:persist, :after_command, &persist/3)
 
     {:ok, socket}
   end
@@ -43,8 +43,8 @@ defmodule MyApp.Stores.CartStore do
     {:cont, socket}
   end
 
-  def handle_command(:add_item, %{sku: sku}, socket) do
-    {:noreply, update_assign(socket, :items, &[CartItemState.new(sku) | &1])}
+  def handle_command(:add_item, %{"sku" => sku}, socket) do
+    {:noreply, Arbor.Socket.update_assign(socket, :items, &[CartItemState.new(sku) | &1])}
   end
 
   def to_state(socket), do: %{items: socket.assigns.items}
@@ -68,6 +68,8 @@ end
 If persistence fails and the application wants the user-visible error to surface, raise inside the hook — the page server will crash per BDR-0003 let-it-crash. If the application wants to swallow and retry asynchronously, log inside the hook and continue. There is no built-in retry.
 
 ```elixir
+require Logger
+
 defp persist(_command, _payload, socket) do
   case MyApp.Storage.save_cart(socket.assigns.cart_id, socket.assigns.items) do
     :ok -> {:cont, socket}
@@ -85,8 +87,8 @@ end
 ```elixir
 def mount(socket) do
   case MyApp.Storage.load_cart(socket.assigns.cart_id) do
-    {:ok, items} -> {:ok, assign(socket, :items, items)}
-    :error -> {:ok, assign(socket, :items, [])}
+    {:ok, items} -> {:ok, Arbor.Socket.assign(socket, :items, items)}
+    :error -> {:ok, Arbor.Socket.assign(socket, :items, [])}
   end
 end
 ```
@@ -97,8 +99,8 @@ If the load is slow, prefer `Arbor.Async.assign_async/3`:
 def mount(socket) do
   socket =
     socket
-    |> assign(:items, [])
-    |> assign_async(:loaded, fn -> {:ok, %{loaded: MyApp.Storage.load_cart(socket.assigns.cart_id)}} end)
+    |> Arbor.Socket.assign(:items, [])
+    |> Arbor.Async.assign_async(:loaded, fn -> {:ok, MyApp.Storage.load_cart(socket.assigns.cart_id)} end)
 
   {:ok, socket}
 end
@@ -106,7 +108,7 @@ end
 
 ## Stream slot reload
 
-For a stream slot, refresh in-session via `stream(socket, :messages, items, reset: true)` or `stream_async(socket, :messages, fun, reset: true)`. The persistence pattern still applies — load fresh items inside `mount/1` (or whichever handler triggers a refresh) and emit them through the stream API. The runtime forgets stream values after flush; only the item-key index is retained.
+For a stream slot, refresh in-session via `stream(socket, :messages, items, reset: true)` or `stream_async(socket, :messages, fun, reset: true)`. The persistence pattern still applies — load fresh items inside `mount/1` (or whichever handler triggers a refresh) and emit them through the stream API. The runtime forgets stream values after flush; only the per-stream slot config (item_key fn, limit, ref counter) is retained on the socket. The client owns the materialized list.
 
 ## Snapshot vs append-only
 
@@ -125,4 +127,4 @@ Per BDR-0003, reconnect rebuilds the page from scratch. There is no in-memory ch
 
 - Do **not** call into the runtime to persist on its behalf — there is no API.
 - Do **not** write to `socket.private` for app-level persistence state. That namespace is reserved (hook table, async ref tracking, pending stream ops). Use a dedicated assign.
-- Do **not** introduce a `:persist` hook stage. The five public stages (`:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_to_state`) are stable per BDR-0004; persistence rides on `:after_command`.
+- Do **not** introduce a `:persist` hook stage. The six public stages (`:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_to_state`, `:after_serialize`) are stable per BDR-0004; persistence rides on `:after_command`.

@@ -47,12 +47,12 @@ machinery rather than tree composition (`cart_page` covers trees).
 Sequence:
 
 1. `mount/1` calls `Phoenix.PubSub.subscribe(MyApp.PubSub, "room:general")`.
-2. `stream_async(:messages, fun)` synchronously writes `AsyncResult.loading(nil)` to `socket.assigns.messages` and starts a task.
-3. `assign_async(:online_users, fun)` does the same for the online-users field.
-4. The initial `replace ""` envelope ships — client immediately sees both fields in `loading` status, an empty stream, and an `idle` send status.
-5. As each task completes, the runtime writes `AsyncResult.ok(prior, value)` into the corresponding assign and re-renders. `stream_async` additionally seeds the slot with 50 inserts in the same envelope.
-
-The client observes two independent loading flashes resolving on their own schedules.
+2. `stream_async(:messages, fun)` synchronously writes an `AsyncResult.loading(nil)` flag onto `socket.assigns.messages` and starts a task. **The flag is internal — stream-typed fields wire as `[]` always (BDR-0014/0018), so the client only sees an empty `messages` array, not an `AsyncResult` discriminated union.**
+3. `assign_async(:online_users, fun)` writes `AsyncResult.loading(nil)` to a *non-stream* assign. This one IS visible on the wire as `{ status: "loading", result: null, reason: null }`.
+4. The initial `replace ""` envelope ships — client sees `messages: []`, `online_users: { status: "loading", ... }`, `last_send_status: { type: "idle" }`.
+5. As each task completes, the runtime writes the result into the corresponding assign and re-renders:
+   - `online_users` flips to `AsyncResult.ok(prior, list)` — client sees the discriminated-union flip in JSON Patch ops.
+   - `messages` task completion seeds the stream slot via `stream_ops` (50 inserts in the same envelope). The `AsyncResult` flag stays internal.
 
 ### 2. New message arrives over PubSub
 
@@ -67,7 +67,7 @@ Sequence:
 1. `Phoenix.PubSub` delivers `{:message_received, msg}` to every subscriber pid — including this page server.
 2. The page server's catch-all `handle_info/2` runs the `:handle_info` hook chain on the root socket and emits `[:arbor, :pubsub, :receive]`.
 3. `ChatRoomStore.handle_info({:message_received, msg}, ...)` calls `stream_insert(at: 0, limit: -100)`.
-4. Render cycle. `ops` is `[]` (stream-typed paths never appear in `ops` per BDR-0014/0018). One `stream_op` insert ships, plus an evict for the oldest key when the index is full.
+4. Render cycle. `ops` is `[]` (stream-typed paths never appear in `ops` per BDR-0014/0018). One `stream_op` insert ships. The runtime does **not** trim server-side; the `limit: -100` argument is metadata the client uses when materializing the list.
 
 ### 3. Sending a message — `start_async` + `handle_async/3`
 
@@ -80,10 +80,10 @@ Sequence:
 
 1. The handler calls `start_async(:send_message, fn -> Chat.send_message(...) end)` and immediately replies `%{"queued" => true}`. The reply lands first (BDR-0009) — the client knows the request is in flight.
 2. The task runs in the supervised pool. The stub randomly returns `{:ok, %MessageState{}}` or `{:error, :throttled}`.
-3. On completion the runtime delivers the result to `handle_async/3`:
+3. On completion the runtime delivers the result to `handle_async/3` and emits `[:arbor, :async, :stop]` with `status: :ok` or `:failed`:
    - `{:ok, {:ok, msg}}` → `:last_send_status` becomes `%{type: :ok, id: msg.id}`. Because the stub also broadcasts on success, the new message arrives separately via the PubSub path described in scenario 2.
    - `{:ok, {:error, reason}}` → `:last_send_status` becomes `%{type: :failed, reason: "throttled"}`. No broadcast.
-   - `{:exit, reason}` → caught (BDR-0020), emits `[:arbor, :async, :exception]`, `:last_send_status` reports the failure. The page survives.
+   - `{:exit, reason}` → task crashed or was killed. Routes to the `{:exit, _}` clause; `:last_send_status` reports the failure. **This is the task-exit path; not the same as BDR-0020's `[:arbor, :async, :exception]` (which fires only when `handle_async/3` itself raises — this example does not raise from the handler).**
 4. The client sees the variant-union `:last_send_status` flip and (on success) a stream insert in the same or a subsequent envelope.
 
 ### 4. Two refresh modes — silent vs. loading flash

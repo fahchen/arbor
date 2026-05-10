@@ -4,7 +4,9 @@ defmodule MyApp.Stores.ChatRoomStore do
   PubSub surface in one module:
 
     * `stream :messages, MessageState.t()` slot — server forgets values
-      after flush, only the per-item-key index survives
+      after flush; only the per-stream slot config (item_key fn, limit,
+      ref counter) survives on the socket. The client owns the
+      materialized list.
     * `stream_async/3` on `mount/1` for the initial loading flash
     * `assign_async/3` for the `:online_users` AsyncResult field
     * `start_async/3` + `handle_async/3` for the optimistic `:send_message`
@@ -48,7 +50,7 @@ defmodule MyApp.Stores.ChatRoomStore do
       socket
       |> Arbor.Socket.assign(:last_send_status, %{type: :idle})
       |> Arbor.Async.stream_async(:messages, fn -> {:ok, Chat.recent(room_id, 50)} end)
-      |> Arbor.Async.assign_async(:online_users, fn -> {:ok, %{online_users: Presence.list(room_id)}} end)
+      |> Arbor.Async.assign_async(:online_users, fn -> {:ok, Presence.list(room_id)} end)
 
     {:ok, socket}
   end
@@ -89,9 +91,13 @@ defmodule MyApp.Stores.ChatRoomStore do
   # Async result routing
   # ---------------------------------------------------------------------------
 
-  # BDR-0020: handle_async/3 exceptions are caught by the runtime and emit
-  # `[:arbor, :async, :exception]`. We model the success/failure split for
-  # the send path here.
+  # `:ok` and `:error` are application-level outcomes the task fun returned.
+  # `:exit` is the task-exit path (task crashed / killed) — the runtime
+  # delivers it to `handle_async/3` and emits `[:arbor, :async, :stop]` with
+  # `status: :failed`. BDR-0020 (`[:arbor, :async, :exception]`) covers a
+  # different case: the `handle_async/3` clause itself raising — the runtime
+  # catches that and the page survives. This example does not raise from
+  # `handle_async/3`.
   def handle_async(:send_message, {:ok, {:ok, %MessageState{id: id}}}, socket) do
     {:noreply, Arbor.Socket.assign(socket, :last_send_status, %{type: :ok, id: id})}
   end
@@ -120,7 +126,11 @@ defmodule MyApp.Stores.ChatRoomStore do
 
   def to_state(socket) do
     %{
-      messages: socket.assigns.messages,
+      # Stream-typed fields are forced to `[]` on the wire by `Arbor.Wire`
+      # (BDR-0014/0018) — content flows via stream_ops. `socket.assigns.messages`
+      # also holds an internal AsyncResult flag after `stream_async`, so we
+      # return a literal `[]` here to match the actual on-wire shape.
+      messages: [],
       online_users: socket.assigns.online_users,
       last_send_status: socket.assigns.last_send_status
     }

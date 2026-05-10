@@ -8,15 +8,12 @@ defmodule MyApp.Catalog do
   }
 
   @doc "Returns `{:ok, product}` when `sku` exists, `:error` otherwise."
-  @spec fetch(String.t()) :: {:ok, %{sku: String.t(), name: String.t(), price_cents: integer()}} | :error
+  @spec fetch(String.t()) ::
+          {:ok, %{sku: String.t(), name: String.t(), price_cents: integer()}} | :error
   def fetch(sku) when is_binary(sku) do
     case Map.fetch(@products, sku) do
       {:ok, _product} = ok -> ok
       :error -> :error
     end
   end
-
-  @doc "Returns every known SKU. Useful for building a 'browse' UI."
-  @spec all() :: [%{sku: String.t(), name: String.t(), price_cents: integer()}]
-  def all, do: Map.values(@products)
 end

@@ -122,8 +122,15 @@ defmodule MyApp.Stores.CartStore do
     {:cont, socket}
   end
 
+  # Save only when `:lines` actually changed during this command cycle.
+  # `socket.assigns.__changed__` is the runtime's mutation-tracking map
+  # (BDR-0013). Skipping unchanged commands keeps the persistence layer
+  # quiet for read-only handlers.
   defp persist(_command, _payload, socket) do
-    Persistence.save_cart(socket.assigns.cart_id, socket.assigns.lines)
+    if Map.has_key?(socket.assigns.__changed__, :lines) do
+      Persistence.save_cart(socket.assigns.cart_id, socket.assigns.lines)
+    end
+
     {:cont, socket}
   end
 
