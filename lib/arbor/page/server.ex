@@ -213,8 +213,13 @@ defmodule Arbor.Page.Server do
   end
 
   @impl GenServer
+  def handle_info({ref, {:arbor_async_result, name, kind, classified}}, %State{} = state)
+      when is_reference(ref) do
+    handle_async_result(ref, classified, {name, kind}, state)
+  end
+
   def handle_info({ref, classified}, %State{} = state) when is_reference(ref) do
-    handle_async_result(ref, classified, state)
+    handle_async_result(ref, classified, nil, state)
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %State{} = state) do
@@ -578,18 +583,23 @@ defmodule Arbor.Page.Server do
   # Async message routing
   # ---------------------------------------------------------------------------
 
-  @spec handle_async_result(reference(), term(), State.t()) ::
+  @spec handle_async_result(
+          reference(),
+          term(),
+          {Async.tracking_name(), Async.kind()} | nil,
+          State.t()
+        ) ::
           {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
-  defp handle_async_result(ref, classified, %State{} = state) do
+  defp handle_async_result(ref, classified, discard_meta, %State{} = state) do
     case Map.fetch(state.async_index, ref) do
       {:ok, {identity, name}} ->
         # Demonitor + flush any pending :DOWN for this ref so it does not
         # also drive a failed write after the success path has run.
         Process.demonitor(ref, [:flush])
-        process_async_result(identity, name, classified, state)
+        process_async_result(identity, name, classified, discard_meta, state)
 
       :error ->
-        emit_lazy_discard(state, ref, classified)
+        emit_lazy_discard(state, discard_meta)
         {:noreply, state, {:continue, {:push_patch, nil}}}
     end
   end
@@ -625,10 +635,11 @@ defmodule Arbor.Page.Server do
           StoreRegistry.identity_key(),
           Async.tracking_name(),
           term(),
+          {Async.tracking_name(), Async.kind()} | nil,
           State.t()
         ) ::
           {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
-  defp process_async_result(identity, name, classified, %State{} = state) do
+  defp process_async_result(identity, name, classified, discard_meta, %State{} = state) do
     with %Entry{} = entry <- fetch_entry(state, identity),
          {:ok, tracking_entry} <- Async.fetch_tracking(entry.socket, name) do
       next_state =
@@ -638,7 +649,7 @@ defmodule Arbor.Page.Server do
       {:noreply, next_state, {:continue, {:push_patch, envelope}}}
     else
       _missing ->
-        emit_lazy_discard(state, name, classified)
+        emit_lazy_discard(state, discard_meta || {name, nil})
         {:noreply, state, {:continue, {:push_patch, nil}}}
     end
   end
@@ -863,15 +874,18 @@ defmodule Arbor.Page.Server do
     Arbor.Async.Telemetry.stop(socket, name, kind, status)
   end
 
-  @spec emit_lazy_discard(State.t(), term(), term()) :: :ok
-  defp emit_lazy_discard(%State{} = state, name_or_ref, _classified) do
+  @spec emit_lazy_discard(State.t(), {Async.tracking_name(), Async.kind()} | nil) :: :ok
+  defp emit_lazy_discard(%State{} = state, discard_meta) do
+    {name, kind} =
+      case discard_meta do
+        {tracking_name, tracking_kind} -> {tracking_name, tracking_kind}
+        nil -> {nil, nil}
+      end
+
     Arbor.Async.Telemetry.lazy_discard(
       %{page_id: page_id(state), module: state.root_module},
-      name_or_ref_for_metadata(name_or_ref),
-      nil
+      name,
+      kind
     )
   end
-
-  defp name_or_ref_for_metadata(name) when is_atom(name) or is_list(name), do: name
-  defp name_or_ref_for_metadata(_ref), do: nil
 end

@@ -137,7 +137,10 @@ defmodule Arbor.Async do
     prior = snapshot_prior(socket, keys)
     socket = write_loading_for_keys(socket, keys, prior, reset)
 
-    {ref, pid, timer_ref} = spawn_task(socket, name, assign_task_body(fun), supervisor, timeout)
+    task_keys = if is_list(name), do: keys, else: nil
+
+    {ref, pid, timer_ref} =
+      spawn_task(socket, name, :assign, assign_task_body(fun, task_keys), supervisor, timeout)
 
     socket =
       put_tracking(socket, name, %{
@@ -192,7 +195,8 @@ defmodule Arbor.Async do
 
     socket = drop_tracking(socket, name)
 
-    {ref, pid, timer_ref} = spawn_task(socket, name, start_task_body(fun), supervisor, timeout)
+    {ref, pid, timer_ref} =
+      spawn_task(socket, name, :start, start_task_body(fun), supervisor, timeout)
 
     socket =
       put_tracking(socket, name, %{
@@ -347,7 +351,8 @@ defmodule Arbor.Async do
       |> write_loading_for_keys([name], prior, reset)
       |> Stream.stream(name, [])
 
-    {ref, pid, timer_ref} = spawn_task(socket, name, stream_task_body(fun), supervisor, timeout)
+    {ref, pid, timer_ref} =
+      spawn_task(socket, name, :stream, stream_task_body(fun), supervisor, timeout)
 
     socket =
       put_tracking(socket, name, %{
@@ -394,6 +399,7 @@ defmodule Arbor.Async do
   """
   @spec apply_task_result(Socket.t(), tracking_name(), tracking_entry(), term()) :: Socket.t()
   def apply_task_result(%Socket{} = socket, name, entry, classified) do
+    classified = unwrap_task_result(classified)
     socket = drop_tracking_only(socket, name)
     cancel_timer(entry.timer_ref)
 
@@ -434,6 +440,9 @@ defmodule Arbor.Async do
     msg = "#{fun_name} user fun returned invalid shape: #{inspect(other)}"
     {:exit, {:error, %ArgumentError{message: msg}, []}}
   end
+
+  defp unwrap_task_result({:arbor_async_result, _name, _kind, classified}), do: classified
+  defp unwrap_task_result(classified), do: classified
 
   @doc """
   Resolves a `:DOWN` message for a tracked task. Called by
@@ -484,13 +493,22 @@ defmodule Arbor.Async do
     Socket.assign(socket, single, AsyncResult.ok(prior_for(entry, single), value))
   end
 
-  defp write_assign_success(socket, %{keys: keys} = entry, %{} = value_map) when is_list(keys),
-    do: Enum.reduce(keys, socket, &assign_one_from_map(&2, &1, entry, value_map))
+  defp write_assign_success(socket, %{keys: keys} = entry, %{} = value_map) when is_list(keys) do
+    case missing_assign_key(keys, value_map) do
+      nil ->
+        Enum.reduce(keys, socket, &assign_one_from_map(&2, &1, entry, value_map))
 
-  defp write_assign_success(_socket, %{keys: keys}, other) when is_list(keys) do
-    raise ArgumentError,
-          "assign_async multi-key user fun must return {:ok, %{key => value, ...}}, " <>
-            "got: #{inspect(other)}"
+      key ->
+        do_write_failed(socket, entry, missing_assign_key_exit(key, value_map))
+    end
+  end
+
+  defp write_assign_success(socket, %{keys: keys} = entry, other) when is_list(keys) do
+    do_write_failed(
+      socket,
+      entry,
+      invalid_shape_exit(:assign_async, other)
+    )
   end
 
   defp assign_one_from_map(socket, key, entry, value_map) do
@@ -499,32 +517,50 @@ defmodule Arbor.Async do
         Socket.assign(socket, key, AsyncResult.ok(prior_for(entry, key), v))
 
       :error ->
-        raise ArgumentError,
-              "assign_async multi-key result missing key #{inspect(key)} in #{inspect(value_map)}"
+        do_write_failed(socket, entry, missing_assign_key_exit(key, value_map))
     end
   end
 
   defp write_stream_success(socket, %{keys: [name]} = entry, items, stream_opts)
        when is_atom(name) and is_list(stream_opts) do
-    enumerable = stream_enumerable!(items)
+    case stream_enumerable(items) do
+      {:ok, enumerable} ->
+        socket
+        |> Socket.assign(name, AsyncResult.ok(prior_for(entry, name), true))
+        |> Stream.stream(name, enumerable, stream_opts)
 
-    socket
-    |> Socket.assign(name, AsyncResult.ok(prior_for(entry, name), true))
-    |> Stream.stream(name, enumerable, stream_opts)
+      {:error, reason} ->
+        do_write_failed(socket, entry, {:exit, {:error, reason, []}})
+    end
   end
 
-  defp stream_enumerable!(items) do
+  defp stream_enumerable(items) do
     if is_list(items) do
-      items
+      {:ok, items}
     else
-      Enum.to_list(items)
+      {:ok, Enum.to_list(items)}
     end
   rescue
     error in [Protocol.UndefinedError] ->
-      reraise ArgumentError,
-              "stream_async items must be enumerable, got: #{inspect(items)} " <>
-                "(#{Exception.message(error)})",
-              __STACKTRACE__
+      {:error,
+       %ArgumentError{
+         message:
+           "stream_async items must be enumerable, got: #{inspect(items)} " <>
+             "(#{Exception.message(error)})"
+       }}
+  end
+
+  defp missing_assign_key(keys, value_map) do
+    Enum.find(keys, &(not is_map_key(value_map, &1)))
+  end
+
+  defp missing_assign_key_exit(key, value_map) do
+    {:exit,
+     {:error,
+      %ArgumentError{
+        message:
+          "assign_async multi-key result missing key #{inspect(key)} in #{inspect(value_map)}"
+      }, []}}
   end
 
   defp do_write_failed(socket, %{keys: nil}, _reason), do: socket
@@ -621,8 +657,11 @@ defmodule Arbor.Async do
   # Internal: task spawn
   # ---------------------------------------------------------------------------
 
-  defp spawn_task(_socket, _name, body, supervisor, timeout) do
-    %Task{ref: ref, pid: pid} = Task.Supervisor.async_nolink(supervisor, body)
+  defp spawn_task(_socket, name, kind, body, supervisor, timeout) do
+    %Task{ref: ref, pid: pid} =
+      Task.Supervisor.async_nolink(supervisor, fn ->
+        {:arbor_async_result, name, kind, body.()}
+      end)
 
     timer_ref =
       case timeout do
@@ -636,14 +675,23 @@ defmodule Arbor.Async do
     {ref, pid, timer_ref}
   end
 
-  defp assign_task_body(fun) do
+  defp assign_task_body(fun, multi_keys) do
     fn ->
       try do
         result =
           case fun.() do
-            {:ok, _value} = ok -> ok
-            {:error, _reason} = err -> err
-            other -> other
+            {:ok, %{} = value_map} = ok when is_list(multi_keys) ->
+              ensure_assign_result_keys!(multi_keys, value_map)
+              ok
+
+            {:ok, _value} = ok ->
+              ok
+
+            {:error, _reason} = err ->
+              err
+
+            other ->
+              other
           end
 
         {:ok, result}
@@ -674,10 +722,19 @@ defmodule Arbor.Async do
       try do
         result =
           case fun.() do
-            {:ok, _items} = ok -> ok
-            {:ok, _items, _opts} = ok -> ok
-            {:error, _reason} = err -> err
-            other -> other
+            {:ok, items} = ok ->
+              ensure_stream_items_enumerable!(items)
+              ok
+
+            {:ok, items, opts} = ok when is_list(opts) ->
+              ensure_stream_items_enumerable!(items)
+              ok
+
+            {:error, _reason} = err ->
+              err
+
+            other ->
+              other
           end
 
         {:ok, result}
@@ -693,6 +750,28 @@ defmodule Arbor.Async do
   defp kill_task(pid, reason) when is_pid(pid) do
     if Process.alive?(pid), do: Process.exit(pid, reason)
     :ok
+  end
+
+  defp ensure_assign_result_keys!(keys, value_map) do
+    case missing_assign_key(keys, value_map) do
+      nil ->
+        :ok
+
+      key ->
+        raise ArgumentError,
+              "assign_async multi-key result missing key #{inspect(key)} in #{inspect(value_map)}"
+    end
+  end
+
+  defp ensure_stream_items_enumerable!(items) do
+    case Enumerable.impl_for(items) do
+      nil ->
+        raise ArgumentError,
+              "stream_async items must be enumerable, got: #{inspect(items)}"
+
+      _impl ->
+        :ok
+    end
   end
 
   defp cancel_timer(nil), do: :ok
