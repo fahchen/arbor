@@ -65,9 +65,10 @@ Feature: Command Routing
       And the policy denies the command for the current actor
       When the client sends the command
       Then the handler does not run
-      And no state mutation is committed
       And no patch push follows
       And the transport reply is delivered with channel status :ok and payload %{ok: false, reason: "unauthorized"}
+      # Note: the runtime commits any socket returned by the halting hook (uniform with :cont).
+      # Hooks that want "no state mutation on deny" must not mutate the socket before halting.
 
   Rule: A handler may signal business failures via the same reply mechanism
 

@@ -72,7 +72,7 @@ defmodule Arbor.Transport.ChannelTest do
     })
   end
 
-  test "command event flows through Arbor.Page.Server.command/5 and replies + patches" do
+  test "command event flows through Arbor.Page.Server.command/4 and replies + patches" do
     {:ok, _reply, socket} =
       UserSocket
       |> socket("user_id", %{})

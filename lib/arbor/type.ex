@@ -344,10 +344,15 @@ defmodule Arbor.Type do
   defp do_valid?(_value, _type_ast, _host_module), do: false
 
   defp validate_via_module(module, value) do
-    if function_exported?(module, :__arbor_validate_state__, 1) do
-      module.__arbor_validate_state__(value) == :ok
-    else
-      false
+    cond do
+      function_exported?(module, :__arbor_validate_state__, 1) ->
+        module.__arbor_validate_state__(value) == :ok
+
+      function_exported?(module, :__arbor_validate_input__, 1) ->
+        module.__arbor_validate_input__(value) == :ok
+
+      true ->
+        false
     end
   end
 

@@ -123,8 +123,8 @@ defmodule Arbor.Page.PatchEnvelopeTest do
 
       # Stream content flows entirely through stream_ops.
       assert [
-               %{op: "insert", name: "messages", item_key: "messages-1"},
-               %{op: "insert", name: "messages", item_key: "messages-2"}
+               %{op: "insert", stream: "messages", item_key: "messages-1"},
+               %{op: "insert", stream: "messages", item_key: "messages-2"}
              ] = stream_ops
     end
   end

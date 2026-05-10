@@ -10,7 +10,7 @@ defmodule Arbor.Hooks.ValidateCommandSchema do
   payloads for any descendant store.
 
   Validation walks each declared field, checks presence (string or atom
-  key), and dispatches to `Arbor.Type.valid?/2`. Any mismatch raises
+  key), and dispatches to `Arbor.Type.valid?/3`. Any mismatch raises
   `ArgumentError` per BDR-0003 (let-it-crash for malformed commands).
 
   Successful validation emits `[:arbor, :validate, :command, :stop]`.
@@ -52,10 +52,10 @@ defmodule Arbor.Hooks.ValidateCommandSchema do
     target_module = target_module(socket)
 
     case command_spec(target_module, command_name) do
-      nil ->
+      :error ->
         {:cont, socket}
 
-      %{payload_fields: fields} ->
+      {:ok, %{payload_fields: fields}} ->
         validate_fields!(target_module, command_name, fields, payload)
         emit_stop(target_module, command_name)
         {:cont, socket}
@@ -68,19 +68,16 @@ defmodule Arbor.Hooks.ValidateCommandSchema do
   end
 
   @spec command_spec(module() | nil, atom()) ::
-          %{name: atom(), payload_fields: list(), opts: keyword()} | nil
-  defp command_spec(nil, _command_name), do: nil
+          {:ok, %{name: atom(), payload_fields: list(), opts: keyword()}} | :error
+  defp command_spec(nil, _command_name), do: :error
 
   defp command_spec(module, command_name) when is_atom(module) and is_atom(command_name) do
-    if function_exported?(module, :__arbor__, 1) do
-      module
-      |> commands_for()
-      |> Enum.find(&(&1.name == command_name))
+    if function_exported?(module, :__arbor__, 2) do
+      module.__arbor__(:command, command_name)
+    else
+      :error
     end
   end
-
-  @spec commands_for(module()) :: [map()]
-  defp commands_for(module), do: List.wrap(module.__arbor__(:commands))
 
   @spec validate_fields!(module(), atom(), [map()], map()) :: :ok
   defp validate_fields!(module, command_name, fields, payload) do

@@ -7,20 +7,22 @@ defmodule Arbor.Page.Server do
 
   ## Cross-track contract (M3 → M4 → M5)
 
-  Transport adapters call `command/4` (or `command/5` with a transport ref) to
-  dispatch a single client command. The runtime returns the channel reply
-  payload — `{:ok, reply_payload}` — which the transport forwards to the
-  client. After the reply is sent, the runtime renders the tree, computes a
-  JSON Patch diff against the previously-rendered wire root, accumulates
-  stream ops queued during the handler, builds an `Arbor.Page.PatchEnvelope`,
-  and pushes it to the bound transport pid via a `{:patch, envelope}` message
-  on `handle_continue/2` (so the reply lands first per BDR-0009).
+  Transport adapters call `command/4` to dispatch a single client command. The
+  runtime returns the channel reply payload — `{:ok, reply_payload}` — which
+  the transport forwards to the client. After the reply is sent, the runtime
+  renders the tree, computes a JSON Patch diff against the previously-rendered
+  wire root, accumulates stream ops queued during the handler, builds an
+  `Arbor.Page.PatchEnvelope`, and pushes it to the bound transport pid via a
+  `{:patch, envelope}` message on `handle_continue/2` (so the reply lands
+  first per BDR-0009).
 
   At mount, the same flow runs once with `previous_wire_root: nil` — the
   initial envelope replaces the entire root path (`""`) with the freshly
   rendered wire root and starts the version counter at 1.
 
   Idle render cycles (no diff ops, no stream ops) emit nothing per BDR-0018.
+  Halted commands (a `:before_command` hook returned `{:halt, ...}`) skip the
+  render cycle entirely — there is no state mutation to diff.
   """
 
   use GenServer
@@ -83,18 +85,9 @@ defmodule Arbor.Page.Server do
   """
   @spec command(GenServer.server(), command_path(), atom(), command_payload()) ::
           {:ok, command_reply()}
-  def command(server, path, command_name, payload),
-    do: command(server, path, command_name, payload, nil)
-
-  @doc """
-  Same as `command/4` plus an opaque transport ref the adapter wishes to
-  correlate the reply with. The runtime treats the ref as opaque metadata.
-  """
-  @spec command(GenServer.server(), command_path(), atom(), command_payload(), term()) ::
-          {:ok, command_reply()}
-  def command(server, path, command_name, payload, ref)
+  def command(server, path, command_name, payload)
       when is_list(path) and is_atom(command_name) and is_map(payload) do
-    GenServer.call(server, {:command, path, command_name, payload, ref})
+    GenServer.call(server, {:command, path, command_name, payload})
   end
 
   @impl GenServer
@@ -153,19 +146,20 @@ defmodule Arbor.Page.Server do
 
   @impl GenServer
   @spec handle_call(
-          {:command, command_path(), atom(), command_payload(), term()},
+          {:command, command_path(), atom(), command_payload()},
           GenServer.from(),
           State.t()
         ) ::
           {:reply, {:ok, command_reply()}, State.t(),
            {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
-  def handle_call({:command, path, command_name, payload, _ref}, _from, %State{} = state) do
+  def handle_call({:command, path, command_name, payload}, _from, %State{} = state) do
     base_meta = %{page_id: page_id(state), path: path, command: command_name}
     started_at = System.monotonic_time()
     Telemetry.emit([:arbor, :command, :start], %{system_time: System.system_time()}, base_meta)
 
     try do
-      {reply, next_state, envelope} = run_command_with_render(path, command_name, payload, state)
+      {pipeline_status, reply, next_state, envelope} =
+        run_command_with_render(path, command_name, payload, state)
 
       Telemetry.emit(
         [:arbor, :command, :stop],
@@ -173,14 +167,16 @@ defmodule Arbor.Page.Server do
         Map.put(base_meta, :status, :ok)
       )
 
-      Telemetry.emit(
-        [:arbor, :patch, :stop],
-        %{
-          count: envelope_op_count(envelope),
-          stream_count: envelope_stream_count(envelope)
-        },
-        Map.put(base_meta, :version, next_state.version)
-      )
+      if pipeline_status == :ok do
+        Telemetry.emit(
+          [:arbor, :patch, :stop],
+          %{
+            count: envelope_op_count(envelope),
+            stream_count: envelope_stream_count(envelope)
+          },
+          Map.put(base_meta, :version, next_state.version)
+        )
+      end
 
       {:reply, {:ok, reply}, next_state, {:continue, {:push_patch, envelope}}}
     rescue
@@ -250,11 +246,18 @@ defmodule Arbor.Page.Server do
   # ---------------------------------------------------------------------------
 
   @spec run_command_with_render(command_path(), atom(), command_payload(), State.t()) ::
-          {command_reply(), State.t(), PatchEnvelope.t() | nil}
+          {:ok | :halted, command_reply(), State.t(), PatchEnvelope.t() | nil}
   defp run_command_with_render(path, command_name, payload, %State{} = state) do
-    {reply, state} = run_command_pipeline(path, command_name, payload, state)
-    {next_state, envelope} = render_and_envelope(state)
-    {reply, next_state, envelope}
+    {pipeline_status, reply, state} = run_command_pipeline(path, command_name, payload, state)
+
+    case pipeline_status do
+      :ok ->
+        {next_state, envelope} = render_and_envelope(state)
+        {:ok, reply, next_state, envelope}
+
+      :halted ->
+        {:halted, reply, state, nil}
+    end
   end
 
   @spec render_and_envelope(State.t()) :: {State.t(), PatchEnvelope.t() | nil}
@@ -284,7 +287,7 @@ defmodule Arbor.Page.Server do
   end
 
   @spec run_command_pipeline(command_path(), atom(), command_payload(), State.t()) ::
-          {command_reply(), State.t()}
+          {:ok | :halted, command_reply(), State.t()}
   defp run_command_pipeline(path, command_name, payload, %State{} = state) do
     addressed = lookup_or_raise!(state.store_registry, path)
     validate_command_declared!(addressed.module, command_name)
@@ -295,19 +298,19 @@ defmodule Arbor.Page.Server do
     case run_hook_chain(:before_command, chain, [command_name, payload], state, true) do
       {:halt_reply, reply, state} ->
         state = clear_command_target(state, chain)
-        {reply, state}
+        {:halted, reply, state}
 
       {:halt, state} ->
         state = clear_command_target(state, chain)
-        {%{}, state}
+        {:halted, %{}, state}
 
       {:cont, state} ->
         state = clear_command_target(state, chain)
         {reply, state} = dispatch_handler(path, command_name, payload, state)
 
         case run_hook_chain(:after_command, chain, [command_name, payload], state, false) do
-          {:cont, state} -> {reply, state}
-          {:halt, state} -> {reply, state}
+          {:cont, state} -> {:ok, reply, state}
+          {:halt, state} -> {:ok, reply, state}
         end
     end
   end
