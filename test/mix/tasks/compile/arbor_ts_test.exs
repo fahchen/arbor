@@ -13,14 +13,29 @@ defmodule Mix.Tasks.Compile.ArborTsTest do
   end
 
   describe "do_run/3 with no eligible modules" do
-    test "returns :noop without writing the bundle file", %{output: output} do
+    test "returns :noop without writing the bundle file when none exists", %{output: output} do
       assert ArborTs.do_run([], [], output) == :noop
       refute File.exists?(output)
     end
 
-    test "returns :noop in --check mode regardless of file presence", %{output: output} do
+    test "returns :noop in --check mode when no bundle file exists", %{output: output} do
       assert ArborTs.do_run(["--check"], [], output) == :noop
       refute File.exists?(output)
+    end
+
+    test "rewrites a stale bundle when one exists on disk", %{output: output} do
+      File.write!(output, "// stale content from prior generation\n")
+      assert {:ok, []} = ArborTs.do_run([], [], output)
+      assert File.read!(output) == TypeScript.render([])
+    end
+
+    test "returns drift diagnostic in --check mode when a stale bundle exists", %{output: output} do
+      File.write!(output, "// stale content from prior generation\n")
+
+      assert {:error, [diagnostic]} = ArborTs.do_run(["--check"], [], output)
+      assert diagnostic.severity == :error
+      assert diagnostic.compiler_name == "arbor_ts"
+      assert File.read!(output) == "// stale content from prior generation\n"
     end
   end
 
