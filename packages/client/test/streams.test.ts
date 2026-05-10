@@ -235,4 +235,36 @@ describe("applyStreamOps", () => {
       { itemKey: "a", item: "R" }
     ])
   })
+
+  test("keeps stream isolation when a store id segment contains ::", () => {
+    const streams = applyStreamOps(new Map(), [
+      {
+        op: "insert",
+        stream: "messages",
+        ref: "1",
+        store_id: ["a::b"],
+        item_key: "a",
+        at: -1,
+        item: "left",
+        limit: null
+      },
+      {
+        op: "insert",
+        stream: "messages",
+        ref: "2",
+        store_id: ["a"],
+        item_key: "b",
+        at: -1,
+        item: "right",
+        limit: null
+      }
+    ])
+
+    expect(getStream<string>(streams, ["a::b"], "messages")).toEqual([
+      { itemKey: "a", item: "left" }
+    ])
+    expect(getStream<string>(streams, ["a"], "messages")).toEqual([
+      { itemKey: "b", item: "right" }
+    ])
+  })
 })

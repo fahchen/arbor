@@ -1,5 +1,5 @@
 import type { StoreId, StreamEntry, StreamOp } from "./types"
-import { storeIdKey, streamStoreKey } from "./types"
+import { storeIdKey, storeKeyFromStreamStoreKey, streamStoreKey, streamStoreKeyPrefix } from "./types"
 
 export type MaterializedStreamMap = Map<string, readonly StreamEntry<unknown>[]>
 
@@ -47,8 +47,7 @@ export function pruneStreams(
   const next = new Map<string, readonly StreamEntry<unknown>[]>()
 
   for (const [key, value] of streams) {
-    const separatorIndex = key.indexOf("::")
-    const storeKey = separatorIndex >= 0 ? key.slice(0, separatorIndex) : key
+    const storeKey = storeKeyFromStreamStoreKey(key)
 
     if (validStoreIds.has(storeKey)) {
       next.set(key, value)
@@ -60,6 +59,21 @@ export function pruneStreams(
 
 export function touchedStoreKeys(ops: readonly StreamOp[]): ReadonlySet<string> {
   return new Set(ops.map((op) => storeIdKey(op.store_id)))
+}
+
+export function hasStreamKeyForStore(
+  streams: ReadonlyMap<string, readonly StreamEntry<unknown>[]>,
+  storeId: StoreId
+): boolean {
+  const prefix = streamStoreKeyPrefix(storeId)
+
+  for (const key of streams.keys()) {
+    if (key.startsWith(prefix)) {
+      return true
+    }
+  }
+
+  return false
 }
 
 function applyInsert(

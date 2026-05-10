@@ -51,14 +51,17 @@ export function storeIdKey(storeId: StoreId): string {
   return JSON.stringify(storeId)
 }
 
-export function storeIdEquals(left: StoreId, right: StoreId): boolean {
-  if (left.length !== right.length) {
-    return false
-  }
-
-  return left.every((segment, index) => segment === right[index])
-}
+const STREAM_KEY_SEP = "\0"
 
 export function streamStoreKey(storeId: StoreId, streamName: string): string {
-  return `${storeIdKey(storeId)}::${streamName}`
+  return `${storeIdKey(storeId)}${STREAM_KEY_SEP}${streamName}`
+}
+
+export function streamStoreKeyPrefix(storeId: StoreId): string {
+  return `${storeIdKey(storeId)}${STREAM_KEY_SEP}`
+}
+
+export function storeKeyFromStreamStoreKey(key: string): string {
+  const parts = key.split(STREAM_KEY_SEP)
+  return parts[0] ?? key
 }

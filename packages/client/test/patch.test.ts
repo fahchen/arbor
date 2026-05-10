@@ -9,6 +9,16 @@ describe("applyPatch", () => {
     expect(next).toEqual({ ok: false })
   })
 
+  test('rejects root add and root remove at path ""', () => {
+    expect(() =>
+      applyPatch({ ok: true }, [{ op: "add", path: "", value: { ok: false } }])
+    ).toThrow("Root path only supports replace")
+
+    expect(() => applyPatch({ ok: true }, [{ op: "remove", path: "" }])).toThrow(
+      "Root path only supports replace"
+    )
+  })
+
   test("adds, replaces, and removes object keys", () => {
     const root = { value: 1 }
 

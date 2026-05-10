@@ -28,8 +28,8 @@ function applyOperation(root: unknown, op: JsonPatchOp): unknown {
   const segments = parsePointer(op.path)
 
   if (segments.length === 0) {
-    if (op.op === "remove") {
-      throw new Error("Cannot remove the document root")
+    if (op.op !== "replace") {
+      throw new Error(`Root path only supports replace, received ${op.op}`)
     }
 
     return op.value

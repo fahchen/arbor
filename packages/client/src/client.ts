@@ -3,7 +3,13 @@ import { Socket } from "phoenix"
 import { createEventBus } from "./events"
 import type { ClientEventMap } from "./events"
 import { applyPatch } from "./patch"
-import { applyStreamOps, getStream, pruneStreams, touchedStoreKeys } from "./streams"
+import {
+  applyStreamOps,
+  getStream,
+  hasStreamKeyForStore,
+  pruneStreams,
+  touchedStoreKeys
+} from "./streams"
 import type { PatchEnvelope, StoreId, StreamEntry } from "./types"
 import { storeIdKey } from "./types"
 
@@ -254,7 +260,14 @@ class ArborClientImpl implements ArborClient {
       this.pendingConnect = { generation, resolve, reject }
     })
 
-    await receivePush(this.channel.join() as PushLike)
+    try {
+      await receivePush(this.channel.join() as PushLike)
+    } catch (error) {
+      this.pendingConnect = null
+      this.channel = undefined
+      throw error
+    }
+
     await initialPatch
   }
 
@@ -324,10 +337,9 @@ class ArborClientImpl implements ArborClient {
       listener()
     }
 
-    for (const [key, listeners] of this.storeListeners) {
+  for (const [key, listeners] of this.storeListeners) {
       const storeChanged = !Object.is(previousStoreIndex.get(key), nextStoreIndex.get(key))
-      const streamChanged =
-        streamTouched.has(key) || hasPrunedStreamForStore(previousStreams, nextStreams, key)
+      const streamChanged = streamTouched.has(key) || hasPrunedStreamForStore(previousStreams, nextStreams, key)
 
       if (!storeChanged && !streamChanged) {
         continue
@@ -423,13 +435,13 @@ function hasPrunedStreamForStore(
   next: ReadonlyMap<string, readonly StreamEntry<unknown>[]>,
   storeKey: string
 ): boolean {
-  for (const key of previous.keys()) {
-    if (key.startsWith(`${storeKey}::`) && !next.has(key)) {
-      return true
-    }
+  const storeId = JSON.parse(storeKey) as StoreId
+
+  if (!hasStreamKeyForStore(previous, storeId)) {
+    return false
   }
 
-  return false
+  return !hasStreamKeyForStore(next, storeId)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

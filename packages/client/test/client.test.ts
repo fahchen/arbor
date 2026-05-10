@@ -15,6 +15,7 @@ class MockPush {
     return this
   }
 
+  // This mock only notifies listeners already registered at resolve-time; it does not replay to late `.receive(...)` registrations.
   resolve(status: PushStatus, payload: unknown): void {
     for (const callback of this.callbacks.get(status) ?? []) {
       callback(payload)
@@ -68,6 +69,14 @@ class MockChannel {
     this.joinPush.resolve("ok", payload)
   }
 
+  rejectJoin(payload: unknown): void {
+    this.joinPush.resolve("error", payload)
+  }
+
+  timeoutJoin(): void {
+    this.joinPush.resolve("timeout", {})
+  }
+
   emit(event: string, payload: unknown): void {
     for (const callback of this.eventHandlers.get(event) ?? []) {
       callback(payload)
@@ -76,6 +85,12 @@ class MockChannel {
 
   disconnect(reason: unknown): void {
     for (const callback of this.closeHandlers) {
+      callback(reason)
+    }
+  }
+
+  fail(reason: unknown): void {
+    for (const callback of this.errorHandlers) {
       callback(reason)
     }
   }
@@ -147,6 +162,20 @@ describe("createArborClient", () => {
     expect(client.getRoot()).toEqual(rootState())
   })
 
+  test("connect rejects when join fails or times out", async () => {
+    const { createArborClient } = await import("../src/client")
+
+    const joinErrorClient = createArborClient({ url: "/socket", topic: "page:1" })
+    const joinErrorPromise = joinErrorClient.connect()
+    lastChannel().rejectJoin({ reason: "denied" })
+    await expect(joinErrorPromise).rejects.toThrow('Channel join failed: {"reason":"denied"}')
+
+    const timeoutClient = createArborClient({ url: "/socket", topic: "page:2" })
+    const timeoutPromise = timeoutClient.connect()
+    lastChannel().timeoutJoin()
+    await expect(timeoutPromise).rejects.toThrow("Channel join timed out")
+  })
+
   test("subsequent valid patches update local state and fire subscribeAll", async () => {
     const { createArborClient } = await import("../src/client")
     const client = createArborClient({ url: "/socket", topic: "page:1" })
@@ -188,6 +217,24 @@ describe("createArborClient", () => {
     expect(client.getVersion()).toBe(1)
   })
 
+  test("version mismatch rejects pending commands", async () => {
+    const { createArborClient } = await import("../src/client")
+    const client = createArborClient({ url: "/socket", topic: "page:1" })
+    const mismatch = vi.fn()
+
+    client.on("version_mismatch", mismatch)
+    await connectClient(client, initialEnvelope(rootState()))
+
+    const staleChannel = lastChannel()
+    const pendingCommand = client.command(["child"], "save", { value: 1 })
+
+    staleChannel.emit("patch", patchEnvelope(99, 100, [], []))
+
+    await expect(pendingCommand).rejects.toThrow("Version mismatch")
+    expect(mismatch).toHaveBeenCalledTimes(1)
+    expect(staleChannel.left).toBe(true)
+  })
+
   test("command resolves on ok, rejects on error, and rejects on disconnect", async () => {
     const { createArborClient } = await import("../src/client")
     const client = createArborClient({ url: "/socket", topic: "page:1" })
@@ -206,6 +253,24 @@ describe("createArborClient", () => {
     const disconnectPromise = client.command(["child"], "save", { value: 3 })
     lastChannel().disconnect({ reason: "socket closed" })
     await expect(disconnectPromise).rejects.toThrow("Disconnected")
+  })
+
+  test("channel error resets state and emits disconnect", async () => {
+    const { createArborClient } = await import("../src/client")
+    const client = createArborClient({ url: "/socket", topic: "page:1" })
+    const onDisconnect = vi.fn()
+
+    client.on("disconnect", onDisconnect)
+    await connectClient(client, initialEnvelope(rootState()))
+
+    lastChannel().fail({ reason: "transport error" })
+
+    expect(client.getRoot()).toBeUndefined()
+    expect(client.getVersion()).toBe(0)
+    expect(onDisconnect).toHaveBeenCalledWith({
+      topic: "page:1",
+      reason: { reason: "transport error" }
+    })
   })
 
   test("store subscriptions only fire when that store changes", async () => {

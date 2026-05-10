@@ -1,7 +1,7 @@
 import { describe, expectTypeOf, test } from "vitest"
 
 import type { AsyncResult, StreamOp, StoreId } from "../src/types"
-import { storeIdEquals, storeIdKey, streamStoreKey } from "../src/types"
+import { storeIdKey, storeKeyFromStreamStoreKey, streamStoreKey } from "../src/types"
 
 describe("types and helpers", () => {
   test("store id helpers are stable", () => {
@@ -17,6 +17,6 @@ describe("types and helpers", () => {
 
     storeIdKey(root)
     streamStoreKey(child, "messages")
-    storeIdEquals(root, [])
+    storeKeyFromStreamStoreKey(streamStoreKey(root, "messages"))
   })
 })
