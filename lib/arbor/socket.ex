@@ -16,7 +16,7 @@ defmodule Arbor.Socket do
     field :assigns, map(),
       default: %{},
       doc:
-        "Single state container holding parent-supplied attrs and store-internal values together. The only field `to_state/1` reads from. Mirrors `Phoenix.LiveView.Socket.assigns`."
+        "Single state container holding parent-supplied attrs and store-internal values together. The only field `to_state/1` reads from."
 
     field :id, String.t() | nil,
       default: nil,

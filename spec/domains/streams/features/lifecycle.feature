@@ -1,7 +1,7 @@
 @streams @lifecycle
 Feature: Streams Lifecycle
   As a store author
-  I want to declare stream-typed collections whose item values the server emits as ordered ops without retaining them in memory
+  I want to declare stream-typed collections whose deltas the server emits as ordered ops without retaining the materialized list
   So that long, append-mostly collections do not load the server while the client owns full materialization
 
   Background:
@@ -36,61 +36,62 @@ Feature: Streams Lifecycle
       Then the wire envelope emits stream content via stream_ops
       And the JSON Patch ops never touch /messages
 
-  Rule: socket-pipe stream API mirrors Phoenix.LiveView
+  Rule: socket-pipe stream API mirrors Phoenix.LiveView (LV-aligned semantics)
 
     Scenario Outline: API surface
       When the application calls <call> on socket
       Then the runtime queues a corresponding pending op in the named stream
 
       Examples:
-        | call                                        |
-        | stream(:messages, items)                    |
-        | stream(:messages, items, reset: true)       |
+        | call                                          |
+        | stream(:messages, items)                      |
+        | stream(:messages, items, reset: true)         |
         | stream_configure(:messages, item_key: ...)    |
-        | stream_insert(:messages, item)              |
-        | stream_insert(:messages, item, at: 0)       |
-        | stream_insert(:messages, item, limit: -100) |
-        | stream_insert(:messages, item, update_only: true) |
-        | stream_delete(:messages, item)              |
+        | stream_insert(:messages, item)                |
+        | stream_insert(:messages, item, at: 0)         |
+        | stream_insert(:messages, item, limit: -100)   |
+        | stream_delete(:messages, item)                |
         | stream_delete_by_item_key(:messages, "msg-1") |
 
-    Scenario: Insert is upsert by item_key
-      Given the stream already contains an item at item_key "msg-1"
-      When the application calls stream_insert(:messages, %{id: 1, body: "edited"})
-      Then the queued op replaces the item in place
-      And the stream length does not change
+    Scenario: Insert never inspects current contents server-side
+      Given the application calls stream_insert(:messages, %{id: 1})
+      When the application immediately calls stream_insert(:messages, %{id: 1, body: "edited"})
+      Then both calls queue an insert op without consulting any server-side index
+      And the client decides whether each op is an upsert or a fresh insert
 
-    Scenario: update_only true on a missing item_key is a no-op
-      Given the stream does not contain item_key "msg-9"
-      When the application calls stream_insert(:messages, %{id: 9}, update_only: true)
-      Then no op is queued for that call
+    Scenario: Delete never inspects current contents server-side
+      Given the stream has never been written to
+      When the application calls stream_delete_by_item_key(:messages, "msg-1")
+      Then a delete op is queued for "msg-1"
+      And the runtime does not raise
 
-  Rule: stream_configure must precede other stream ops for the same name in one handler
+  Rule: stream_configure is a lifetime gate — must precede the stream's first init
 
-    Scenario: Configure after insert raises
-      Given a handler queues stream_insert(:messages, msg)
-      When the same handler subsequently calls stream_configure(:messages, item_key: ...)
+    Scenario: Configure after init raises
+      Given the application has called stream_insert(:messages, msg) for the first time
+      When the application later calls stream_configure(:messages, item_key: ...)
       Then the runtime raises
 
-  Rule: Pending ops flush once per handler invocation
+    Scenario: Configure before init applies overrides
+      Given no insert has been queued for :messages
+      When the application calls stream_configure(:messages, item_key: &("custom-" <> &1.id))
+      And the application calls stream_insert(:messages, %{id: "1"})
+      Then the queued insert op carries item_key "custom-1"
+
+  Rule: Pending ops drain through the prune hook then the page server flush
 
     Scenario: A handler queues multiple ops
       Given a handler calls stream_insert(:messages, msg1) and stream_insert(:messages, msg2)
-      When the handler returns
+      When the handler returns and the page runtime renders
       Then exactly one envelope is emitted with stream_ops carrying both inserts in queue order
-      And after the envelope is emitted no pending stream ops remain
+      And after the envelope is emitted no pending stream ops remain on the LiveStream
 
-    Scenario: Pending ops do not survive across handlers
-      Given handler A queued stream ops and finished
-      When handler B begins for the next message
-      Then handler B starts with no pending stream ops from handler A
-
-  Rule: After flush the runtime forgets stream values; only the item_key index is retained
+  Rule: After flush the runtime forgets stream contents (server-side state is purely deltas)
 
     Scenario: Server memory after a 1000-item flush
-      When the application seeds 1000 items into a stream
-      Then the runtime retains only the ordered list of item_keys server-side
-      And the runtime does not retain item bodies
+      When the application seeds 1000 items into a stream and the runtime flushes
+      Then the LiveStream's inserts/deletes/reset? are empty
+      And the runtime never built an ordered list of item_keys server-side
 
   Rule: Initial state delivery splits stream fields between ops and stream_ops
 
@@ -113,24 +114,17 @@ Feature: Streams Lifecycle
   Rule: A patch envelope is one logical update; stream_ops apply in array order after ops
 
     Scenario: Reset followed by inserts
-      Given an envelope's stream_ops are [{configure ...}, {reset ...}, {insert ...}, {insert ...}]
+      Given an envelope's stream_ops are [{reset ...}, {insert ...}, {insert ...}]
       When the client applies the envelope
       Then it first applies all ops, then applies stream_ops in array order
       And the reset clears the local stream before subsequent inserts populate it
 
-  Rule: :limit is re-evaluated only when the item_key index grows
+  Rule: :limit is per-op on the wire; the client trims (server does not)
 
-    Scenario: Upsert at the limit
-      Given a stream has 100 items and limit: -100
-      When the application upserts an existing item_key
-      Then the envelope's stream_ops contain only the insert
-      And no delete is emitted
-
-    Scenario: New insert at the limit
-      Given a stream has 100 items and limit: -100
-      When the application inserts a new item_key
-      Then the envelope's stream_ops contain the insert
-      And the envelope contains a delete for the previously-trimmed-out item_key
+    Scenario: Insert carries a per-op limit field
+      When the application calls stream_insert(:messages, item, limit: -100)
+      Then the queued insert op records limit: -100 on the wire
+      And the server does not maintain an item_key index to trim against
 
   Rule: :at applies the standard LV positions
 
@@ -140,9 +134,9 @@ Feature: Streams Lifecycle
       And the client materializes the item at position <effect>
 
       Examples:
-        | at | effect                                    |
-        | -1 | append (end of list)                      |
-        |  0 | prepend (start of list)                   |
+        | at | effect                                       |
+        | -1 | append (end of list)                         |
+        |  0 | prepend (start of list)                      |
         |  3 | inserted at index 3 in the materialized list |
 
   Rule: Stream owner unmount cleans up implicitly via JSON Patch remove
@@ -162,3 +156,22 @@ Feature: Streams Lifecycle
       Then the resulting envelope's stream_ops contain a reset followed by one insert per item
       And no AsyncResult is touched
       And the client sees no loading flash
+
+  Rule: Wire op shape carries (op, stream, ref, ...) — LV-aligned
+
+    Scenario: Insert op fields
+      When the runtime emits an insert op
+      Then the op map contains op: "insert", stream: <stream name as string>, ref: <stream ref as string>, item_key, at, item, limit
+
+    Scenario: Delete op fields
+      When the runtime emits a delete op
+      Then the op map contains op: "delete", stream: <stream name as string>, ref: <stream ref as string>, item_key
+
+    Scenario: Reset op fields
+      When the runtime emits a reset op
+      Then the op map contains op: "reset", stream: <stream name as string>, ref: <stream ref as string>
+
+    Scenario: stream_configure is server-side only
+      When the application calls stream_configure(:messages, item_key: ..., limit: -100)
+      Then no configure op appears on the wire
+      And the next insert uses the configured item_key function and default limit

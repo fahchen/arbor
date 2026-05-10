@@ -9,8 +9,7 @@ defmodule Arbor.Async.Macros do
 
   ## Socket-capture warning
 
-  Mirrors `Phoenix.LiveView`'s warning. Closing over `socket` inside the
-  task fun risks data races: the task runs concurrently with the next
+  Closing over `socket` inside the task fun risks data races: the task runs concurrently with the next
   handler, so the captured `socket` is a frozen snapshot whose `assigns`
   may already be stale. Recommended fix: bind the values you need to
   local variables before the fn.
@@ -59,23 +58,6 @@ defmodule Arbor.Async.Macros do
     end
   end
 
-  @doc "See `Arbor.Async.stream_async/3,4`."
-  defmacro stream_async(socket, name, fun) do
-    warn_on_socket_capture!(fun, :stream_async, __CALLER__)
-
-    quote do
-      Async.stream_async(unquote(socket), unquote(name), unquote(fun))
-    end
-  end
-
-  defmacro stream_async(socket, name, fun, opts) do
-    warn_on_socket_capture!(fun, :stream_async, __CALLER__)
-
-    quote do
-      Async.stream_async(unquote(socket), unquote(name), unquote(fun), unquote(opts))
-    end
-  end
-
   @doc "See `Arbor.Async.cancel_async/2,3`."
   defmacro cancel_async(socket, target) do
     quote do
@@ -103,8 +85,16 @@ defmodule Arbor.Async.Macros do
     :ok
   end
 
+  # Only walk literal `fn …` or `&…` captures so calls like
+  # `start_async(socket, :foo, build_fn(socket))` —
+  # where `socket` flows through a helper rather than being captured by the
+  # task fun — don't trigger a false warning.
   @spec captures_socket?(Macro.t()) :: boolean()
-  defp captures_socket?(ast) do
+  defp captures_socket?({:fn, _meta, _clauses} = ast), do: walk_for_socket(ast)
+  defp captures_socket?({:&, _meta, _args} = ast), do: walk_for_socket(ast)
+  defp captures_socket?(_other), do: false
+
+  defp walk_for_socket(ast) do
     {_ast, captured?} =
       Macro.prewalk(ast, false, fn
         {:socket, _meta, ctx} = node, _acc when is_atom(ctx) ->

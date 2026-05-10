@@ -59,8 +59,8 @@ defmodule Arbor.Page.ServerCommandTest do
 
     state do
       field :title, String.t()
-      field :filters, %{query: String.t()}
-      field :leaf, %{status: String.t()}
+      field :filters, FiltersStore.t()
+      field :leaf, LeafStore.t()
     end
 
     command :reload_products
@@ -160,6 +160,42 @@ defmodule Arbor.Page.ServerCommandTest do
     end
   end
 
+  defmodule ProductCardStore do
+    @moduledoc false
+    use Arbor.Store
+
+    state do
+      field :id, String.t()
+    end
+
+    command :select
+
+    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :id, socket.id)}
+    def to_state(socket), do: %{id: socket.assigns.id}
+
+    def handle_command(:select, _payload, socket) do
+      {:reply, %{selected: socket.assigns.id}, socket}
+    end
+  end
+
+  defmodule ProductsListStore do
+    @moduledoc false
+    use Arbor.Store
+
+    state do
+      field :products, list(ProductCardStore.t())
+    end
+
+    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ids, ["prod_123", "prod_456"])}
+
+    def to_state(socket) do
+      %{
+        products:
+          Enum.map(socket.assigns.ids, fn id -> Arbor.Child.child(ProductCardStore, id: id) end)
+      }
+    end
+  end
+
   defmodule CrashingStore do
     @moduledoc false
     use Arbor.Store
@@ -202,6 +238,20 @@ defmodule Arbor.Page.ServerCommandTest do
       %State{store_registry: registry} = :sys.get_state(pid)
       entry = StoreRegistry.path_lookup(registry, ["filters"])
       assert entry.socket.assigns.query == "shirt"
+
+      GenServer.stop(pid)
+    end
+  end
+
+  describe "Scenario: Routing to a child of a keyed list" do
+    test "dispatches the command to the matching child store handler" do
+      {:ok, pid} = Server.start_link({ProductsListStore, %{}, %{transport_pid: self()}})
+
+      assert {:ok, %{selected: "prod_123"}} =
+               Server.command(pid, ["products", "prod_123"], :select, %{})
+
+      assert {:ok, %{selected: "prod_456"}} =
+               Server.command(pid, ["products", "prod_456"], :select, %{})
 
       GenServer.stop(pid)
     end

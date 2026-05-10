@@ -6,8 +6,10 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     ## Mounting in a Phoenix endpoint
 
-    Define a channel module and route a topic pattern at it from your
-    `Phoenix.Socket`:
+    Wire the channel inside a Phoenix.Socket and route the incoming `"command"`
+    events through `Arbor.Page.Server.command/4`. Patch envelopes pushed by
+    the runtime arrive as `{:patch, %Arbor.Page.PatchEnvelope{}}` messages and
+    are forwarded to the client as `"patch"` events.
 
         defmodule MyAppWeb.PageChannel do
           use Arbor.Transport.Channel, root: MyApp.RootStore
@@ -49,7 +51,11 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     Incoming `"command"` payload:
 
-        %{"path" => ["filters"], "name" => "change_query", "payload" => %{...}, "ref" => "abc"}
+        %{"path" => ["filters"], "name" => "change_query", "payload" => %{...}}
+
+    The Phoenix Channel `ref` is managed by the channel transport itself —
+    Phoenix associates the reply with the originating push automatically, so
+    the page server is never given the ref.
 
     Outgoing `"patch"` payload — `Arbor.Page.PatchEnvelope.to_wire/1`:
 
@@ -145,11 +151,10 @@ if Code.ensure_loaded?(Phoenix.Channel) do
       page_pid = Map.fetch!(socket.assigns, :__arbor_page__)
       path = Map.get(payload, "path", [])
       command_payload = Map.get(payload, "payload", %{})
-      ref = Map.get(payload, "ref")
 
       command_name = String.to_existing_atom(name)
 
-      {:ok, reply} = Server.command(page_pid, path, command_name, command_payload, ref)
+      {:ok, reply} = Server.command(page_pid, path, command_name, command_payload)
 
       {:reply, {:ok, reply}, socket}
     end
