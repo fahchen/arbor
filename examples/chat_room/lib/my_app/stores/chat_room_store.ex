@@ -25,12 +25,16 @@ defmodule MyApp.Stores.ChatRoomStore do
   alias MyApp.MessageState
   alias MyApp.Presence
 
-  attr :room_id, String.t(), required: true
+  attr(:room_id, String.t(), required: true)
 
   state do
     stream(:messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: -100)
-    field :online_users, Arbor.AsyncResult.of(list(map()))
-    field :last_send_status, %{type: :idle} | %{type: :ok, id: String.t()} | %{type: :failed, reason: String.t()}
+    field(:online_users, Arbor.AsyncResult.of(list(map())))
+
+    field(
+      :last_send_status,
+      %{type: :idle} | %{type: :ok, id: String.t()} | %{type: :failed, reason: String.t()}
+    )
   end
 
   command(:reload)
@@ -38,7 +42,7 @@ defmodule MyApp.Stores.ChatRoomStore do
   command(:refresh)
 
   command :send_message do
-    payload :body, String.t()
+    payload(:body, String.t())
   end
 
   @impl Arbor.Store

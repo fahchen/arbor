@@ -5,7 +5,12 @@ defmodule MyApp.Application do
 
   @impl Application
   def start(_type, _args) do
-    children = [MyApp.Persistence]
+    children = [
+      {Phoenix.PubSub, name: MyApp.PubSub},
+      MyApp.Persistence,
+      MyAppWeb.Endpoint
+    ]
+
     Supervisor.start_link(children, strategy: :one_for_one, name: MyApp.Supervisor)
   end
 end

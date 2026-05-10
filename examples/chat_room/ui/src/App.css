@@ -1,0 +1,200 @@
+:root {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: #10212c;
+  background:
+    radial-gradient(circle at top left, rgba(154, 214, 255, 0.45), transparent 24%),
+    linear-gradient(180deg, #f3f8fb 0%, #ecf1f3 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  background: #0f5d63;
+  color: white;
+  cursor: pointer;
+  padding: 0.85rem 1.15rem;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+input {
+  width: 100%;
+  border: 1px solid rgba(16, 33, 44, 0.15);
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  background: white;
+}
+
+code {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.shell {
+  width: min(1040px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 3rem 0 4rem;
+}
+
+.hero {
+  margin-bottom: 1.5rem;
+}
+
+.hero-row,
+.section-header,
+.actions,
+.composer,
+.message header,
+.users li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.78rem;
+  color: #0f5d63;
+}
+
+.hero h1,
+.panel h2 {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+}
+
+.hero h1 {
+  font-size: clamp(2.2rem, 5vw, 4rem);
+}
+
+.hero-copy,
+.muted,
+.empty,
+.notice {
+  color: #536572;
+}
+
+.badge,
+.status-pill {
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  background: rgba(15, 93, 99, 0.1);
+}
+
+.status-ok {
+  background: rgba(51, 163, 101, 0.18);
+}
+
+.status-loading {
+  background: rgba(15, 93, 99, 0.1);
+}
+
+.status-failed {
+  background: rgba(187, 64, 64, 0.14);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(16, 33, 44, 0.08);
+  border-radius: 1.4rem;
+  padding: 1.25rem;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 16px 40px rgba(16, 33, 44, 0.08);
+}
+
+.loading {
+  text-align: center;
+}
+
+.actions,
+.composer {
+  flex-wrap: wrap;
+}
+
+.ghost {
+  background: transparent;
+  color: #10212c;
+  border: 1px solid rgba(16, 33, 44, 0.15);
+}
+
+.users,
+.messages {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.users li,
+.message {
+  border: 1px solid rgba(16, 33, 44, 0.08);
+  border-radius: 1rem;
+  padding: 0.9rem 1rem;
+  background: rgba(243, 248, 251, 0.8);
+}
+
+.users li {
+  flex-wrap: wrap;
+}
+
+.message p {
+  margin: 0.5rem 0 0;
+}
+
+.notice {
+  margin: 1rem 0 0;
+}
+
+@media (max-width: 720px) {
+  .grid,
+  .hero-row,
+  .section-header,
+  .actions,
+  .composer,
+  .message header,
+  .users li {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .badge,
+  .status-pill {
+    align-self: flex-start;
+  }
+}

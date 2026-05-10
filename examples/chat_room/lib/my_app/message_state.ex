@@ -7,8 +7,8 @@ defmodule MyApp.MessageState do
   use Arbor.State
 
   state do
-    field :id, String.t()
-    field :body, String.t()
-    field :sender, String.t()
+    field(:id, String.t())
+    field(:body, String.t())
+    field(:sender, String.t())
   end
 end
