@@ -5,44 +5,84 @@ defmodule Arbor.Plugin.Reflection do
 
   @spec __before_compile__(Macro.Env.t()) :: Macro.t()
   defmacro __before_compile__(env) do
-    fields = Module.get_attribute(env.module, :__arbor_fields__) || []
-    streams = Arbor.Plugin.StateField.stream_fields(fields)
-
-    commands =
-      env.module
-      |> Module.get_attribute(:__arbor_commands__)
-      |> List.wrap()
-      |> Enum.reverse()
-
-    attrs =
-      env.module
-      |> Module.get_attribute(:__arbor_attrs__)
-      |> List.wrap()
-      |> Enum.reverse()
-
-    type_clauses =
-      for %{name: name, type: type} <- fields do
-        quote do
-          def __arbor__(:type, unquote(name)), do: unquote(Macro.escape(type))
-        end
-      end
-
-    validate_state_clauses = build_validate_state_clauses(fields)
-    stream_runtime_clauses = build_stream_runtime_clauses(streams)
+    sections = collect_sections(env.module)
+    plural_clauses = build_plural_clauses(sections)
+    type_clauses = build_type_clauses(sections.fields)
+    singular_clauses = build_all_singular_clauses(sections)
+    validate_clauses = build_validate_clauses_for_kind(env.module, sections.fields)
+    stream_runtime_clauses = build_stream_runtime_clauses(sections.streams)
 
     quote do
-      def __arbor__(:fields), do: unquote(Macro.escape(fields))
-      def __arbor__(:commands), do: unquote(Macro.escape(commands))
-      def __arbor__(:streams), do: unquote(Macro.escape(streams))
-      def __arbor__(:attrs), do: unquote(Macro.escape(attrs))
-
+      unquote_splicing(plural_clauses)
       unquote_splicing(type_clauses)
-
-      unquote_splicing(validate_state_clauses)
-
+      unquote_splicing(singular_clauses)
+      unquote_splicing(validate_clauses)
       unquote_splicing(stream_runtime_clauses)
     end
   end
+
+  defp collect_sections(module) do
+    fields = Module.get_attribute(module, :__arbor_fields__) || []
+    streams = Arbor.Plugin.StateField.stream_fields(fields)
+
+    commands =
+      module |> Module.get_attribute(:__arbor_commands__) |> List.wrap() |> Enum.reverse()
+
+    attrs = module |> Module.get_attribute(:__arbor_attrs__) |> List.wrap() |> Enum.reverse()
+
+    %{fields: fields, streams: streams, commands: commands, attrs: attrs}
+  end
+
+  defp build_plural_clauses(sections) do
+    %{fields: fields, streams: streams, commands: commands, attrs: attrs} = sections
+
+    [
+      quote(do: def(__arbor__(:fields), do: unquote(Macro.escape(fields)))),
+      quote(do: def(__arbor__(:commands), do: unquote(Macro.escape(commands)))),
+      quote(do: def(__arbor__(:streams), do: unquote(Macro.escape(streams)))),
+      quote(do: def(__arbor__(:attrs), do: unquote(Macro.escape(attrs))))
+    ]
+  end
+
+  defp build_type_clauses(fields) do
+    for %{name: name, type: type} <- fields do
+      quote do
+        def __arbor__(:type, unquote(name)), do: unquote(Macro.escape(type))
+      end
+    end
+  end
+
+  defp build_all_singular_clauses(sections) do
+    build_singular_clauses(:field, sections.fields, & &1.name) ++
+      build_singular_clauses(:command, sections.commands, & &1.name) ++
+      build_singular_clauses(:stream, sections.streams, & &1.name) ++
+      build_singular_clauses(:attr, sections.attrs, & &1.name) ++
+      [
+        quote(do: def(__arbor__(:field, _name), do: :error)),
+        quote(do: def(__arbor__(:command, _name), do: :error)),
+        quote(do: def(__arbor__(:stream, _name), do: :error)),
+        quote(do: def(__arbor__(:attr, _name), do: :error))
+      ]
+  end
+
+  defp build_singular_clauses(kind, items, name_fun) do
+    for item <- items do
+      name = name_fun.(item)
+
+      quote do
+        def __arbor__(unquote(kind), unquote(name)),
+          do: {:ok, unquote(Macro.escape(item))}
+      end
+    end
+  end
+
+  defp build_validate_clauses_for_kind(module, fields) do
+    kind = Module.get_attribute(module, :__arbor_kind__) || :state
+    build_validate_clauses(validate_callback_for(kind), fields)
+  end
+
+  defp validate_callback_for(:input), do: :__arbor_validate_input__
+  defp validate_callback_for(_other), do: :__arbor_validate_state__
 
   # Compile-time bridge between the AST stored on `__arbor__(:streams)` and
   # the runtime callers in `Arbor.Stream`. The AST stays quoted on the
@@ -93,7 +133,7 @@ defmodule Arbor.Plugin.Reflection do
   @impl TypedStructor.Plugin
   defmacro init(_opts), do: :ok
 
-  defp build_validate_state_clauses(fields) do
+  defp build_validate_clauses(callback_name, fields) do
     expected_keys = Enum.map(fields, fn %{name: name} -> Atom.to_string(name) end)
 
     field_check_exprs = Enum.map(fields, &build_field_check_expr/1)
@@ -101,9 +141,9 @@ defmodule Arbor.Plugin.Reflection do
     map_clause =
       quote do
         @doc false
-        @spec __arbor_validate_state__(term()) ::
+        @spec unquote(callback_name)(term()) ::
                 :ok | {:error, [{String.t(), String.t()}]}
-        def __arbor_validate_state__(value) when is_map(value) do
+        def unquote(callback_name)(value) when is_map(value) do
           field_errors = List.flatten([unquote_splicing(field_check_exprs)])
 
           extra_errors =
@@ -123,7 +163,7 @@ defmodule Arbor.Plugin.Reflection do
 
     fallback_clause =
       quote do
-        def __arbor_validate_state__(value) do
+        def unquote(callback_name)(value) do
           {:error, [{"$", "expected map, got: " <> inspect(value)}]}
         end
       end
