@@ -45,7 +45,20 @@ defmodule Arbor.Codegen.TypeScriptTest do
           export namespace Arbor {
             export namespace TestSupport {
               export type TypespecProbeChild = {
+                __arbor_store_id__: readonly string[]
                 amount: number
+              }
+            }
+          }
+
+          declare module "@arbor/client" {
+            interface ArborStoreMap {
+              "Arbor.TestSupport.TypespecProbeChild": {
+                state: {
+                  __arbor_store_id__: readonly string[]
+                  amount: number
+                }
+                commands: {}
               }
             }
           }
@@ -64,11 +77,27 @@ defmodule Arbor.Codegen.TypeScriptTest do
           export namespace Arbor {
             export namespace TestSupport {
               export type TypespecProbeWithCommand = {
+                __arbor_store_id__: readonly string[]
                 selected_id: string | null
               }
 
               export namespace TypespecProbeWithCommand {
                 export type Commands = {
+                  select: { id: string }
+                  refresh: {}
+                }
+              }
+            }
+          }
+
+          declare module "@arbor/client" {
+            interface ArborStoreMap {
+              "Arbor.TestSupport.TypespecProbeWithCommand": {
+                state: {
+                  __arbor_store_id__: readonly string[]
+                  selected_id: string | null
+                }
+                commands: {
                   select: { id: string }
                   refresh: {}
                 }
@@ -91,6 +120,7 @@ defmodule Arbor.Codegen.TypeScriptTest do
           export namespace Arbor {
             export namespace TestSupport {
               export type TypespecProbe = {
+                __arbor_store_id__: readonly string[]
                 messages: string[]
                 items: Arbor.TestSupport.TypespecProbeChild[]
                 load_stream: AsyncResult<Arbor.TestSupport.TypespecProbeChild[]>
@@ -101,7 +131,33 @@ defmodule Arbor.Codegen.TypeScriptTest do
               }
 
               export type TypespecProbeChild = {
+                __arbor_store_id__: readonly string[]
                 amount: number
+              }
+            }
+          }
+
+          declare module "@arbor/client" {
+            interface ArborStoreMap {
+              "Arbor.TestSupport.TypespecProbe": {
+                state: {
+                  __arbor_store_id__: readonly string[]
+                  messages: string[]
+                  items: Arbor.TestSupport.TypespecProbeChild[]
+                  load_stream: AsyncResult<Arbor.TestSupport.TypespecProbeChild[]>
+                  profile: AsyncResult<Arbor.TestSupport.TypespecProbeChild>
+                  status: { type: "active" } | { type: "paused"; value: number }
+                  child: Arbor.TestSupport.TypespecProbeChild
+                  tags: string[]
+                }
+                commands: {}
+              }
+              "Arbor.TestSupport.TypespecProbeChild": {
+                state: {
+                  __arbor_store_id__: readonly string[]
+                  amount: number
+                }
+                commands: {}
               }
             }
           }
@@ -115,6 +171,14 @@ defmodule Arbor.Codegen.TypeScriptTest do
       forward = TypeScript.render([entry(TypespecProbe), entry(TypespecProbeChild)])
       reversed = TypeScript.render([entry(TypespecProbeChild), entry(TypespecProbe)])
       assert forward == reversed
+    end
+  end
+
+  describe "render/1 — ArborStoreMap augmentation" do
+    test "every rendered state includes the runtime store id field" do
+      rendered = TypeScript.render([entry(TypespecProbeChild)])
+
+      assert rendered =~ "__arbor_store_id__: readonly string[]"
     end
   end
 end

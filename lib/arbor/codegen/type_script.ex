@@ -14,6 +14,8 @@ defmodule Arbor.Codegen.TypeScript do
       innermost matching namespace
     * for `Arbor.Store` modules with declared `command`s, a sibling
       `export namespace <LastSegment> { export type Commands = ... }`
+    * a `declare module "@arbor/client"` augmentation block that registers
+      every generated Arbor module under `ArborStoreMap`
 
   ## Type-name convention
 
@@ -46,8 +48,11 @@ defmodule Arbor.Codegen.TypeScript do
   """
 
   alias Arbor.Codegen.TypeScript.TypeRenderer
+  alias Arbor.Resolver
 
   @async_result_alias "AsyncResult"
+  @store_id_field Atom.to_string(Resolver.store_id_key())
+  @store_id_type "readonly string[]"
 
   @typedoc """
   An entry produced by `Arbor.Codegen.TypeScript.Manifest.list/0` and
@@ -136,7 +141,8 @@ defmodule Arbor.Codegen.TypeScript do
       "\n",
       async_result_decl(),
       "\n",
-      body
+      body,
+      emit_client_augmentation(tree)
     ]
 
     IO.iodata_to_binary(iodata)
@@ -234,12 +240,7 @@ defmodule Arbor.Codegen.TypeScript do
   end
 
   defp render_state_decl(name, fields, indent) do
-    field_lines =
-      fields
-      |> filter_renderable_fields()
-      |> Enum.map(fn %{name: field_name, type: type_ast} ->
-        "#{indent}  #{field_name}: #{TypeRenderer.render(type_ast)}"
-      end)
+    field_lines = render_state_fields(fields, indent <> "  ")
 
     [
       indent,
@@ -250,6 +251,62 @@ defmodule Arbor.Codegen.TypeScript do
       "\n",
       indent,
       "}\n"
+    ]
+  end
+
+  defp emit_client_augmentation(tree) do
+    entries = flatten_tree(tree)
+
+    case entries do
+      [] ->
+        []
+
+      _list ->
+        [
+          "\n",
+          "declare module \"@arbor/client\" {\n",
+          "  interface ArborStoreMap {\n",
+          Enum.map_join(entries, "\n", &render_store_map_entry/1),
+          "\n",
+          "  }\n",
+          "}\n"
+        ]
+    end
+  end
+
+  defp flatten_tree(tree) do
+    tree
+    |> Enum.sort_by(fn {segment, _entry} -> segment end)
+    |> Enum.flat_map(fn {_segment, {children, leaf_entry}} ->
+      current = if leaf_entry, do: [leaf_entry], else: []
+      current ++ flatten_tree(children)
+    end)
+  end
+
+  defp render_store_map_entry({module, %{fields: fields, commands: commands}}) do
+    module_name = module |> Module.split() |> Enum.join(".")
+
+    [
+      "    ",
+      inspect(module_name),
+      ": {\n",
+      "      state: {\n",
+      Enum.join(render_state_fields(fields, "        "), "\n"),
+      "\n",
+      "      }\n",
+      "      commands: ",
+      render_commands_object(commands, "      "),
+      "\n",
+      "    }"
+    ]
+  end
+
+  defp render_state_fields(fields, indent) do
+    [
+      "#{indent}#{@store_id_field}: #{@store_id_type}"
+      | Enum.map(filter_renderable_fields(fields), fn %{name: field_name, type: type_ast} ->
+          "#{indent}#{field_name}: #{TypeRenderer.render(type_ast)}"
+        end)
     ]
   end
 
@@ -282,6 +339,25 @@ defmodule Arbor.Codegen.TypeScript do
       "\n",
       indent,
       "}\n"
+    ]
+  end
+
+  defp render_commands_object([], _indent), do: "{}"
+
+  defp render_commands_object(commands, indent) do
+    field_indent = indent <> "  "
+
+    field_lines =
+      Enum.map(commands, fn %{name: cmd_name, payload_fields: payload_fields} ->
+        "#{field_indent}#{cmd_name}: #{render_command_payload(payload_fields)}"
+      end)
+
+    [
+      "{\n",
+      Enum.join(field_lines, "\n"),
+      "\n",
+      indent,
+      "}"
     ]
   end
 
