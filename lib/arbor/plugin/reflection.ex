@@ -10,12 +10,14 @@ defmodule Arbor.Plugin.Reflection do
     type_clauses = build_type_clauses(sections.fields)
     singular_clauses = build_all_singular_clauses(sections)
     validate_clauses = build_validate_clauses_for_kind(env.module, sections.fields)
+    stream_runtime_clauses = build_stream_runtime_clauses(sections.streams)
 
     quote do
       unquote_splicing(plural_clauses)
       unquote_splicing(type_clauses)
       unquote_splicing(singular_clauses)
       unquote_splicing(validate_clauses)
+      unquote_splicing(stream_runtime_clauses)
     end
   end
 
@@ -63,14 +65,6 @@ defmodule Arbor.Plugin.Reflection do
       ]
   end
 
-  defp build_validate_clauses_for_kind(module, fields) do
-    kind = Module.get_attribute(module, :__arbor_kind__) || :state
-    build_validate_clauses(validate_callback_for(kind), fields)
-  end
-
-  defp validate_callback_for(:input), do: :__arbor_validate_input__
-  defp validate_callback_for(_other), do: :__arbor_validate_state__
-
   defp build_singular_clauses(kind, items, name_fun) do
     for item <- items do
       name = name_fun.(item)
@@ -80,6 +74,60 @@ defmodule Arbor.Plugin.Reflection do
           do: {:ok, unquote(Macro.escape(item))}
       end
     end
+  end
+
+  defp build_validate_clauses_for_kind(module, fields) do
+    kind = Module.get_attribute(module, :__arbor_kind__) || :state
+    build_validate_clauses(validate_callback_for(kind), fields)
+  end
+
+  defp validate_callback_for(:input), do: :__arbor_validate_input__
+  defp validate_callback_for(_other), do: :__arbor_validate_state__
+
+  # Compile-time bridge between the AST stored on `__arbor__(:streams)` and
+  # the runtime callers in `Arbor.Stream`. The AST stays quoted on the
+  # reflection key (per existing tests), but each stream slot also gets a
+  # callable companion clause so runtime code never has to `Code.eval_quoted/3`.
+  defp build_stream_runtime_clauses([]), do: []
+
+  defp build_stream_runtime_clauses(streams) do
+    item_key_clauses =
+      for %{name: name, item_key: item_key_ast} <- streams do
+        quote do
+          @doc false
+          def __arbor_stream_item_key__(unquote(name), item),
+            do: unquote(item_key_ast).(item)
+        end
+      end
+
+    config_clauses =
+      for %{name: name, item_key: item_key_ast, limit: limit} <- streams do
+        quote do
+          @doc false
+          def __arbor_stream_config__(unquote(name)),
+            do: %{item_key: unquote(item_key_ast), limit: unquote(limit)}
+        end
+      end
+
+    item_key_fallback =
+      quote do
+        @doc false
+        def __arbor_stream_item_key__(name, _item) do
+          raise ArgumentError,
+                "no stream named #{inspect(name)} declared on #{inspect(__MODULE__)}"
+        end
+      end
+
+    config_fallback =
+      quote do
+        @doc false
+        def __arbor_stream_config__(name) do
+          raise ArgumentError,
+                "no stream named #{inspect(name)} declared on #{inspect(__MODULE__)}"
+        end
+      end
+
+    Enum.concat([item_key_clauses, [item_key_fallback], config_clauses, [config_fallback]])
   end
 
   @impl TypedStructor.Plugin

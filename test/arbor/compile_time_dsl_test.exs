@@ -117,6 +117,8 @@ end
 defmodule Arbor.CompileTimeDslTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureIO
+
   alias Arbor.TestSupport.ExampleState
   alias Arbor.TestSupport.ExampleStore
   alias Arbor.TestSupport.MultiCommandStore
@@ -198,9 +200,11 @@ defmodule Arbor.CompileTimeDslTest do
     end
     """
 
-    assert_raise ArgumentError, ~r/reserved arbor:/, fn ->
-      Code.compile_string(source)
-    end
+    capture_io(:stderr, fn ->
+      assert_raise ArgumentError, ~r/reserved arbor:/, fn ->
+        Code.compile_string(source)
+      end
+    end)
   end
 
   test "payload outside a command block fails at compile time" do
@@ -217,9 +221,11 @@ defmodule Arbor.CompileTimeDslTest do
     end
     """
 
-    assert_raise CompileError, fn ->
-      Code.compile_string(source)
-    end
+    capture_io(:stderr, fn ->
+      assert_raise CompileError, fn ->
+        Code.compile_string(source)
+      end
+    end)
   end
 
   describe "stream declarations inside state do" do
