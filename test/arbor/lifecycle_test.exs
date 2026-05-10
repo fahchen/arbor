@@ -91,7 +91,7 @@ defmodule Arbor.LifecycleTest do
                                                             _payload,
                                                             current_socket ->
         order = Enum.reverse(current_socket.assigns.order)
-        next_order = Enum.reverse([:second | Enum.reverse(order)])
+        next_order = List.insert_at(order, -1, :second)
         {:cont, put_in(current_socket.assigns[:order], next_order)}
       end)
 

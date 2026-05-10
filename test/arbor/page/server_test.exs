@@ -48,7 +48,7 @@ defmodule Arbor.Page.ServerTest do
   end
 
   test "page server init builds a root socket and inserts it into the registry" do
-    assert {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+    pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
     assert %State{} = :sys.get_state(pid)
 
     %State{
@@ -73,16 +73,17 @@ defmodule Arbor.Page.ServerTest do
 
     assert_receive {:patch, %Arbor.Page.PatchEnvelope{base_version: 0, version: 1}}
 
-    assert StoreRegistry.keys(store_registry) == [{[], RootStore, ""}]
+    assert StoreRegistry.keys(store_registry) == [[]]
 
-    assert registry_entry = StoreRegistry.get(store_registry, [], RootStore, "")
+    assert registry_entry = StoreRegistry.get(store_registry, [])
     assert registry_entry.module == RootStore
     assert registry_entry.socket == root_socket
-    assert registry_entry.resolved_state == %{status: "mounted"}
-    assert registry_entry.wire_state == %{"status" => "mounted"}
-    assert StoreRegistry.path_lookup(store_registry, []) == registry_entry
+    assert registry_entry.resolved_state == %{status: "mounted", __arbor_store_id__: []}
 
-    GenServer.stop(pid)
+    assert registry_entry.wire_state == %{
+             "status" => "mounted",
+             "__arbor_store_id__" => []
+           }
   end
 
   test "default hooks include ValidateCommandSchema everywhere and ValidateToState in dev" do
@@ -107,10 +108,10 @@ defmodule Arbor.Page.ServerTest do
   end
 
   test "root terminate fires on runtime exit" do
-    assert {:ok, pid} =
-             Server.start_link(
-               {TerminatesRootStore, %{test_pid: self()}, %{transport_pid: self()}}
-             )
+    pid =
+      start_supervised!(
+        {Server, {TerminatesRootStore, %{test_pid: self()}, %{transport_pid: self()}}}
+      )
 
     GenServer.stop(pid, :shutdown)
 

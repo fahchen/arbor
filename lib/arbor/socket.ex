@@ -21,17 +21,17 @@ defmodule Arbor.Socket do
     field :id, String.t() | nil,
       default: nil,
       doc:
-        "Store node id within its parent. Combined with `parent_path` and `module` forms the runtime identity tuple. Must be a binary string at the resolver."
+        "Store node's local id within its parent. Combined with `parent_path` forms the runtime identity (`store_id`). Must be a binary string at the resolver."
 
     field :parent_path, [path_segment()],
       default: [],
       doc:
-        "Ordered path from the root to this node's parent. Combined with `module` and `id` forms the runtime identity used for memoization and command routing."
+        "Ordered list of local ids from the root down to this node's parent. Combined with `id` forms the runtime identity (`store_id`) used for memoization, command routing, async tracking, and telemetry."
 
     field :module, module() | nil,
       default: nil,
       doc:
-        "The store module owning this node. Read-only; set at mount and preserved across re-renders within identity-stable cycles."
+        "The store module owning this node. Metadata only — not part of identity. Read-only; set at mount and preserved across re-renders within identity-stable cycles."
 
     field :endpoint, module() | nil,
       default: nil,
@@ -51,6 +51,38 @@ defmodule Arbor.Socket do
       default: %{},
       doc:
         "Reserved for runtime bookkeeping (hook table at `:hooks`, async ref tracking, pending stream ops). Do not read or write directly; use `get_private/3` and `put_private/3`."
+  end
+
+  @typedoc "Runtime identity of a store node — array of local ids from root."
+  @type store_id() :: [String.t()]
+
+  @doc """
+  Returns the runtime identity (`store_id`) of the store node owning this socket.
+
+  The store_id is the array of local id strings from the root down to this
+  node. The root has `store_id = []`. Each non-root node has
+  `store_id = parent_path ++ [id]`.
+
+  ## Examples
+
+      iex> Arbor.Socket.store_id(%Arbor.Socket{parent_path: [], id: ""})
+      []
+
+      iex> Arbor.Socket.store_id(%Arbor.Socket{parent_path: [], id: "filters"})
+      ["filters"]
+
+      iex> Arbor.Socket.store_id(%Arbor.Socket{parent_path: ["filters"], id: "primary"})
+      ["filters", "primary"]
+  """
+  @spec store_id(t()) :: store_id()
+  def store_id(%__MODULE__{parent_path: [], id: nil}), do: []
+  def store_id(%__MODULE__{parent_path: [], id: ""}), do: []
+
+  def store_id(%__MODULE__{parent_path: parent_path, id: id})
+      when is_list(parent_path) and is_binary(id) do
+    parent_path
+    |> Enum.map(&to_string/1)
+    |> List.insert_at(-1, id)
   end
 
   @doc """

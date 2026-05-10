@@ -8,30 +8,36 @@ Feature: Command Routing
     Given a connected client
     And a page runtime mounted on the client's transport session
 
-  Rule: Commands route by path to the addressed store node
+  Rule: Commands route by store_id to the addressed store node
 
     Scenario: Routing to the root store
       Given the page runtime owns a root store that declares the command "reload_products"
-      When the client sends a command targeting path [] with name "reload_products"
+      When the client sends a command with store_id [] and name "reload_products"
       Then the runtime dispatches the command to the root store's handler
 
     Scenario: Routing to a nested child store
       Given the root store renders a child store under field "filters"
       And the child store declares the command "change_query"
-      When the client sends a command targeting path ["filters"] with name "change_query"
+      When the client sends a command with store_id ["filters"] and name "change_query"
       Then the runtime dispatches the command to the filters store's handler
 
     Scenario: Routing to a child of a keyed list
       Given the root store renders a list of product card stores keyed by id
-      And a product card store keyed "prod_123" declares the command "select"
-      When the client sends a command targeting path ["products", "prod_123"] with name "select"
+      And a product card store with local id "prod_123" declares the command "select"
+      When the client sends a command with store_id ["products", "prod_123"] and name "select"
       Then the runtime dispatches the command to the matching product card store's handler
 
-  Rule: A path that does not resolve to a mounted store crashes the runtime
+    Scenario: The client echoes a server-rendered store_id verbatim
+      Given the resolved render output for the filters child carries __arbor_store_id__ = ["filters"]
+      When the client issues a command targeting that store
+      Then the client puts the same array on the wire as the command's store_id
+      And the runtime resolves the addressed node directly from that array
 
-    Scenario: Path no longer present after a render cycle
-      Given the most recent render cycle no longer mounts a child at path ["notifications"]
-      When the client sends a command targeting path ["notifications"] with name "mark_all_read"
+  Rule: A store_id that does not resolve to a mounted store crashes the runtime
+
+    Scenario: store_id no longer present after a render cycle
+      Given the most recent render cycle no longer mounts a child at store_id ["notifications"]
+      When the client sends a command with store_id ["notifications"] and name "mark_all_read"
       Then the runtime raises (LV-aligned: malformed events crash)
       And the page runtime exits
       And the client transport drops; the next reconnect mounts a fresh runtime
@@ -139,12 +145,12 @@ Feature: Command Routing
       And a patch push follows carrying the state diff
       And the outbound message is published last
 
-  Rule: Path resolution consults the runtime's authoritative registry of mounted store nodes
+  Rule: store_id resolution consults the runtime's authoritative registry of mounted store nodes
 
     Scenario: A queued command targets a node unmounted by an earlier command
-      Given an earlier command unmounted the child at path ["notifications"]
+      Given an earlier command unmounted the child at store_id ["notifications"]
       And the registry has been updated by that command's render cycle
-      When the next queued command targets path ["notifications"]
+      When the next queued command targets store_id ["notifications"]
       Then the runtime raises and the page runtime exits per let-it-crash
 
   Rule: Hooks run in attachment order
@@ -240,7 +246,7 @@ Feature: Command Routing
 
     Scenario: Stop event metadata fields
       When the runtime emits a command stop event
-      Then the metadata includes page_id, path, command, status, and (when status is error) error_category
+      Then the metadata includes page_id, store_id, command, status, and (when status is error) error_category
       And the metadata does not include the command payload contents
       And the metadata does not include user identifiers by default
 

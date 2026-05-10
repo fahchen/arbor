@@ -22,7 +22,12 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     Incoming `"command"` payload:
 
-        %{"path" => ["filters"], "name" => "change_query", "payload" => %{...}}
+        %{"store_id" => ["filters"], "name" => "change_query", "payload" => %{...}}
+
+    `store_id` is an array of local id strings — the runtime identity of the
+    addressed store node. The client echoes the server-rendered
+    `__arbor_store_id__` field verbatim and never constructs ids itself; the
+    root store is `[]`.
 
     The Phoenix Channel `ref` is managed by the channel transport itself —
     Phoenix associates the reply with the originating push automatically, so
@@ -87,12 +92,12 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     def __handle_command__(%{"name" => name} = payload, %Phoenix.Socket{} = socket)
         when is_binary(name) do
       page_pid = Map.fetch!(socket.assigns, :__arbor_page__)
-      path = Map.get(payload, "path", [])
+      store_id = Map.get(payload, "store_id", [])
       command_payload = Map.get(payload, "payload", %{})
 
       command_name = String.to_existing_atom(name)
 
-      {:ok, reply} = Server.command(page_pid, path, command_name, command_payload)
+      {:ok, reply} = Server.command(page_pid, store_id, command_name, command_payload)
 
       {:reply, {:ok, reply}, socket}
     end
