@@ -48,6 +48,7 @@ defmodule Arbor.Page.ServerChildAsyncTest do
 
     command :load_messages
 
+    @impl Arbor.Store
     def mount(socket) do
       hook_pid = socket.assigns.test_pid
 
@@ -67,20 +68,24 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       {:ok, socket}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{data: Map.get(socket.assigns, :data), slow: socket.assigns.slow, messages: []}
     end
 
+    @impl Arbor.Store
     def handle_command(:load, %{"id" => id}, socket) do
       fun = instrument(socket.assigns.test_pid, fn -> {:ok, "loaded:" <> id} end)
       {:reply, %{ok: true}, Arbor.Async.assign_async(socket, :data, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:start_warm, %{"tag" => tag}, socket) do
       fun = instrument(socket.assigns.test_pid, fn -> {:warmed, tag} end)
       {:noreply, Arbor.Async.start_async(socket, :warm, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:start_slow, _payload, socket) do
       fun =
         instrument(socket.assigns.test_pid, fn ->
@@ -92,10 +97,12 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       {:noreply, Arbor.Async.assign_async(socket, :slow, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:cancel_slow, _payload, socket) do
       {:noreply, Arbor.Async.cancel_async(socket, :slow, :user_navigated)}
     end
 
+    @impl Arbor.Store
     def handle_command(:load_messages, _payload, socket) do
       fun =
         instrument(socket.assigns.test_pid, fn ->
@@ -105,11 +112,13 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_async(:warm, {:ok, {:warmed, _tag}}, socket) do
       send(socket.assigns.test_pid, {:child_handle_async_callback, socket.id, :warm})
       {:noreply, socket}
     end
 
+    @impl Arbor.Store
     def handle_async(_name, _result, socket), do: {:noreply, socket}
   end
 
@@ -121,12 +130,15 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       field :widget, map()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{widget: Arbor.Child.child(WidgetStore, id: "w1", test_pid: socket.assigns.test_pid)}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

@@ -20,12 +20,15 @@ defmodule Arbor.ResolverTest do
       field :user_name, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{user_name: socket.assigns.user_name}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -36,12 +39,15 @@ defmodule Arbor.ResolverTest do
       field :header, HeaderStore.state()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(_socket) do
       %{header: %{user_name: "Alice"}}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -52,12 +58,15 @@ defmodule Arbor.ResolverTest do
       field :header, HeaderStore.state()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{header: child(HeaderStore, id: "header", user_name: socket.assigns.user_name)}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -68,14 +77,17 @@ defmodule Arbor.ResolverTest do
       field :title, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       {:ok, Arbor.Socket.assign(socket, :tmp, child(HeaderStore, id: "x", user_name: "tmp"))}
     end
 
+    @impl Arbor.Store
     def render(_socket) do
       %{title: "ready"}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -87,15 +99,18 @@ defmodule Arbor.ResolverTest do
       field :preserved, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       send(socket.assigns.test_pid, {:mount, socket.id})
       {:ok, Arbor.Socket.assign(socket, :preserved, "mounted-#{socket.id}")}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{label: socket.assigns.label, preserved: socket.assigns.preserved}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -106,8 +121,10 @@ defmodule Arbor.ResolverTest do
       field :items, list(ListChildStore.state())
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{
         items:
@@ -117,6 +134,7 @@ defmodule Arbor.ResolverTest do
       }
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -127,15 +145,18 @@ defmodule Arbor.ResolverTest do
       field :version, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       send(socket.assigns.test_pid, :mounted_v1)
       {:ok, Arbor.Socket.assign(socket, :version, "v1")}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{version: socket.assigns.version}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -146,15 +167,18 @@ defmodule Arbor.ResolverTest do
       field :version, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       send(socket.assigns.test_pid, :mounted_v2)
       {:ok, Arbor.Socket.assign(socket, :version, "v2")}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{version: socket.assigns.version}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -165,8 +189,10 @@ defmodule Arbor.ResolverTest do
       field :filters, map()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{
         filters:
@@ -174,6 +200,7 @@ defmodule Arbor.ResolverTest do
       }
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -184,12 +211,15 @@ defmodule Arbor.ResolverTest do
       field :value, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{value: socket.assigns.value}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -200,8 +230,10 @@ defmodule Arbor.ResolverTest do
       field :items, list(DuplicateChildStore.state())
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(_socket) do
       %{
         items: [
@@ -211,6 +243,7 @@ defmodule Arbor.ResolverTest do
       }
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -221,12 +254,15 @@ defmodule Arbor.ResolverTest do
       field :title, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{title: socket.assigns.title}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -237,12 +273,15 @@ defmodule Arbor.ResolverTest do
       field :child, DefaultUpdateChildStore.state()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{child: child(DefaultUpdateChildStore, id: "child", title: socket.assigns.title)}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -253,12 +292,15 @@ defmodule Arbor.ResolverTest do
       field :child, map() | nil
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{child: socket.assigns.child}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -269,8 +311,10 @@ defmodule Arbor.ResolverTest do
       field :child, map() | nil
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       if socket.assigns.show? do
         %{child: socket.assigns.child}
@@ -279,6 +323,7 @@ defmodule Arbor.ResolverTest do
       end
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -289,21 +334,25 @@ defmodule Arbor.ResolverTest do
       field :title, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       send(socket.assigns.test_pid, :memo_mount)
       {:ok, socket}
     end
 
+    @impl Arbor.Store
     def update(_new_assigns, socket) do
       send(socket.assigns.test_pid, :memo_update)
       {:ok, socket}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       send(socket.assigns.test_pid, :memo_to_state)
       %{title: socket.assigns.title}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -315,8 +364,10 @@ defmodule Arbor.ResolverTest do
       field :sibling_field, integer()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{
         child:
@@ -329,6 +380,7 @@ defmodule Arbor.ResolverTest do
       }
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -339,14 +391,17 @@ defmodule Arbor.ResolverTest do
       field :value, String.t()
     end
 
+    @impl Arbor.Store
     def mount(_socket) do
       {:error, :db_unavailable}
     end
 
+    @impl Arbor.Store
     def render(_socket) do
       %{value: "never"}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -357,18 +412,22 @@ defmodule Arbor.ResolverTest do
       field :value, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       {:ok, socket}
     end
 
+    @impl Arbor.Store
     def update(_new_assigns, _socket) do
       :bad
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{value: socket.assigns.value}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -379,12 +438,15 @@ defmodule Arbor.ResolverTest do
       field :child, map()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(socket) do
       %{child: child(socket.assigns.child_module, id: "child", value: socket.assigns.value)}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -395,12 +457,15 @@ defmodule Arbor.ResolverTest do
       field :value, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(_socket) do
       raise KeyError, key: :value, term: %{}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -411,12 +476,15 @@ defmodule Arbor.ResolverTest do
       field :child, map()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(_socket) do
       raise KeyError, key: :boom, term: %{}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

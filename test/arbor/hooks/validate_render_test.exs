@@ -24,8 +24,11 @@ defmodule Arbor.Hooks.ValidateRenderTest do
       field :avatar_url, String.t() | nil
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
     def render(_socket), do: %{user_name: "Alice", avatar_url: nil}
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -38,8 +41,11 @@ defmodule Arbor.Hooks.ValidateRenderTest do
       field :title, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
     def render(_socket), do: %{title: "Inbox"}
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -52,8 +58,11 @@ defmodule Arbor.Hooks.ValidateRenderTest do
       field :avatar_url, String.t() | nil
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
     def render(_socket), do: %{avatar_url: nil}
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -66,8 +75,11 @@ defmodule Arbor.Hooks.ValidateRenderTest do
       field :status, %{type: :active} | %{type: :paused, value: integer()}
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
     def render(_socket), do: %{status: %{type: :active}}
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -82,8 +94,11 @@ defmodule Arbor.Hooks.ValidateRenderTest do
       field :header, HeaderStore.state()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
     def render(_socket), do: %{header: %{user_name: "Alice", avatar_url: nil}}
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

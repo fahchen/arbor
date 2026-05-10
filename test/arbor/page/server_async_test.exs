@@ -90,6 +90,7 @@ defmodule Arbor.Page.ServerAsyncTest do
     @cancel_reasons [:user_left, :user_navigated]
     def __cancel_reasons__, do: @cancel_reasons
 
+    @impl Arbor.Store
     def mount(socket) do
       socket =
         socket
@@ -101,6 +102,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:ok, socket}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{
         profile: socket.assigns.profile,
@@ -111,11 +113,13 @@ defmodule Arbor.Page.ServerAsyncTest do
       }
     end
 
+    @impl Arbor.Store
     def handle_command(:load_profile, %{"name" => name}, socket) do
       fun = instrument(test_pid(socket), fn -> {:ok, %{name: name}} end)
       {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:load_profile_blocked, %{"name" => name, "tag" => tag}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -127,36 +131,43 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:load_profile_bad_return, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> 123 end)
       {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:load_profile_raise, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> raise "boom" end)
       {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:load_profile_exit, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> exit(:boom) end)
       {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:load_identity, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> {:ok, %{user: "ada", org: "arbor"}} end)
       {:noreply, Arbor.Async.assign_async(socket, [:user, :org], fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:load_identity_missing_key, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> {:ok, %{user: "ada"}} end)
       {:noreply, Arbor.Async.assign_async(socket, [:user, :org], fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:start_warm, %{"name" => name}, socket) do
       fun = instrument(test_pid(socket), fn -> {:warmed, name} end)
       {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:start_warm_blocked, %{"name" => name, "tag" => tag}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -168,30 +179,36 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:start_warm_raise, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> raise "boom" end)
       {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:start_warm_exit, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> exit(:boom) end)
       {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:cancel_warm, %{"reason" => reason}, socket) do
       {:noreply, Arbor.Async.cancel_async(socket, :warm_cache, String.to_existing_atom(reason))}
     end
 
+    @impl Arbor.Store
     def handle_command(:raising_handle_async, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> :ok end)
       {:noreply, Arbor.Async.start_async(socket, :raises, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:cancel_profile_by_name, %{"reason" => reason}, socket) do
       socket = Arbor.Async.cancel_async(socket, :profile, String.to_existing_atom(reason))
       {:noreply, socket}
     end
 
+    @impl Arbor.Store
     def handle_command(:cancel_profile_by_value, %{"reason" => reason}, socket) do
       socket =
         Arbor.Async.cancel_async(socket, socket.assigns.profile, String.to_existing_atom(reason))
@@ -199,6 +216,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:noreply, socket}
     end
 
+    @impl Arbor.Store
     def handle_command(:stream_messages, %{"mode" => "ok"}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -208,6 +226,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:stream_messages, %{"mode" => "ok_with_opts"}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -217,6 +236,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:stream_messages, %{"mode" => "ok_with_reset"}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -227,31 +247,37 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:stream_messages, %{"mode" => "error"}, socket) do
       fun = instrument(test_pid(socket), fn -> {:error, :rate_limited} end)
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:stream_messages, %{"mode" => "bad_return"}, socket) do
       fun = instrument(test_pid(socket), fn -> 123 end)
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:stream_messages, %{"mode" => "not_enumerable"}, socket) do
       fun = instrument(test_pid(socket), fn -> {:ok, 123} end)
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:stream_messages, %{"mode" => "raise"}, socket) do
       fun = instrument(test_pid(socket), fn -> raise "boom" end)
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:stream_messages, %{"mode" => "exit"}, socket) do
       fun = instrument(test_pid(socket), fn -> exit(:boom) end)
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:stream_messages_blocked, %{"tag" => tag}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -263,19 +289,23 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
     end
 
+    @impl Arbor.Store
     def handle_command(:cancel_messages, %{"reason" => reason}, socket) do
       socket = Arbor.Async.cancel_async(socket, :messages, String.to_existing_atom(reason))
       {:noreply, socket}
     end
 
+    @impl Arbor.Store
     def handle_async(:warm_cache, {:ok, {:warmed, name}}, socket) do
       {:noreply, Arbor.Socket.assign(socket, :cache_status, "warm:" <> name)}
     end
 
+    @impl Arbor.Store
     def handle_async(:warm_cache, {:exit, reason}, socket) do
       {:noreply, Arbor.Socket.assign(socket, :cache_status, "exit:" <> inspect(reason))}
     end
 
+    @impl Arbor.Store
     def handle_async(:raises, {:ok, _value}, _socket) do
       raise "boom-in-handle-async"
     end
@@ -289,10 +319,13 @@ defmodule Arbor.Page.ServerAsyncTest do
 
     command :load_messages
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
 
+    @impl Arbor.Store
     def render(_socket), do: %{}
 
+    @impl Arbor.Store
     def handle_command(:load_messages, _payload, socket) do
       {:noreply, Arbor.Async.stream_async(socket, :messages, fn -> {:ok, []} end)}
     end

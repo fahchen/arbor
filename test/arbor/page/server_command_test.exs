@@ -23,9 +23,12 @@ defmodule Arbor.Page.ServerCommandTest do
       payload :id, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :status, "ready")}
+    @impl Arbor.Store
     def render(socket), do: %{status: socket.assigns.status}
 
+    @impl Arbor.Store
     def handle_command(:select, %{"id" => id}, socket) do
       {:reply, %{selected: id}, Arbor.Socket.assign(socket, :status, "selected:" <> id)}
     end
@@ -45,13 +48,17 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :wipe
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :query, "")}
+    @impl Arbor.Store
     def render(socket), do: %{query: socket.assigns.query}
 
+    @impl Arbor.Store
     def handle_command(:change_query, %{"query" => query}, socket) do
       {:noreply, Arbor.Socket.assign(socket, :query, query)}
     end
 
+    @impl Arbor.Store
     def handle_command(:wipe, _payload, socket) do
       {:noreply, Arbor.Socket.assign(socket, :query, "")}
     end
@@ -69,6 +76,7 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :reload_products
 
+    @impl Arbor.Store
     def mount(socket) do
       socket =
         socket
@@ -84,6 +92,7 @@ defmodule Arbor.Page.ServerCommandTest do
       {:ok, socket}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{
         title: socket.assigns.title,
@@ -92,6 +101,7 @@ defmodule Arbor.Page.ServerCommandTest do
       }
     end
 
+    @impl Arbor.Store
     def handle_command(:reload_products, _payload, socket) do
       next = Map.get(socket.assigns, :reloads, 0) + 1
       {:reply, %{reloaded: true}, Arbor.Socket.assign(socket, :reloads, next)}
@@ -120,6 +130,7 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :restricted
 
+    @impl Arbor.Store
     def mount(socket) do
       socket =
         Lifecycle.attach_hook(socket, :auth, :before_command, fn _name, _payload, sock ->
@@ -129,8 +140,10 @@ defmodule Arbor.Page.ServerCommandTest do
       {:ok, Arbor.Socket.assign(socket, :ok, true)}
     end
 
+    @impl Arbor.Store
     def render(socket), do: %{ok: socket.assigns.ok}
 
+    @impl Arbor.Store
     def handle_command(:restricted, _payload, socket) do
       send(socket.assigns.test_pid, :handler_should_not_run)
       {:noreply, socket}
@@ -147,6 +160,7 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :gated
 
+    @impl Arbor.Store
     def mount(socket) do
       socket =
         Lifecycle.attach_hook(socket, :gate, :before_command, fn _name, _payload, sock ->
@@ -156,8 +170,10 @@ defmodule Arbor.Page.ServerCommandTest do
       {:ok, Arbor.Socket.assign(socket, :ok, true)}
     end
 
+    @impl Arbor.Store
     def render(socket), do: %{ok: socket.assigns.ok}
 
+    @impl Arbor.Store
     def handle_command(:gated, _payload, socket) do
       send(socket.assigns.test_pid, :handler_should_not_run)
       {:noreply, socket}
@@ -174,9 +190,12 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :select
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :id, socket.id)}
+    @impl Arbor.Store
     def render(socket), do: %{id: socket.assigns.id}
 
+    @impl Arbor.Store
     def handle_command(:select, _payload, socket) do
       {:reply, %{selected: socket.assigns.id}, socket}
     end
@@ -190,8 +209,10 @@ defmodule Arbor.Page.ServerCommandTest do
       field :products, list(ProductCardStore.t())
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ids, ["prod_123", "prod_456"])}
 
+    @impl Arbor.Store
     def render(socket) do
       %{
         products:
@@ -199,6 +220,7 @@ defmodule Arbor.Page.ServerCommandTest do
       }
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -212,9 +234,12 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :boom
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ok, true)}
+    @impl Arbor.Store
     def render(socket), do: %{ok: socket.assigns.ok}
 
+    @impl Arbor.Store
     def handle_command(:boom, _payload, _socket) do
       raise "boom"
     end

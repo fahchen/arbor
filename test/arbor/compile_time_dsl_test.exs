@@ -17,8 +17,11 @@ defmodule Arbor.TestSupport.ChildStore do
     field :id, String.t()
   end
 
+  @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
+  @impl Arbor.Store
   def render(socket), do: %{id: Map.get(socket.assigns, :id, socket.id || "")}
+  @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
@@ -51,8 +54,10 @@ defmodule Arbor.TestSupport.ExampleStore do
     payload(:status, %{type: :active} | %{type: :paused, value: integer()})
   end
 
+  @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
 
+  @impl Arbor.Store
   def render(_socket) do
     %{
       messages: [],
@@ -66,6 +71,7 @@ defmodule Arbor.TestSupport.ExampleStore do
     }
   end
 
+  @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
@@ -90,8 +96,11 @@ defmodule Arbor.TestSupport.StreamOnlyStore do
     stream(:notes, String.t(), limit: 50)
   end
 
+  @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
+  @impl Arbor.Store
   def render(_socket), do: %{notes: []}
+  @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
@@ -109,8 +118,11 @@ defmodule Arbor.TestSupport.AsyncStreamStore do
     )
   end
 
+  @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
+  @impl Arbor.Store
   def render(_socket), do: %{loaded: nil}
+  @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
@@ -142,8 +154,11 @@ defmodule Arbor.TestSupport.MultiCommandStore do
     payload(:include_archived, boolean())
   end
 
+  @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
+  @impl Arbor.Store
   def render(socket), do: %{id: Map.get(socket.assigns, :id, "")}
+  @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 

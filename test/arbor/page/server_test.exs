@@ -17,14 +17,17 @@ defmodule Arbor.Page.ServerTest do
       field :status, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       {:ok, Arbor.Socket.assign(socket, :status, "mounted")}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{status: socket.assigns.status}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -35,16 +38,20 @@ defmodule Arbor.Page.ServerTest do
       field :status, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       {:ok, Arbor.Socket.assign(socket, status: "mounted")}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{status: socket.assigns.status}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
+    @impl Arbor.Store
     def terminate(reason, socket) do
       send(socket.assigns.test_pid, {:root_terminate, reason, socket.assigns.status})
       :ok
@@ -129,18 +136,22 @@ defmodule Arbor.Page.ServerTest do
       field :counter, integer()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       {:ok, Arbor.Socket.assign(socket, :counter, 0)}
     end
 
+    @impl Arbor.Store
     def handle_info(:bump, socket) do
       {:noreply, Arbor.Socket.update_assign(socket, :counter, &(&1 + 1))}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{counter: socket.assigns.counter}
     end
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -178,6 +189,7 @@ defmodule Arbor.Page.ServerTest do
 
     command(:do_thing)
 
+    @impl Arbor.Store
     def mount(socket) do
       socket = Arbor.Socket.assign(socket, :status, "ready")
 
@@ -189,10 +201,12 @@ defmodule Arbor.Page.ServerTest do
       {:ok, socket}
     end
 
+    @impl Arbor.Store
     def handle_command(:do_thing, _payload, socket) do
       {:noreply, socket}
     end
 
+    @impl Arbor.Store
     def render(socket) do
       %{status: socket.assigns.status}
     end

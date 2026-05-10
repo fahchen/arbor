@@ -15,8 +15,11 @@ defmodule Arbor.Async.MacrosTest do
               field :user, String.t()
             end
 
+            @impl Arbor.Store
             def mount(socket), do: {:ok, socket}
+            @impl Arbor.Store
             def render(socket), do: %{user: socket.assigns.user}
+            @impl Arbor.Store
             def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def fetch(socket) do
@@ -40,8 +43,11 @@ defmodule Arbor.Async.MacrosTest do
               field :ok, boolean()
             end
 
+            @impl Arbor.Store
             def mount(socket), do: {:ok, socket}
+            @impl Arbor.Store
             def render(_socket), do: %{ok: true}
+            @impl Arbor.Store
             def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def warm(socket) do
@@ -67,8 +73,11 @@ defmodule Arbor.Async.MacrosTest do
               field :user, String.t()
             end
 
+            @impl Arbor.Store
             def mount(socket), do: {:ok, socket}
+            @impl Arbor.Store
             def render(socket), do: %{user: socket.assigns.user}
+            @impl Arbor.Store
             def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def fetch(socket) do
@@ -93,8 +102,11 @@ defmodule Arbor.Async.MacrosTest do
               field :user, String.t()
             end
 
+            @impl Arbor.Store
             def mount(socket), do: {:ok, socket}
+            @impl Arbor.Store
             def render(socket), do: %{user: socket.assigns.user}
+            @impl Arbor.Store
             def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def fetch(socket) do

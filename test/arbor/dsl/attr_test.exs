@@ -10,8 +10,11 @@ defmodule Arbor.DSL.AttrTest do
     attr :selected, boolean(), default: false
     attr :on_select, (%{id: String.t()} -> any()), required: true
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
     def render(_socket), do: %{}
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

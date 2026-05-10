@@ -15,8 +15,11 @@ defmodule Arbor.StreamTest do
       stream :songs, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
     def render(_socket), do: %{messages: [], songs: []}
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

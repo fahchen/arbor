@@ -3,7 +3,8 @@ defmodule Arbor.Store do
   Compile-time DSL entrypoint and behaviour contract for Arbor store modules.
 
   Stores `use Arbor.Store` and implement `render/1`, `mount/1`,
-  `handle_command/3`, optionally `handle_async/3` and `terminate/2`.
+  `handle_command/3`, optionally `update/2`, `handle_info/2`,
+  `handle_async/3`, and `terminate/2`.
   `render/1` returns the resolved Elixir-shaped term; wire conversion happens
   separately via `Arbor.Wire.to_wire/1`.
   """
@@ -30,6 +31,16 @@ defmodule Arbor.Store do
               {:noreply, Socket.t()} | {:reply, map(), Socket.t()}
 
   @doc """
+  Updates a mounted store socket from new parent-supplied assigns.
+  """
+  @callback update(params :: map(), socket :: Socket.t()) :: {:ok, Socket.t()}
+
+  @doc """
+  Handles an in-process message routed to the current store.
+  """
+  @callback handle_info(message :: term(), socket :: Socket.t()) :: {:noreply, Socket.t()}
+
+  @doc """
   Handles an async result routed to the current store.
   """
   @callback handle_async(name :: atom(), result :: term(), socket :: Socket.t()) ::
@@ -40,7 +51,7 @@ defmodule Arbor.Store do
   """
   @callback terminate(reason :: term(), socket :: Socket.t()) :: any()
 
-  @optional_callbacks handle_async: 3, terminate: 2
+  @optional_callbacks update: 2, handle_info: 2, handle_async: 3, terminate: 2
 
   @spec __using__(keyword()) :: Macro.t()
   defmacro __using__(_opts) do

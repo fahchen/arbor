@@ -32,8 +32,10 @@ defmodule Arbor.TestSupport.TypespecProbe do
     field :tags, list(String.t())
   end
 
+  @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
 
+  @impl Arbor.Store
   def render(_socket),
     do: %{
       messages: [],
@@ -45,6 +47,7 @@ defmodule Arbor.TestSupport.TypespecProbe do
       tags: []
     }
 
+  @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
   @captured_env __ENV__
@@ -67,8 +70,11 @@ defmodule Arbor.TestSupport.TypespecProbeWithCommand do
 
   command :refresh
 
+  @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
+  @impl Arbor.Store
   def render(socket), do: %{selected_id: Map.get(socket.assigns, :selected_id)}
+  @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
   @captured_env __ENV__

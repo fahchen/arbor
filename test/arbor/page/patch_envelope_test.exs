@@ -14,13 +14,16 @@ defmodule Arbor.Page.PatchEnvelopeTest do
       field :title, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "Inbox")}
+    @impl Arbor.Store
     def render(socket), do: %{title: socket.assigns.title}
 
     command :rename do
       payload :title, String.t()
     end
 
+    @impl Arbor.Store
     def handle_command(:rename, %{"title" => title}, socket),
       do: {:noreply, Arbor.Socket.assign(socket, :title, title)}
   end
@@ -35,6 +38,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
       stream :messages, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket) do
       socket =
         socket
@@ -45,8 +49,10 @@ defmodule Arbor.Page.PatchEnvelopeTest do
       {:ok, socket}
     end
 
+    @impl Arbor.Store
     def render(socket), do: %{title: socket.assigns.title, messages: []}
 
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -60,12 +66,15 @@ defmodule Arbor.Page.PatchEnvelopeTest do
       stream :messages, String.t()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "static")}
 
+    @impl Arbor.Store
     def render(socket), do: %{title: socket.assigns.title, messages: []}
 
     command :ping
 
+    @impl Arbor.Store
     def handle_command(:ping, _payload, socket) do
       {:noreply, Stream.stream_insert(socket, :messages, %{id: "n", body: "noop"})}
     end
@@ -80,10 +89,13 @@ defmodule Arbor.Page.PatchEnvelopeTest do
       field :ok, boolean()
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ok, true)}
+    @impl Arbor.Store
     def render(socket), do: %{ok: socket.assigns.ok}
 
     command :ping
+    @impl Arbor.Store
     def handle_command(:ping, _payload, socket), do: {:noreply, socket}
   end
 

@@ -16,8 +16,11 @@ defmodule Arbor.StreamAsyncTest do
       stream :messages, %{id: String.t(), body: String.t()}
     end
 
+    @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
     def render(_socket), do: %{messages: []}
+    @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
