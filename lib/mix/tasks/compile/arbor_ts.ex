@@ -71,15 +71,19 @@ defmodule Mix.Tasks.Compile.ArborTs do
     {opts, _rest, _invalid} = OptionParser.parse(argv, strict: [check: :boolean])
 
     contents = TypeScript.render(modules)
+    existing = File.read(output_path)
     check? = opts[:check] == true
 
     cond do
-      empty_bundle?(contents) ->
-        # No eligible modules: don't write (or require) a stub bundle file.
+      existing == {:ok, contents} ->
         write_manifest!(output_path)
         :noop
 
-      File.read(output_path) == {:ok, contents} ->
+      modules == [] and existing == {:error, :enoent} ->
+        # Fresh consumer project with no eligible modules — nothing to write.
+        # Once the project gains a `state do` module, the next compile drops
+        # into the write/check arms below and any pre-existing stale bundle
+        # is detected as drift.
         write_manifest!(output_path)
         :noop
 
@@ -107,28 +111,26 @@ defmodule Mix.Tasks.Compile.ArborTs do
   @doc false
   @spec eligible_modules() :: [module()]
   def eligible_modules do
-    Mix.Project.compile_path()
-    |> Path.join("*.beam")
-    |> Path.wildcard()
-    |> Enum.flat_map(&beam_to_module/1)
-    |> Enum.filter(fn module ->
-      TypeScript.eligible?(module) and not test_support_module?(module)
-    end)
-    |> Enum.uniq()
-    |> Enum.sort()
-  end
+    case Keyword.get(Mix.Project.config(), :app) do
+      nil ->
+        []
 
-  # Beam files compiled by the project translate to atoms that are guaranteed
-  # to exist by the time we scan, but third-party noise (e.g. half-stripped
-  # beams from earlier toolchain runs) may not — guard with `to_existing_atom`
-  # so we never mint unrelated atoms at runtime.
-  defp beam_to_module(beam_path) do
-    name = Path.basename(beam_path, ".beam")
+      app ->
+        # `:app` compiler runs before `:arbor_ts` in the standard chain
+        # (`Mix.compilers() ++ [:arbor_ts]`), so the loaded `.app` file is
+        # fresh by the time we read its `:modules` key. Loading is idempotent.
+        Application.load(app)
 
-    try do
-      [String.to_existing_atom(name)]
-    rescue
-      ArgumentError -> []
+        case :application.get_key(app, :modules) do
+          {:ok, modules} ->
+            modules
+            |> Enum.filter(&(TypeScript.eligible?(&1) and not test_support_module?(&1)))
+            |> Enum.uniq()
+            |> Enum.sort()
+
+          :undefined ->
+            []
+        end
     end
   end
 
@@ -165,14 +167,6 @@ defmodule Mix.Tasks.Compile.ArborTs do
   end
 
   defp manifest_path, do: Path.join(Mix.Project.manifest_path(), @manifest_filename)
-
-  # The renderer always emits the header + AsyncResult preamble, even when no
-  # modules are eligible. Treat that case as "nothing to write" so consumer
-  # apps without any Arbor modules don't have to commit a file just to satisfy
-  # the compiler.
-  defp empty_bundle?(contents) do
-    not String.contains?(contents, "export namespace ")
-  end
 
   defp drift_diagnostic(output_path) do
     %Mix.Task.Compiler.Diagnostic{
