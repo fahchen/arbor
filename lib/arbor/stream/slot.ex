@@ -60,13 +60,13 @@ defmodule Arbor.Stream.Slot do
   end
 
   @doc """
-  Returns a pruned copy of `live_stream` with all pending fields cleared.
+  Returns a pruned copy of `slot` with all pending fields cleared.
 
   Configuration fields (`name`, `item_key_fun`, `ref`) are preserved.
 
   ## Examples
 
-      iex> stream = %Arbor.Stream.Slot{
+      iex> slot = %Arbor.Stream.Slot{
       ...>   name: :songs,
       ...>   item_key_fun: fn item -> "songs-" <> item.id end,
       ...>   ref: 0,
@@ -74,14 +74,14 @@ defmodule Arbor.Stream.Slot do
       ...>   deletes: ["songs-2"],
       ...>   reset?: true
       ...> }
-      iex> pruned = Arbor.Stream.Slot.prune(stream)
+      iex> pruned = Arbor.Stream.Slot.prune(slot)
       iex> {pruned.inserts, pruned.deletes, pruned.reset?}
       {[], [], false}
       iex> pruned.name
       :songs
   """
   @spec prune(t()) :: t()
-  def prune(%__MODULE__{} = live_stream) do
-    %{live_stream | inserts: [], deletes: [], reset?: false}
+  def prune(%__MODULE__{} = slot) do
+    %{slot | inserts: [], deletes: [], reset?: false}
   end
 end
