@@ -5,7 +5,15 @@ import type { AsyncResult, StoreId, StreamEntry } from "@arbor/client"
 
 import { useArborClient } from "./provider"
 
-export function useStore<TState, Selected = TState>(
+const identitySelector = <S, T = S>(value: S): T => value as unknown as T
+
+export function useStore<TState>(storeId: StoreId): TState | undefined;
+export function useStore<TState, Selected>(
+  storeId: StoreId,
+  selector: (state: TState | undefined) => Selected,
+  equalityFn?: (a: Selected, b: Selected) => boolean
+): Selected;
+export function useStore<TState, Selected = TState | undefined>(
   storeId: StoreId,
   selector?: (state: TState | undefined) => Selected,
   equalityFn?: (a: Selected, b: Selected) => boolean
@@ -19,7 +27,7 @@ export function useStore<TState, Selected = TState>(
   )
   const getSnapshot = useCallback(() => client.getState<TState>(storeId), [client, storeIdKey])
   const resolvedSelector =
-    selector ?? ((state: TState | undefined) => state as unknown as Selected)
+    selector ?? (identitySelector as (state: TState | undefined) => Selected)
 
   return useSyncExternalStoreWithSelector(
     subscribe,
@@ -45,9 +53,14 @@ export function useCommand<
 }
 
 export function useAsyncResult<T>(storeId: StoreId, key: string): AsyncResult<T> | undefined {
+  const select = useCallback(
+    (state: Record<string, AsyncResult<T> | undefined> | undefined) => state?.[key],
+    [key]
+  )
+
   return useStore<Record<string, AsyncResult<T> | undefined>, AsyncResult<T> | undefined>(
     storeId,
-    (state) => state?.[key]
+    select
   )
 }
 
@@ -65,7 +78,6 @@ export function useStream<T>(storeId: StoreId, name: string): readonly StreamEnt
     subscribe,
     getSnapshot,
     getSnapshot,
-    (stream) => stream,
-    (a, b) => a === b
+    identitySelector
   )
 }

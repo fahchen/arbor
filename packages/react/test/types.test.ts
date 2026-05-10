@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, test } from "vitest"
 
-import { useCommand } from "../src"
+import { useCommand, useStore } from "../src"
 
 type Commands = {
   checkout: {
@@ -9,6 +9,11 @@ type Commands = {
 }
 
 type CheckoutDispatcher = ReturnType<typeof useCommand<Commands, "checkout", string>>
+type CounterState = {
+  count: number
+}
+type CounterStore = ReturnType<typeof useStore<CounterState>>
+type SelectedStore = ReturnType<typeof useStore<CounterState, number>>
 
 // @ts-expect-error only declared command names are allowed
 type MissingDispatcher = ReturnType<typeof useCommand<Commands, "missing">>
@@ -18,5 +23,7 @@ describe("useCommand types", () => {
     expectTypeOf<CheckoutDispatcher>().toEqualTypeOf<
       (payload: { coupon?: string }) => Promise<string>
     >()
+    expectTypeOf<CounterStore>().toEqualTypeOf<CounterState | undefined>()
+    expectTypeOf<SelectedStore>().toEqualTypeOf<number>()
   })
 })

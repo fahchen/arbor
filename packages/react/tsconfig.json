@@ -2,13 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
-    "baseUrl": ".",
     "ignoreDeprecations": "6.0",
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM"],
-    "paths": {
-      "@arbor/client": ["../client/src/index.ts"]
-    },
     "rootDir": "./src",
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",

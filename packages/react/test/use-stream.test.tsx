@@ -50,4 +50,32 @@ describe("useStream", () => {
 
     expect(screen.getByText("world")).toBeDefined()
   })
+
+  test("does not re-render when the stream snapshot keeps the same array reference", () => {
+    const client = new FakeArborClient()
+    const entries = [{ itemKey: "m1", item: { body: "hello" } }] satisfies readonly StreamEntry<Message>[]
+    client.setStream(STORE_ID, STREAM_NAME, entries)
+    let renderCount = 0
+
+    function Reader() {
+      renderCount += 1
+      const stream = useStream<Message>(STORE_ID, STREAM_NAME)
+      return <div>{stream[0]?.item.body ?? "missing"}</div>
+    }
+
+    render(
+      <ArborProvider client={client.asProviderClient()}>
+        <Reader />
+      </ArborProvider>
+    )
+
+    expect(renderCount).toBe(1)
+
+    act(() => {
+      client.setStream(STORE_ID, STREAM_NAME, entries)
+      client.emit(STORE_ID)
+    })
+
+    expect(renderCount).toBe(1)
+  })
 })
