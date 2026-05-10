@@ -12,6 +12,7 @@
 
 # Temporary files, for example, from tests.
 /tmp/
+/test/tmp/
 
 # If the VM crashes, it generates a dump, let's ignore it too.
 erl_crash.dump
@@ -24,9 +25,3 @@ arbor-*.tar
 
 /priv/plts/*.plt
 /priv/plts/*.plt.hash
-
-# Example app build artifacts (per-example)
-/examples/*/_build/
-/examples/*/deps/
-/examples/*/cover/
-/examples/*/priv/codegen/
