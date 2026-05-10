@@ -1,7 +1,30 @@
 defmodule Arbor.Codegen.TypeScript do
   @moduledoc """
-  Pure rendering layer for the `mix arbor.codegen.ts` task. Walks the field
-  type AST stored on `Module.__arbor__/1` and emits a TypeScript source string.
+  Single-file TypeScript codegen for every Arbor `state do` module exposed by
+  the current Mix project.
+
+  ## Output shape
+
+  One file (`priv/codegen/ts/arbor.ts` by default) containing:
+
+    * a top-level `AsyncResult<T>` generic (always emitted)
+    * one `export namespace <Segment>` per Elixir module path segment, nested
+      to mirror the Elixir module tree
+    * one `export type <LastSegment>` per Arbor module, declared inside the
+      innermost matching namespace
+    * for `Arbor.Store` modules with declared `command`s, a sibling
+      `export namespace <LastSegment> { export type Commands = ... }`
+
+  ## Type-name convention
+
+  The TS type name equals the Elixir module's last alias segment, with no
+  added suffix. `MyApp.Stores.ProductPageStore` becomes type `ProductPageStore`
+  inside `namespace MyApp.Stores`. Cross-module references write the full
+  Elixir module path; TS namespace lookup resolves it from the call site.
+
+  Collisions are physically impossible because the namespace tree mirrors the
+  Elixir module tree: two distinct modules cannot share the same fully-
+  qualified name. A defensive sanity check still raises on duplicate paths.
 
   ## Type mapping
 
@@ -18,21 +41,9 @@ defmodule Arbor.Codegen.TypeScript do
   | `list(T)` / `[T]`               | `T[]`                                   |
   | `stream(T)`                     | `T[]` (server forgets values)           |
   | `T \\| U`                       | `T \| U`                                |
-  | `Module.t()` / `Module.state()` | TS type alias derived from `Module`     |
+  | `Module.t()` / `Module.state()` | full Elixir alias path                  |
   | `Arbor.AsyncResult.of(T)`       | `AsyncResult<T>`                        |
-
-  ## Module-name convention
-
-  The TS alias for an Arbor module is the last alias segment with a `State`
-  suffix when the segment does not already end in `State`. Cross-module
-  references emit only the alias name; the rendered file always emits the
-  shared `AsyncResult<T>` generic so callers can `import` it once.
   """
-
-  alias Arbor.Plugin.Normalize
-
-  @typedoc "Rendered TypeScript source for one Arbor module."
-  @type rendered() :: %{path: String.t(), contents: String.t()}
 
   @async_result_alias "AsyncResult"
 
@@ -55,134 +66,291 @@ defmodule Arbor.Codegen.TypeScript do
   end
 
   @doc """
-  Renders one TypeScript file for `module`. Returns `nil` when the module is
-  not codegen-eligible.
+  Renders one TypeScript bundle covering every module in `modules`. Modules
+  must be already-loaded Arbor `state do` modules (filter via `eligible?/1`
+  upstream).
+
+  Returns the rendered source string. Raises `ArgumentError` on a duplicate
+  fully-qualified module name (defensive — real modules can't collide).
 
   ## Examples
 
-      iex> %{path: path, contents: contents} =
-      ...>   Arbor.Codegen.TypeScript.render(Arbor.TestSupport.TypespecProbe)
-      iex> path
-      "TypespecProbeState.ts"
-      iex> String.contains?(contents, "export type TypespecProbeState")
+      iex> rendered = Arbor.Codegen.TypeScript.render([Arbor.TestSupport.TypespecProbe])
+      iex> String.contains?(rendered, "export namespace Arbor")
+      true
+      iex> String.contains?(rendered, "export type TypespecProbe = {")
       true
   """
-  @spec render(module()) :: rendered() | nil
-  def render(module) when is_atom(module) do
-    if eligible?(module) do
-      render_module(module)
+  @spec render([module()]) :: String.t()
+  def render(modules) when is_list(modules) do
+    modules
+    |> Enum.uniq()
+    |> Enum.sort_by(&Module.split/1)
+    |> validate_no_duplicates!()
+    |> build_tree()
+    |> emit_bundle()
+  end
+
+  defp validate_no_duplicates!(modules) do
+    duplicates =
+      modules
+      |> Enum.frequencies_by(&Module.split/1)
+      |> Enum.filter(fn {_path, count} -> count > 1 end)
+
+    case duplicates do
+      [] -> modules
+      _list -> raise ArgumentError, "duplicate Arbor module paths: #{inspect(duplicates)}"
     end
   end
 
-  defp render_module(module) do
-    state_alias = state_alias(module)
-    fields = List.wrap(module.__arbor__(:fields))
-    streams = List.wrap(module.__arbor__(:streams))
-    commands = List.wrap(module.__arbor__(:commands))
-
-    state_block = render_state_block(state_alias, fields, streams)
-
-    commands_block =
-      if commands == [] do
-        nil
-      else
-        render_commands_block(state_alias, commands)
-      end
-
-    contents =
-      [header(), state_block, commands_block]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.intersperse("\n")
-      |> IO.iodata_to_binary()
-
-    %{path: state_alias <> ".ts", contents: contents}
+  # ---------------------------------------------------------------------------
+  # Module tree
+  # ---------------------------------------------------------------------------
+  #
+  # Builds a nested `%{segment => {children_map, leaf_module_or_nil}}` tree.
+  # `leaf_module` is non-nil at the node whose full path equals an Arbor
+  # module; the node may also have children (a module's name being a prefix
+  # of another module's path is fine — TS allows declaration merging between
+  # `export type X` and `export namespace X`).
+  defp build_tree(modules) do
+    Enum.reduce(modules, %{}, fn module, acc ->
+      insert_module(acc, Module.split(module), module)
+    end)
   end
 
-  @doc """
-  Returns the TypeScript alias used for `module`. Suffixes with `State` when
-  the trailing segment does not already include it.
+  defp insert_module(tree, [last], module) do
+    Map.update(tree, last, {%{}, module}, fn {children, _existing} ->
+      {children, module}
+    end)
+  end
 
-  ## Examples
+  defp insert_module(tree, [head | rest], module) do
+    Map.update(tree, head, {insert_module(%{}, rest, module), nil}, fn {children, leaf} ->
+      {insert_module(children, rest, module), leaf}
+    end)
+  end
 
-      iex> Arbor.Codegen.TypeScript.state_alias(MyApp.Stores.ProductPageStore)
-      "ProductPageStoreState"
-      iex> Arbor.Codegen.TypeScript.state_alias(MyApp.MessageState)
-      "MessageState"
-  """
-  @spec state_alias(module()) :: String.t()
-  def state_alias(module) when is_atom(module) do
-    last =
-      module
-      |> Module.split()
-      |> List.last()
+  # ---------------------------------------------------------------------------
+  # Emission
+  # ---------------------------------------------------------------------------
 
-    if String.ends_with?(last, "State"), do: last, else: last <> "State"
+  defp emit_bundle(tree) do
+    body = emit_tree(tree, 0)
+
+    iodata = [
+      header(),
+      "\n",
+      async_result_decl(),
+      "\n",
+      body
+    ]
+
+    IO.iodata_to_binary(iodata)
   end
 
   defp header do
-    """
-    // Generated by `mix arbor.codegen.ts`. Do not edit by hand.
+    "// Generated by `mix arbor.codegen.ts`. Do not edit by hand.\n"
+  end
 
-    export type AsyncResult<T> =
+  defp async_result_decl do
+    """
+    export type #{@async_result_alias}<T> =
       | { status: "loading"; result: T | null; reason: null }
       | { status: "ok"; result: T; reason: null }
       | { status: "failed"; result: T | null; reason: unknown }
     """
   end
 
-  defp render_state_block(state_alias, fields, streams) do
-    stream_names = MapSet.new(streams, & &1.name)
-
-    field_lines =
-      fields
-      |> filter_renderable_fields()
-      |> Enum.map(&render_state_field(&1, stream_names))
-
-    """
-    export type #{state_alias} = {
-    #{Enum.join(field_lines, "\n")}
-    }
-    """
+  defp emit_tree(tree, depth) do
+    tree
+    |> Enum.sort_by(fn {segment, _entry} -> segment end)
+    |> Enum.map(&emit_node(&1, depth))
+    |> Enum.intersperse("\n")
   end
 
-  defp filter_renderable_fields(fields) do
-    Enum.reject(fields, fn %{name: name} ->
-      name in [:__streams__]
+  # Cases (segment may carry a leaf module, children namespaces, or both):
+  #
+  #   * leaf only, no commands           → `export type <seg> = {...}`
+  #   * leaf only, has commands          → type decl + adjacent
+  #                                        `export namespace <seg> { Commands }`
+  #   * children only                    → `export namespace <seg> { children }`
+  #   * leaf + children (decl merging)   → type decl + `export namespace <seg>
+  #                                        { children + optional Commands }`
+  defp emit_node({segment, {children, leaf_module}}, depth) do
+    indent = String.duplicate("  ", depth)
+
+    cond do
+      leaf_module && map_size(children) == 0 ->
+        emit_leaf(segment, leaf_module, indent, depth)
+
+      leaf_module ->
+        [
+          render_state_decl_for_module(segment, leaf_module, indent),
+          "\n",
+          emit_namespace_block(segment, children, leaf_module, indent, depth)
+        ]
+
+      true ->
+        emit_namespace_block(segment, children, nil, indent, depth)
+    end
+  end
+
+  defp emit_leaf(segment, module, indent, depth) do
+    state_decl = render_state_decl_for_module(segment, module, indent)
+    commands = List.wrap(module.__arbor__(:commands))
+
+    if commands == [] do
+      state_decl
+    else
+      [
+        state_decl,
+        "\n",
+        render_commands_namespace(segment, commands, indent, depth)
+      ]
+    end
+  end
+
+  defp emit_namespace_block(segment, children, leaf_module, indent, depth) do
+    inner_depth = depth + 1
+    inner_indent = String.duplicate("  ", inner_depth)
+    children_body = emit_tree(children, inner_depth)
+
+    commands_body =
+      case leaf_module && List.wrap(leaf_module.__arbor__(:commands)) do
+        list when is_list(list) and list != [] ->
+          ["\n", render_commands_type(list, inner_indent)]
+
+        _none ->
+          []
+      end
+
+    [
+      indent,
+      "export namespace ",
+      segment,
+      " {\n",
+      children_body,
+      commands_body,
+      indent,
+      "}\n"
+    ]
+  end
+
+  defp render_state_decl_for_module(segment, module, indent) do
+    fields =
+      module
+      |> module_fields()
+      |> resolve_field_aliases(module)
+
+    render_state_decl(segment, fields, indent)
+  end
+
+  defp module_fields(module), do: List.wrap(module.__arbor__(:fields))
+
+  # Pre-resolve every `{:__aliases__, _, parts}` node inside a module's field
+  # types against the host module's parent namespaces so codegen can render
+  # the full Elixir module path even when the user `alias`'d the reference.
+  # Replaces alias nodes in-place with the resolved alias atom list.
+  defp resolve_field_aliases(fields, host_module) do
+    Enum.map(fields, fn field ->
+      Map.update!(field, :type, &resolve_aliases(&1, host_module))
     end)
   end
 
-  defp render_state_field(%{name: name, type: type_ast}, _stream_names) do
-    "  #{name}: #{render_type(type_ast)}"
+  defp resolve_aliases(ast, host_module) do
+    Macro.prewalk(ast, fn
+      {:__aliases__, meta, parts} = node when is_list(parts) ->
+        case resolve_alias_parts(parts, host_module) do
+          {:ok, atom} ->
+            {:__aliases__, meta, atom |> Module.split() |> Enum.map(&String.to_atom/1)}
+
+          :error ->
+            node
+        end
+
+      other ->
+        other
+    end)
   end
 
-  defp render_commands_block(state_alias, commands) do
-    commands_alias = commands_alias_for(state_alias)
+  defp resolve_alias_parts(parts, host_module) do
+    host_parts = host_module |> Module.split() |> Enum.map(&String.to_atom/1)
 
-    fields =
-      Enum.map(commands, fn %{name: name, payload_fields: payload_fields} ->
-        "  #{name}: #{render_command_payload(payload_fields)}"
+    # Walk parents from most-specific to least-specific. Use
+    # `Module.safe_concat/1` so we never mint a fresh atom for a module that
+    # was never loaded — only existing atoms can match a real module.
+    Enum.find_value(length(host_parts)..0//-1, :error, fn n ->
+      try do
+        candidate = Module.safe_concat(Enum.take(host_parts, n) ++ parts)
+
+        if Code.ensure_loaded?(candidate), do: {:ok, candidate}, else: nil
+      rescue
+        ArgumentError -> nil
+      end
+    end)
+  end
+
+  defp render_state_decl(name, fields, indent) do
+    field_lines =
+      fields
+      |> filter_renderable_fields()
+      |> Enum.map(fn %{name: field_name, type: type_ast} ->
+        "#{indent}  #{field_name}: #{render_type(type_ast)}"
       end)
 
-    """
-    export type #{commands_alias} = {
-    #{Enum.join(fields, "\n")}
-    }
-    """
+    [
+      indent,
+      "export type ",
+      name,
+      " = {\n",
+      Enum.join(field_lines, "\n"),
+      "\n",
+      indent,
+      "}\n"
+    ]
   end
 
-  defp commands_alias_for(state_alias) do
-    state_alias
-    |> String.replace_suffix("State", "")
-    |> Kernel.<>("Commands")
+  defp render_commands_namespace(name, commands, indent, _depth) do
+    inner_indent = indent <> "  "
+
+    [
+      indent,
+      "export namespace ",
+      name,
+      " {\n",
+      render_commands_type(commands, inner_indent),
+      indent,
+      "}\n"
+    ]
+  end
+
+  defp render_commands_type(commands, indent) do
+    field_indent = indent <> "  "
+
+    field_lines =
+      Enum.map(commands, fn %{name: cmd_name, payload_fields: payload_fields} ->
+        "#{field_indent}#{cmd_name}: #{render_command_payload(payload_fields)}"
+      end)
+
+    [
+      indent,
+      "export type Commands = {\n",
+      Enum.join(field_lines, "\n"),
+      "\n",
+      indent,
+      "}\n"
+    ]
+  end
+
+  defp filter_renderable_fields(fields) do
+    Enum.reject(fields, fn %{name: name} -> name in [:__streams__] end)
   end
 
   defp render_command_payload([]), do: "{}"
 
   defp render_command_payload(fields) do
-    normalized = Normalize.fields(fields)
-
     body =
-      Enum.map_join(normalized, "; ", fn %{name: name, type: type_ast} ->
+      Enum.map_join(fields, "; ", fn %{name: name, type: type_ast} ->
         "#{name}: #{render_type(type_ast)}"
       end)
 
@@ -226,12 +394,11 @@ defmodule Arbor.Codegen.TypeScript do
   defp do_render({:boolean, _meta, []}), do: "boolean"
   defp do_render({:atom, _meta, []}), do: "string"
 
-  # `String.t()` is the most common alias-form shortcut and must be matched
-  # before the literal-keyed map clause (whose 3-tuple shape would otherwise
-  # capture this AST with `pairs=[]`).
+  # `String.t()` shortcut — must precede the generic literal-map clause whose
+  # 3-tuple shape would otherwise capture this AST with `pairs=[]`.
   defp do_render({{:., _dot, [{:__aliases__, _meta, [:String]}, :t]}, _call, []}), do: "string"
 
-  # `Arbor.AsyncResult.of(T)` — exact match on Arbor.AsyncResult.
+  # `Arbor.AsyncResult.of(T)` — resolves the inner T recursively.
   defp do_render({{:., _dot, [aliased, :of]}, _call, [inner]}) do
     if async_result_alias?(aliased) do
       "#{@async_result_alias}<#{do_render(inner)}>"
@@ -240,11 +407,10 @@ defmodule Arbor.Codegen.TypeScript do
     end
   end
 
-  # `Module.t()` / `Module.state()` cross-module reference.
+  # `Module.t()` / `Module.state()` — emit the full Elixir alias path. TS
+  # namespace lookup resolves it from inside the call site's namespace.
   defp do_render({{:., _dot, [aliased, kind]}, _call, []}) when kind in [:t, :state] do
-    aliased
-    |> trailing_alias_segment()
-    |> append_state_suffix()
+    full_alias_path(aliased)
   end
 
   defp do_render({:%{}, _meta, pairs}) when is_list(pairs) do
@@ -260,10 +426,7 @@ defmodule Arbor.Codegen.TypeScript do
   defp do_render(true), do: "true"
   defp do_render(false), do: "false"
 
-  defp do_render(literal) when is_atom(literal) do
-    inspect(Atom.to_string(literal))
-  end
-
+  defp do_render(literal) when is_atom(literal), do: inspect(Atom.to_string(literal))
   defp do_render(literal) when is_binary(literal), do: inspect(literal)
   defp do_render(literal) when is_integer(literal), do: Integer.to_string(literal)
   defp do_render(literal) when is_float(literal), do: Float.to_string(literal)
@@ -281,16 +444,12 @@ defmodule Arbor.Codegen.TypeScript do
   defp render_key(key) when is_atom(key), do: Atom.to_string(key)
   defp render_key(key) when is_binary(key), do: inspect(key)
 
-  defp trailing_alias_segment({:__aliases__, _meta, parts}) when is_list(parts) do
-    parts |> List.last() |> Atom.to_string()
+  defp full_alias_path({:__aliases__, _meta, parts}) when is_list(parts) do
+    Enum.map_join(parts, ".", &Atom.to_string/1)
   end
 
-  defp trailing_alias_segment(module) when is_atom(module) do
-    module |> Module.split() |> List.last()
-  end
-
-  defp append_state_suffix(name) do
-    if String.ends_with?(name, "State"), do: name, else: name <> "State"
+  defp full_alias_path(module) when is_atom(module) do
+    module |> Module.split() |> Enum.join(".")
   end
 
   defp async_result_alias?({:__aliases__, _meta, [:Arbor, :AsyncResult]}), do: true
