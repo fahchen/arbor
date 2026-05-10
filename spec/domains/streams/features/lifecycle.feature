@@ -157,19 +157,19 @@ Feature: Streams Lifecycle
       And no AsyncResult is touched
       And the client sees no loading flash
 
-  Rule: Wire op shape carries (op, stream, ref, ...) — LV-aligned
+  Rule: Wire op shape carries (op, stream, ref, store_id, ...) — LV-aligned plus owning store path
 
     Scenario: Insert op fields
       When the runtime emits an insert op
-      Then the op map contains op: "insert", stream: <stream name as string>, ref: <stream ref as string>, item_key, at, item, limit
+      Then the op map contains op: "insert", stream: <stream name as string>, ref: <stream ref as string>, store_id: <owning store path>, item_key, at, item, limit
 
     Scenario: Delete op fields
       When the runtime emits a delete op
-      Then the op map contains op: "delete", stream: <stream name as string>, ref: <stream ref as string>, item_key
+      Then the op map contains op: "delete", stream: <stream name as string>, ref: <stream ref as string>, store_id: <owning store path>, item_key
 
     Scenario: Reset op fields
       When the runtime emits a reset op
-      Then the op map contains op: "reset", stream: <stream name as string>, ref: <stream ref as string>
+      Then the op map contains op: "reset", stream: <stream name as string>, ref: <stream ref as string>, store_id: <owning store path>
 
     Scenario: stream_configure is server-side only
       When the application calls stream_configure(:messages, item_key: ..., limit: -100)

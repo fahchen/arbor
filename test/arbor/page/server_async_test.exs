@@ -666,8 +666,8 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert_received {:patch, %PatchEnvelope{stream_ops: stream_ops}}
 
       assert [
-               %{op: "insert", at: 0, limit: -100, item_key: "messages-m1"},
-               %{op: "insert", at: 0, limit: -100, item_key: "messages-m2"}
+               %{op: "insert", at: 0, limit: -100, store_id: [], item_key: "messages-m1"},
+               %{op: "insert", at: 0, limit: -100, store_id: [], item_key: "messages-m2"}
              ] = stream_ops
 
       assert %AsyncResult{status: :ok, result: true} = root_socket(pid).assigns.messages
@@ -683,7 +683,12 @@ defmodule Arbor.Page.ServerAsyncTest do
       sync_server!(pid)
 
       assert_received {:patch, %PatchEnvelope{stream_ops: stream_ops}}
-      assert [%{op: "reset", stream: "messages"}, %{op: "insert"}, %{op: "insert"}] = stream_ops
+
+      assert [
+               %{op: "reset", stream: "messages", store_id: []},
+               %{op: "insert", store_id: []},
+               %{op: "insert", store_id: []}
+             ] = stream_ops
 
       assert %AsyncResult{status: :ok, result: true} = root_socket(pid).assigns.messages
     end
