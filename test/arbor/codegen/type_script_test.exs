@@ -17,16 +17,6 @@ defmodule Arbor.Codegen.TypeScriptTest do
     end
   end
 
-  describe "state_alias/1" do
-    test "appends State to the trailing alias when missing" do
-      assert TypeScript.state_alias(MyApp.Stores.ProductPageStore) == "ProductPageStoreState"
-    end
-
-    test "leaves trailing State suffix as-is" do
-      assert TypeScript.state_alias(MyApp.MessageState) == "MessageState"
-    end
-  end
-
   describe "render_type/1" do
     test "primitives" do
       assert TypeScript.render_type(quote(do: String.t())) == "string"
@@ -66,37 +56,44 @@ defmodule Arbor.Codegen.TypeScriptTest do
                "AsyncResult<string[]>"
     end
 
-    test "cross-module references emit the TS alias" do
+    test "cross-module references emit the full Elixir alias path" do
       ast = quote(do: Arbor.TestSupport.TypespecProbeChild.t())
-      assert TypeScript.render_type(ast) == "TypespecProbeChildState"
+      assert TypeScript.render_type(ast) == "Arbor.TestSupport.TypespecProbeChild"
     end
   end
 
   describe "render/1" do
-    test "emits state + commands blocks for a Store" do
-      %{path: path, contents: contents} = TypeScript.render(TypespecProbe)
+    test "emits a single bundle with nested namespaces mirroring the module tree" do
+      contents = TypeScript.render([TypespecProbe, TypespecProbeChild])
 
-      assert path == "TypespecProbeState.ts"
+      # Top-level AsyncResult preamble lives outside any namespace
       assert contents =~ "export type AsyncResult<T>"
-      assert contents =~ "export type TypespecProbeState = {"
-      assert contents =~ "messages: string[]"
-      assert contents =~ "items: TypespecProbeChildState[]"
-      assert contents =~ "load_stream: AsyncResult<TypespecProbeChildState[]>"
-      assert contents =~ "profile: AsyncResult<TypespecProbeChildState>"
-      assert contents =~ "child: TypespecProbeChildState"
-      assert contents =~ "tags: string[]"
+
+      # Namespace nesting follows the Elixir module path
+      assert contents =~ "export namespace Arbor {"
+      assert contents =~ "  export namespace TestSupport {"
+
+      # Each Arbor module emits a type at the innermost namespace
+      assert contents =~ "    export type TypespecProbe = {"
+      assert contents =~ "    export type TypespecProbeChild = {"
+
+      # Cross-module ref resolves to the full Elixir alias path
+      assert contents =~ "items: Arbor.TestSupport.TypespecProbeChild[]"
+      assert contents =~ "load_stream: AsyncResult<Arbor.TestSupport.TypespecProbeChild[]>"
+      assert contents =~ "child: Arbor.TestSupport.TypespecProbeChild"
     end
 
-    test "returns nil for ineligible modules" do
-      assert TypeScript.render(Arbor.Socket) == nil
-    end
+    test "Arbor.State module emits a type without a Commands namespace" do
+      contents = TypeScript.render([TypespecProbeChild])
 
-    test "Arbor.State module emits a TS alias without a Commands block" do
-      %{path: path, contents: contents} = TypeScript.render(TypespecProbeChild)
-
-      assert path == "TypespecProbeChildState.ts"
-      assert contents =~ "export type TypespecProbeChildState"
+      assert contents =~ "export type TypespecProbeChild = {"
       refute contents =~ "Commands"
+    end
+
+    test "emits AsyncResult preamble even when no modules are eligible" do
+      contents = TypeScript.render([])
+      assert contents =~ "export type AsyncResult<T>"
+      refute contents =~ "export namespace "
     end
   end
 end
