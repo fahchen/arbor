@@ -48,7 +48,7 @@ defmodule Arbor.Page.ServerTest do
   end
 
   test "page server init builds a root socket and inserts it into the registry" do
-    assert {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+    pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
     assert %State{} = :sys.get_state(pid)
 
     %State{
@@ -84,8 +84,6 @@ defmodule Arbor.Page.ServerTest do
              "status" => "mounted",
              "__arbor_store_id__" => []
            }
-
-    GenServer.stop(pid)
   end
 
   test "default hooks include ValidateCommandSchema everywhere and ValidateToState in dev" do
@@ -110,10 +108,10 @@ defmodule Arbor.Page.ServerTest do
   end
 
   test "root terminate fires on runtime exit" do
-    assert {:ok, pid} =
-             Server.start_link(
-               {TerminatesRootStore, %{test_pid: self()}, %{transport_pid: self()}}
-             )
+    pid =
+      start_supervised!(
+        {Server, {TerminatesRootStore, %{test_pid: self()}, %{transport_pid: self()}}}
+      )
 
     GenServer.stop(pid, :shutdown)
 

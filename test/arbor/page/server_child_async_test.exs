@@ -8,10 +8,6 @@ defmodule Arbor.Page.ServerChildAsyncTest do
 
   use ExUnit.Case, async: true
 
-  import ExUnit.CaptureLog
-
-  require Logger
-
   alias Arbor.AsyncResult
   alias Arbor.Page.PatchEnvelope
   alias Arbor.Page.Server
@@ -146,8 +142,6 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       assert_receive {:telemetry, [:arbor, :async, :stop], _, %{name: :data, status: :ok}}, 2_000
 
       assert %AsyncResult{status: :ok, result: "loaded:abc"} = child_assign(pid, :data)
-
-      shutdown_server(pid)
     end
 
     test "scenario 2: start_async from a child invokes the child's handle_async/3" do
@@ -157,7 +151,6 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       assert {:ok, _reply} = Server.command(pid, ["w1"], :start_warm, %{"tag" => "ada"})
 
       assert_receive {:child_handle_async_callback, "w1", :warm}, 1_000
-      shutdown_server(pid)
     end
 
     test "scenario 3: :handle_async hook attached in the child's mount fires for child tasks" do
@@ -167,7 +160,6 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       assert {:ok, _reply} = Server.command(pid, ["w1"], :start_warm, %{"tag" => "ada"})
 
       assert_receive {:child_handle_async_hook, "w1", :warm, {:ok, {:warmed, "ada"}}}, 1_000
-      shutdown_server(pid)
     end
 
     test "scenario 4: :before_command hook attached in the child's mount fires when a command targets it" do
@@ -177,7 +169,6 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       assert {:ok, _reply} = Server.command(pid, ["w1"], :load, %{"id" => "xyz"})
 
       assert_receive {:child_before_command_hook, "w1", :load, %{"id" => "xyz"}}, 1_000
-      shutdown_server(pid)
     end
 
     test "scenario 5: cancel_async from a child resolves the slot to failed/{:exit, reason}" do
@@ -194,8 +185,6 @@ defmodule Arbor.Page.ServerChildAsyncTest do
 
       assert %AsyncResult{status: :failed, reason: {:exit, :user_navigated}} =
                child_assign(pid, :slow)
-
-      shutdown_server(pid)
     end
 
     test "scenario 6: stream_async from a child seeds stream ops + AsyncResult on the child" do
@@ -210,17 +199,13 @@ defmodule Arbor.Page.ServerChildAsyncTest do
                      2_000
 
       assert %AsyncResult{status: :ok, result: true} = child_assign(pid, :messages)
-      shutdown_server(pid)
     end
   end
 
   defp start! do
-    {:ok, pid} =
-      Server.start_link(
-        {RootStore, %{"page_id" => "p1", test_pid: self()}, %{transport_pid: self()}}
-      )
-
-    pid
+    start_supervised!(
+      {Server, {RootStore, %{"page_id" => "p1", test_pid: self()}, %{transport_pid: self()}}}
+    )
   end
 
   defp flush_initial! do
@@ -247,25 +232,5 @@ defmodule Arbor.Page.ServerChildAsyncTest do
     %{store_registry: registry} = :sys.get_state(pid)
     entry = StoreRegistry.get(registry, ["w1"])
     Map.get(entry.socket.assigns, key)
-  end
-
-  # Child-async scenarios leave the linked page server alive until test exit,
-  # so shut it down explicitly inside `capture_log/1` to absorb terminate logs.
-  defp shutdown_server(pid) when is_pid(pid) do
-    if Process.alive?(pid) do
-      ref = Process.monitor(pid)
-
-      capture_log(fn ->
-        GenServer.stop(pid, :shutdown)
-
-        receive do
-          {:DOWN, ^ref, _type, _object, _reason} -> :ok
-        after
-          1_000 -> :ok
-        end
-
-        Logger.flush()
-      end)
-    end
   end
 end

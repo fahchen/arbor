@@ -225,16 +225,15 @@ defmodule Arbor.Page.ServerCommandTest do
 
   describe "Scenario: Routing to the root store" do
     test "dispatches the command to the root handler and returns the reply" do
-      {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
 
       assert {:ok, %{reloaded: true}} = Server.command(pid, [], :reload_products, %{})
-      GenServer.stop(pid)
     end
   end
 
   describe "Scenario: Routing to a nested child store" do
     test "dispatches command to filters child and persists the mutated socket" do
-      {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
 
       assert {:ok, %{}} =
                Server.command(pid, ["filters"], :change_query, %{"query" => "shirt"})
@@ -242,28 +241,25 @@ defmodule Arbor.Page.ServerCommandTest do
       %State{store_registry: registry} = :sys.get_state(pid)
       entry = StoreRegistry.get(registry, ["filters"])
       assert entry.socket.assigns.query == "shirt"
-
-      GenServer.stop(pid)
     end
   end
 
   describe "Scenario: Routing to a child of a keyed list" do
     test "dispatches the command to the matching child store handler" do
-      {:ok, pid} = Server.start_link({ProductsListStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {ProductsListStore, %{}, %{transport_pid: self()}}})
 
       assert {:ok, %{selected: "prod_123"}} =
                Server.command(pid, ["products", "prod_123"], :select, %{})
 
       assert {:ok, %{selected: "prod_456"}} =
                Server.command(pid, ["products", "prod_456"], :select, %{})
-
-      GenServer.stop(pid)
     end
   end
 
   describe "Scenario: Path that does not resolve crashes the runtime" do
     test "raises and exits the page runtime when the path is unknown" do
-      {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
+      Process.link(pid)
 
       capture_log(fn ->
         catch_exit(Server.command(pid, ["missing"], :select, %{"id" => "x"}))
@@ -275,7 +271,8 @@ defmodule Arbor.Page.ServerCommandTest do
 
   describe "Scenario: Command name absent from the addressed store crashes" do
     test "raises and exits when the addressed store does not declare the command" do
-      {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
+      Process.link(pid)
 
       capture_log(fn ->
         catch_exit(Server.command(pid, ["filters"], :delete, %{}))
@@ -287,18 +284,17 @@ defmodule Arbor.Page.ServerCommandTest do
 
   describe "Scenario: Payload conforms to the declared schema" do
     test "validation succeeds; handler runs" do
-      {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
 
       assert {:ok, %{}} =
                Server.command(pid, ["filters"], :change_query, %{"query" => "shirt"})
-
-      GenServer.stop(pid)
     end
   end
 
   describe "Scenario: Payload violates a declared field type" do
     test "schema validation hook raises before any handler runs" do
-      {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
+      Process.link(pid)
 
       capture_log(fn ->
         catch_exit(Server.command(pid, ["filters"], :change_query, %{"query" => 42}))
@@ -310,51 +306,49 @@ defmodule Arbor.Page.ServerCommandTest do
 
   describe "Scenario: Authorization hook halts an unauthorized command" do
     test "halt with reply produces channel ok status with the halt payload" do
-      {:ok, pid} =
-        Server.start_link({HaltingStore, %{test_pid: self()}, %{transport_pid: self()}})
+      pid =
+        start_supervised!({Server, {HaltingStore, %{test_pid: self()}, %{transport_pid: self()}}})
 
       assert {:ok, %{ok: false, reason: "unauthorized"}} =
                Server.command(pid, [], :restricted, %{})
 
       refute_received :handler_should_not_run
-      GenServer.stop(pid)
     end
   end
 
   describe "Scenario: Hook halts without a reply" do
     test "delivers default ok reply with empty payload" do
-      {:ok, pid} =
-        Server.start_link({SilentHaltStore, %{test_pid: self()}, %{transport_pid: self()}})
+      pid =
+        start_supervised!(
+          {Server, {SilentHaltStore, %{test_pid: self()}, %{transport_pid: self()}}}
+        )
 
       assert {:ok, %{}} = Server.command(pid, [], :gated, %{})
       refute_received :handler_should_not_run
-      GenServer.stop(pid)
     end
   end
 
   describe "Scenario: Handler chooses {:noreply, socket}" do
     test "client receives a reply with empty payload and state mutates" do
-      {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
 
       assert {:ok, %{}} = Server.command(pid, ["filters"], :wipe, %{})
-      GenServer.stop(pid)
     end
   end
 
   describe "Scenario: Handler chooses {:reply, payload, socket}" do
     test "the client receives the handler's reply payload" do
-      {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
 
       assert {:ok, %{selected: "abc"}} =
                Server.command(pid, ["leaf"], :select, %{"id" => "abc"})
-
-      GenServer.stop(pid)
     end
   end
 
   describe "Scenario: A handler crash terminates the page runtime" do
     test "the page runtime exits and the caller observes the exit" do
-      {:ok, pid} = Server.start_link({CrashingStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {CrashingStore, %{}, %{transport_pid: self()}}})
+      Process.link(pid)
 
       capture_log(fn ->
         catch_exit(Server.command(pid, [], :boom, %{}))
@@ -368,7 +362,7 @@ defmodule Arbor.Page.ServerCommandTest do
     test "root hook fires before the child hook for a command on the child" do
       params = %{}
 
-      {:ok, pid} = Server.start_link({RootStore, params, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, params, %{transport_pid: self()}}})
 
       :ok = inject_root_hook_audit(pid, self())
 
@@ -377,8 +371,6 @@ defmodule Arbor.Page.ServerCommandTest do
 
       assert_received {:hook, :root_before, :change_query}
       assert_received {:hook, :root_after, :change_query}
-
-      GenServer.stop(pid)
     end
   end
 
@@ -400,8 +392,8 @@ defmodule Arbor.Page.ServerCommandTest do
 
       on_exit(fn -> :telemetry.detach(handler_id) end)
 
-      {:ok, pid} =
-        Server.start_link({RootStore, %{"page_id" => "home"}, %{transport_pid: self()}})
+      pid =
+        start_supervised!({Server, {RootStore, %{"page_id" => "home"}, %{transport_pid: self()}}})
 
       assert {:ok, _reply} = Server.command(pid, ["filters"], :wipe, %{})
 
@@ -419,8 +411,6 @@ defmodule Arbor.Page.ServerCommandTest do
                         command: :wipe,
                         status: :ok
                       }}
-
-      GenServer.stop(pid)
     end
 
     test "stop metadata excludes the payload contents" do
@@ -437,7 +427,7 @@ defmodule Arbor.Page.ServerCommandTest do
 
       on_exit(fn -> :telemetry.detach(handler_id) end)
 
-      {:ok, pid} = Server.start_link({RootStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
 
       assert {:ok, _reply} =
                Server.command(pid, ["filters"], :change_query, %{"query" => "secret-payload"})
@@ -446,8 +436,6 @@ defmodule Arbor.Page.ServerCommandTest do
 
       refute Map.has_key?(metadata, :payload)
       refute String.contains?(inspect(metadata), "secret-payload")
-
-      GenServer.stop(pid)
     end
   end
 
@@ -466,7 +454,8 @@ defmodule Arbor.Page.ServerCommandTest do
 
       on_exit(fn -> :telemetry.detach(handler_id) end)
 
-      {:ok, pid} = Server.start_link({CrashingStore, %{}, %{transport_pid: self()}})
+      pid = start_supervised!({Server, {CrashingStore, %{}, %{transport_pid: self()}}})
+      Process.link(pid)
 
       capture_log(fn ->
         catch_exit(Server.command(pid, [], :boom, %{}))
