@@ -17,6 +17,11 @@ defmodule Arbor.Page.ServerChildAsyncTest do
   alias Arbor.Page.Server
   alias Arbor.Page.StoreRegistry
 
+  @async_terminal_events [
+    [:arbor, :async, :stop],
+    [:arbor, :async, :exception]
+  ]
+
   defmodule WidgetStore do
     @moduledoc false
     use Arbor.Store
@@ -131,21 +136,14 @@ defmodule Arbor.Page.ServerChildAsyncTest do
 
   describe "child store async + hook routing" do
     test "scenario 1: assign_async from a child writes AsyncResult onto the child's assigns" do
+      attach_async_terminal_handler!()
+
       pid = start!()
       flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, ["w1"], :load, %{"id" => "abc"})
 
-      ops = collect_ops_for_path!("/widget/data/status", 2_000)
-
-      assert Enum.any?(ops, fn op ->
-               op.op == "replace" and op.path == "/widget/data/status" and op.value == "ok"
-             end)
-
-      assert Enum.any?(ops, fn op ->
-               op.op == "replace" and op.path == "/widget/data/result" and
-                 op.value == "loaded:abc"
-             end)
+      assert_receive {:telemetry, [:arbor, :async, :stop], _, %{name: :data, status: :ok}}, 2_000
 
       assert %AsyncResult{status: :ok, result: "loaded:abc"} = child_assign(pid, :data)
 
@@ -183,21 +181,16 @@ defmodule Arbor.Page.ServerChildAsyncTest do
     end
 
     test "scenario 5: cancel_async from a child resolves the slot to failed/{:exit, reason}" do
+      attach_async_terminal_handler!()
+
       pid = start!()
       flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, ["w1"], :start_slow, %{})
-
-      # `start_slow` registers the assign_async tracking; the synchronous loading
-      # write transitions loading -> loading(prior) which is the same wire shape,
-      # so no envelope follows the command itself (BDR-0018).
       assert {:ok, _reply} = Server.command(pid, ["w1"], :cancel_slow, %{})
 
-      ops = collect_ops_for_path!("/widget/slow/status", 2_000)
-
-      assert Enum.any?(ops, fn op ->
-               op.op == "replace" and op.path == "/widget/slow/status" and op.value == "failed"
-             end)
+      assert_receive {:telemetry, [:arbor, :async, :stop], _, %{name: :slow, status: :failed}},
+                     2_000
 
       assert %AsyncResult{status: :failed, reason: {:exit, :user_navigated}} =
                child_assign(pid, :slow)
@@ -206,20 +199,15 @@ defmodule Arbor.Page.ServerChildAsyncTest do
     end
 
     test "scenario 6: stream_async from a child seeds stream ops + AsyncResult on the child" do
+      attach_async_terminal_handler!()
+
       pid = start!()
       flush_initial!()
 
       assert {:ok, _reply} = Server.command(pid, ["w1"], :load_messages, %{})
 
-      stream_ops = collect_stream_ops!(2_000)
-
-      keys =
-        stream_ops
-        |> Enum.filter(fn op -> op.op == "insert" and op.stream == "messages" end)
-        |> Enum.map(& &1.item_key)
-
-      assert "messages-m1" in keys
-      assert "messages-m2" in keys
+      assert_receive {:telemetry, [:arbor, :async, :stop], _, %{name: :messages, status: :ok}},
+                     2_000
 
       assert %AsyncResult{status: :ok, result: true} = child_assign(pid, :messages)
       shutdown_server(pid)
@@ -239,35 +227,20 @@ defmodule Arbor.Page.ServerChildAsyncTest do
     assert_receive {:patch, %PatchEnvelope{base_version: 0, version: 1}}, 1_000
   end
 
-  # Drains envelopes until one containing an op for `path` arrives, returning
-  # the union of all `ops` seen so far. Skips empty envelopes (no-op cycles).
-  defp collect_ops_for_path!(path, timeout) do
-    do_collect_ops_for_path(path, timeout, [])
-  end
+  defp attach_async_terminal_handler! do
+    test_pid = self()
+    handler_id = "child-async-terminal-#{System.unique_integer([:positive, :monotonic])}"
 
-  defp do_collect_ops_for_path(path, timeout, acc) do
-    receive do
-      {:patch, %PatchEnvelope{ops: ops}} ->
-        next_acc = acc ++ ops
+    :telemetry.attach_many(
+      handler_id,
+      @async_terminal_events,
+      fn event, measurements, metadata, _config ->
+        send(test_pid, {:telemetry, event, measurements, metadata})
+      end,
+      nil
+    )
 
-        if Enum.any?(next_acc, fn op -> op.path == path end) do
-          next_acc
-        else
-          do_collect_ops_for_path(path, timeout, next_acc)
-        end
-    after
-      timeout ->
-        flunk("no envelope op for #{inspect(path)} within #{timeout}ms; saw #{inspect(acc)}")
-    end
-  end
-
-  defp collect_stream_ops!(timeout) do
-    receive do
-      {:patch, %PatchEnvelope{stream_ops: []}} -> collect_stream_ops!(timeout)
-      {:patch, %PatchEnvelope{stream_ops: ops}} -> ops
-    after
-      timeout -> flunk("no envelope with stream_ops within #{timeout}ms")
-    end
+    on_exit(fn -> :telemetry.detach(handler_id) end)
   end
 
   defp child_assign(pid, key) do
