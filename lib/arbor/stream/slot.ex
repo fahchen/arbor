@@ -2,24 +2,15 @@ defmodule Arbor.Stream.Slot do
   @moduledoc """
   Per-stream pending-ops struct held under `socket.assigns.__streams__`.
 
-  Mirrors Phoenix.LiveView's `Phoenix.LiveView.LiveStream` (verified against
-  `phoenix_live_view/lib/phoenix_live_view/live_stream.ex`):
-
     * `inserts` and `deletes` queue the deltas applied to a stream during a
       cycle. The server **never** materializes the stream — the client owns
       that. Each cycle's pending ops drain into the patch envelope's
       `stream_ops`.
     * `prune/1` clears `inserts`/`deletes`/`reset?` and is invoked once the
       ops are flushed. Configuration (`name`, `item_key_fun`, `ref`) survives.
-
-  Arbor divergence vs. LV:
-
-    * LV's struct also carries `consumable?` (template-render gate) and
-      `dom_id` (DOM identifier); Arbor has no template and uses
-      `item_key_fun` returning a binary `item_key`.
-    * `reset?` is kept for symmetry. Arbor still emits `reset` as a discrete
-      wire op so the field on the struct doubles as a hint that a reset op
-      is queued ahead of the inserts.
+    * `reset?` is set when the application calls `Arbor.Stream.stream/4` with
+      `reset: true`. Drains emit a `reset` wire op ahead of the inserts so
+      the client clears its local stream first.
   """
 
   use TypedStructor
@@ -42,7 +33,7 @@ defmodule Arbor.Stream.Slot do
     field :ref, non_neg_integer(),
       enforce: true,
       doc:
-        "Per-stream unique ref used in wire ops to disambiguate (LV-aligned). Stable across the stream's lifetime. Encoded as a string in wire ops."
+        "Per-stream unique ref used in wire ops to disambiguate. Stable across the stream's lifetime. Encoded as a string in wire ops."
 
     field :inserts, [insert_entry()],
       default: [],

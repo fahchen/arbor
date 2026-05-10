@@ -1,6 +1,6 @@
 defmodule Arbor.Stream do
   @moduledoc """
-  LV-aligned stream API for Arbor stores.
+  Stream API for Arbor stores.
 
   Stream-typed slots (declared via `stream/2,3` inside `state do`) carry
   collections whose materialization is **owned by the client**. The server
@@ -9,11 +9,9 @@ defmodule Arbor.Stream do
   cycle's queued ops drain into the patch envelope's `stream_ops` and the
   struct is pruned (BDR-0014, BDR-0018).
 
-  Unlike pre-realignment Arbor, the runtime no longer keeps an ordered
-  `item_keys` list, no longer decides upsert-vs-insert, and no longer trims
-  for `:limit` server-side. The client materializes the stream and applies
-  the per-op `:limit` field. This matches Phoenix.LiveView semantics — see
-  `phoenix_live_view/lib/phoenix_live_view/slot.ex`.
+  The runtime does not keep an ordered `item_keys` list, does not decide
+  upsert-vs-insert, and does not trim for `:limit` server-side. The client
+  materializes the stream and applies the per-op `:limit` field.
 
   ## Public API surface (frozen for M5+)
 
@@ -22,9 +20,6 @@ defmodule Arbor.Stream do
     * `stream_insert/3,4`
     * `stream_delete/3`
     * `stream_delete_by_item_key/3`
-
-  Argument shapes mirror Phoenix.LiveView with one rename: Arbor uses
-  `_by_item_key` where LV uses `_by_dom_id` — there is no DOM in Arbor.
 
   ## Reserved socket-assigns shape
 
@@ -99,7 +94,7 @@ defmodule Arbor.Stream do
   Accepts `:item_key` (arity-1 function returning a binary) and `:limit`
   (integer or `nil`). The configuration takes effect when the stream is
   next initialized; re-configuring the same stream after init is a
-  lifetime error (LV-aligned).
+  lifetime error.
 
   Configure is purely server-side state — it does not produce a wire op
   (the `item_key` capture is not transferable, and per-insert ops carry
@@ -169,7 +164,7 @@ defmodule Arbor.Stream do
 
   The default position is `:at` `-1` (append). The runtime does **not**
   decide whether the insert is an upsert or new — that is the client's
-  responsibility (LV-aligned). The `:limit` field is passed through verbatim
+  responsibility. The `:limit` field is passed through verbatim
   on the wire op; the client trims if the limit is exceeded after applying
   the insert.
 
