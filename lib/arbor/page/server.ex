@@ -327,7 +327,7 @@ defmodule Arbor.Page.Server do
           %{
             page_id: page_id(state),
             module: addressed.module,
-            path: path,
+            path: store_id,
             command: command_name,
             reply: reply
           }
