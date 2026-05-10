@@ -30,8 +30,7 @@ defmodule Arbor.DSL.Input do
         plugin(Arbor.Plugin.TypeSpec)
 
         import TypedStructor, except: [field: 2, field: 3]
-
-        import Arbor.DSL.State, only: [field: 2, field: 3]
+        import Arbor.DSL.Field, only: [field: 2, field: 3]
 
         unquote(block)
       end
