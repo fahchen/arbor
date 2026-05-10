@@ -1,6 +1,6 @@
 defmodule Arbor.Lifecycle do
   @moduledoc """
-  Lifecycle hook helpers for Arbor runtime stages. Mirrors `Phoenix.LiveView.Lifecycle`.
+  Lifecycle hook helpers for Arbor runtime stages.
 
   ## Stages
 

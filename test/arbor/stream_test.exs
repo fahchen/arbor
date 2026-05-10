@@ -37,7 +37,7 @@ defmodule Arbor.StreamTest do
     end
   end
 
-  describe "Rule: socket-pipe stream API mirrors Phoenix.LiveView" do
+  describe "Rule: socket-pipe stream API" do
     test "stream/3 seeds items in order, each as an insert op", %{socket: socket} do
       socket = Stream.stream(socket, :songs, [%{id: "1"}, %{id: "2"}])
 
@@ -59,7 +59,7 @@ defmodule Arbor.StreamTest do
       assert [%{op: "insert", limit: -3}] = Stream.pending_ops(socket)
     end
 
-    test "stream_insert/3 with no :limit emits limit: nil (LV-aligned)", %{socket: socket} do
+    test "stream_insert/3 with no :limit emits limit: nil", %{socket: socket} do
       socket = Stream.stream_insert(socket, :songs, %{id: "1"})
       assert [%{op: "insert", limit: nil}] = Stream.pending_ops(socket)
     end
@@ -79,7 +79,7 @@ defmodule Arbor.StreamTest do
     end
 
     test "stream_delete_by_item_key/3 emits delete op without existence check", %{socket: socket} do
-      # Note: no preceding insert. LV does not require it.
+      # Note: no preceding insert is required.
       socket = Stream.stream_delete_by_item_key(socket, :songs, "songs-1")
       assert [%{op: "delete", item_key: "songs-1"}] = Stream.pending_ops(socket)
     end
@@ -151,7 +151,7 @@ defmodule Arbor.StreamTest do
     end
   end
 
-  describe "Rule: server forgets stream contents after flush (LV-aligned)" do
+  describe "Rule: server forgets stream contents after flush" do
     test "after flush, no item bodies retained server-side", %{socket: socket} do
       seeded =
         Enum.reduce(1..1000, socket, fn i, acc ->
@@ -181,7 +181,7 @@ defmodule Arbor.StreamTest do
     end
   end
 
-  describe "Rule: __streams__ shape mirrors LV" do
+  describe "Rule: __streams__ shape" do
     test "__ref__ counter increments per initialized stream", %{socket: socket} do
       socket =
         socket
