@@ -132,6 +132,210 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
                     %{store_module: TargetStore, command: :change_query}}
   end
 
+  defmodule AddressInput do
+    @moduledoc false
+    use Arbor.Input
+
+    input do
+      field :line1, String.t()
+      field :city, String.t()
+    end
+  end
+
+  defmodule UserInput do
+    @moduledoc false
+    use Arbor.Input
+
+    input do
+      field :name, String.t()
+      field :age, integer()
+      field :address, AddressInput.t()
+    end
+  end
+
+  defmodule UserState do
+    @moduledoc false
+    use Arbor.State
+
+    state do
+      field :name, String.t()
+      field :age, integer()
+    end
+  end
+
+  defmodule NestedInputStore do
+    @moduledoc false
+    use Arbor.Store
+
+    state do
+      field :ok, boolean()
+    end
+
+    command :create_user do
+      payload :user, UserInput.t()
+    end
+
+    command :touch_state do
+      payload :user, UserState.t()
+    end
+
+    command :create_literal do
+      payload :user, %{name: String.t(), age: integer()}
+    end
+
+    command :set_status do
+      payload :status, %{type: :active} | %{type: :paused, value: integer()}
+    end
+
+    command :tag do
+      payload :tags, list(String.t())
+    end
+
+    def to_state(_socket), do: %{ok: true}
+  end
+
+  describe "nested data structures" do
+    test "Arbor.Input nested payload — happy path" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      payload = %{
+        "user" => %{
+          "name" => "Alice",
+          "age" => 30,
+          "address" => %{"line1" => "1 Way", "city" => "Town"}
+        }
+      }
+
+      assert {:cont, ^socket} =
+               ValidateCommandSchema.before_command(:create_user, payload, socket)
+    end
+
+    test "Arbor.Input nested payload — missing key" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      payload = %{"user" => %{"name" => "Alice", "age" => 30}}
+
+      assert_raise ArgumentError, ~r/create_user.*user.*expected/s, fn ->
+        ValidateCommandSchema.before_command(:create_user, payload, socket)
+      end
+    end
+
+    test "Arbor.Input nested payload — wrong type" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      payload = %{
+        "user" => %{
+          "name" => "Alice",
+          "age" => "thirty",
+          "address" => %{"line1" => "1 Way", "city" => "Town"}
+        }
+      }
+
+      assert_raise ArgumentError, ~r/create_user.*user.*expected/s, fn ->
+        ValidateCommandSchema.before_command(:create_user, payload, socket)
+      end
+    end
+
+    test "Arbor.State nested payload (cross-type compatibility)" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      payload = %{"user" => %{"name" => "Alice", "age" => 30}}
+
+      assert {:cont, ^socket} =
+               ValidateCommandSchema.before_command(:touch_state, payload, socket)
+    end
+
+    test "literal-keyed map payload — happy path" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      payload = %{"user" => %{"name" => "Alice", "age" => 30}}
+
+      assert {:cont, ^socket} =
+               ValidateCommandSchema.before_command(:create_literal, payload, socket)
+    end
+
+    test "literal-keyed map payload — missing key" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      assert_raise ArgumentError, ~r/create_literal.*user/s, fn ->
+        ValidateCommandSchema.before_command(
+          :create_literal,
+          %{"user" => %{"name" => "Alice"}},
+          socket
+        )
+      end
+    end
+
+    test "union of literal-tagged maps — :active branch" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      assert {:cont, ^socket} =
+               ValidateCommandSchema.before_command(
+                 :set_status,
+                 %{"status" => %{"type" => "active"}},
+                 socket
+               )
+    end
+
+    test "union of literal-tagged maps — :paused branch" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      assert {:cont, ^socket} =
+               ValidateCommandSchema.before_command(
+                 :set_status,
+                 %{"status" => %{"type" => "paused", "value" => 7}},
+                 socket
+               )
+    end
+
+    test "union of literal-tagged maps — neither branch" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      assert_raise ArgumentError, ~r/set_status/, fn ->
+        ValidateCommandSchema.before_command(
+          :set_status,
+          %{"status" => %{"type" => "stopped"}},
+          socket
+        )
+      end
+    end
+
+    test "list(String.t()) payload" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      assert {:cont, ^socket} =
+               ValidateCommandSchema.before_command(
+                 :tag,
+                 %{"tags" => ["a", "b"]},
+                 socket
+               )
+
+      assert_raise ArgumentError, ~r/tag.*tags/s, fn ->
+        ValidateCommandSchema.before_command(
+          :tag,
+          %{"tags" => ["a", 1]},
+          socket
+        )
+      end
+    end
+
+    test "nested input within input — recursion check" do
+      socket = host_socket_targeting(NestedInputStore)
+
+      payload = %{
+        "user" => %{
+          "name" => "Alice",
+          "age" => 30,
+          "address" => %{"line1" => "1 Way", "city" => 99}
+        }
+      }
+
+      assert_raise ArgumentError, ~r/create_user.*user/s, fn ->
+        ValidateCommandSchema.before_command(:create_user, payload, socket)
+      end
+    end
+  end
+
   defp host_socket_targeting(target_module) do
     Socket.put_private(
       %Socket{module: HostStore, assigns: %{}, private: %{}},
