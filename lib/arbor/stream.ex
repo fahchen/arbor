@@ -1,12 +1,19 @@
 defmodule Arbor.Stream do
   @moduledoc """
-  LV-parity stream API for Arbor stores.
+  LV-aligned stream API for Arbor stores.
 
   Stream-typed slots (declared via `stream/2,3` inside `state do`) carry
-  collections whose **values** the page server forgets after each flush — only
-  the ordered list of `item_key`s is retained server-side. Items reach the
-  client through the envelope's `stream_ops`, never through JSON Patch ops
-  (BDR-0014, BDR-0018).
+  collections whose materialization is **owned by the client**. The server
+  queues raw delta ops (`configure`/`reset`/`insert`/`delete`) on a per-stream
+  `Arbor.LiveStream` struct stored under `socket.assigns.__streams__`. Each
+  cycle's queued ops drain into the patch envelope's `stream_ops` and the
+  struct is pruned (BDR-0014, BDR-0018).
+
+  Unlike pre-realignment Arbor, the runtime no longer keeps an ordered
+  `item_keys` list, no longer decides upsert-vs-insert, and no longer trims
+  for `:limit` server-side. The client materializes the stream and applies
+  the per-op `:limit` field. This matches Phoenix.LiveView semantics — see
+  `phoenix_live_view/lib/phoenix_live_view/live_stream.ex`.
 
   ## Public API surface (frozen for M5+)
 
@@ -17,17 +24,21 @@ defmodule Arbor.Stream do
     * `stream_delete_by_item_key/3`
 
   Argument shapes mirror Phoenix.LiveView with one rename: Arbor uses
-  `_by_item_key` where LV uses `_by_dom_id`.
+  `_by_item_key` where LV uses `_by_dom_id` — there is no DOM in Arbor.
 
-  ## Reserved socket keys
+  ## Reserved socket-assigns shape
 
-    * `socket.assigns.__streams__` — `%{name => %{config: ..., item_keys: [...]}}`.
-    * `socket.private[:__arbor_pending_stream_ops__]` — accumulated ops for
-      this handler invocation (in queue order).
-    * `socket.private[:__arbor_stream_seen__]` — set of stream names that
-      have a non-configure op queued in the current handler invocation.
+  `socket.assigns.__streams__` is a map with reserved sub-keys:
 
-  These keys are runtime-internal; do not read or write directly.
+    * `__ref__` — monotonic per-page ref counter used to stamp each new
+      `Arbor.LiveStream`.
+    * `__changed__` — `MapSet` of stream names mutated since the last prune.
+      Used by `Arbor.Hooks.PruneStreams` to know which structs to prune.
+    * `__configured__` — pre-init configure opts keyed by stream name.
+      Applied when the matching `Arbor.LiveStream` is first initialized.
+    * `<atom_name>` — the per-stream `Arbor.LiveStream` struct.
+
+  Sub-keys are runtime-internal; do not read or write directly.
 
   ## Examples
 
@@ -35,7 +46,7 @@ defmodule Arbor.Stream do
       #=> %Arbor.Socket{...}
   """
 
-  alias Arbor.Page.PatchEnvelope
+  alias Arbor.LiveStream
   alias Arbor.Socket
   alias Arbor.Telemetry
   alias Arbor.Wire
@@ -46,25 +57,28 @@ defmodule Arbor.Stream do
   @typedoc "Computed item_key returned by the configured `:item_key` capture. Always a binary."
   @type item_key() :: String.t()
 
-  @typedoc "Per-store stream config — runtime-merged from compile-time reflection + `stream_configure/3`."
+  @typedoc "Per-stream config — runtime-merged from compile-time reflection + `stream_configure/3`."
   @type config() :: %{
           required(:item_key) => (term() -> item_key()),
           required(:limit) => integer() | nil
         }
 
-  @typedoc "Server-side per-stream state."
-  @type stream_state() :: %{required(:config) => config(), required(:item_keys) => [item_key()]}
-
   @typedoc "Stream op pushed in the envelope's `stream_ops` array."
-  @type op() ::
-          %{required(:op) => String.t(), required(:name) => String.t(), optional(any()) => any()}
+  @type op() :: %{
+          required(:op) => String.t(),
+          required(:stream) => String.t(),
+          required(:ref) => String.t(),
+          optional(any()) => any()
+        }
 
   @assigns_key :__streams__
-  @pending_key :__arbor_pending_stream_ops__
-  @seen_key :__arbor_stream_seen__
+  @ref_key :__ref__
+  @changed_key :__changed__
+  @configured_key :__configured__
+  @drained_key :__arbor_drained_stream_ops__
 
   @doc """
-  Returns the reserved socket-assigns key holding the per-stream index.
+  Returns the reserved socket-assigns key holding the per-page stream index.
 
   Exposed so tests and hooks can introspect without hard-coding the literal.
   """
@@ -72,16 +86,25 @@ defmodule Arbor.Stream do
   def assigns_key, do: @assigns_key
 
   @doc """
-  Returns the reserved socket-private key holding pending stream ops.
+  Returns the reserved socket-private key holding the drained stream ops
+  (populated by `Arbor.Hooks.PruneStreams` and consumed by the page server).
   """
-  @spec pending_key() :: :__arbor_pending_stream_ops__
-  def pending_key, do: @pending_key
+  @spec drained_key() :: :__arbor_drained_stream_ops__
+  def drained_key, do: @drained_key
 
   @doc """
-  Configures runtime overrides for a declared stream slot.
+  Sets configure-only options for `name`. Raises if `name` has already been
+  initialized via `stream/3,4` or `stream_insert/3,4`.
 
-  Must precede any non-configure op for the same `name` in the current
-  handler invocation; calling it after `stream_insert/4` etc. raises.
+  Accepts `:item_key` (arity-1 function returning a binary) and `:limit`
+  (integer or `nil`). The configuration takes effect when the stream is
+  next initialized; re-configuring the same stream after init is a
+  lifetime error (LV-aligned).
+
+  Configure is purely server-side state — it does not produce a wire op
+  (the `item_key` capture is not transferable, and per-insert ops carry
+  the `:limit` the client needs). Documented Arbor divergence vs. the
+  abstract spec in the realignment notes.
 
   ## Examples
 
@@ -89,25 +112,37 @@ defmodule Arbor.Stream do
   """
   @spec stream_configure(Socket.t(), stream_name(), keyword()) :: Socket.t()
   def stream_configure(%Socket{} = socket, name, opts) when is_atom(name) and is_list(opts) do
-    if seen_non_configure?(socket, name) do
+    if initialized?(socket, name) do
       raise ArgumentError,
-            "stream_configure(:#{name}, ...) must precede other stream ops in the same handler"
+            "stream_configure(:#{name}, ...) is only valid before the stream is initialized; " <>
+              "stream_configure must precede `stream/3,4` or `stream_insert/3,4` for the same name."
     end
 
-    base_config = ensure_config(socket, name)
     overrides = build_config_overrides(opts, name)
-    next_config = Map.merge(base_config, overrides)
 
-    socket
-    |> put_stream_config(name, next_config)
-    |> queue_op(%{op: "configure", name: Atom.to_string(name)}, configure?: true)
+    update_streams_index(socket, fn index ->
+      configured = Map.get(index, @configured_key, %{})
+
+      next_configured =
+        Map.put(configured, name, Map.merge(Map.get(configured, name, %{}), overrides))
+
+      Map.put(index, @configured_key, next_configured)
+    end)
+  end
+
+  defp initialized?(%Socket{} = socket, name) do
+    case Map.get(streams_index(socket), name) do
+      %LiveStream{} -> true
+      _other -> false
+    end
   end
 
   @doc """
   Bulk seeds or refreshes a stream slot.
 
-  With `reset: true`, queues a `reset` op before the per-item inserts so the
-  client clears the local stream before applying them.
+  With `reset: true`, marks the stream's `LiveStream` so the flushed wire
+  ops include a `reset` ahead of the inserts and the client clears its
+  local stream before applying them.
 
   ## Examples
 
@@ -121,12 +156,8 @@ defmodule Arbor.Stream do
       when is_atom(name) and is_list(items) and is_list(opts) do
     {reset?, opts} = Keyword.pop(opts, :reset, false)
 
-    socket =
-      if reset? do
-        reset_stream(socket, name)
-      else
-        ensure_stream_initialized(socket, name)
-      end
+    socket = ensure_stream_initialized(socket, name)
+    socket = if reset?, do: mark_reset(socket, name), else: socket
 
     Enum.reduce(items, socket, fn item, acc ->
       stream_insert(acc, name, item, opts)
@@ -134,12 +165,13 @@ defmodule Arbor.Stream do
   end
 
   @doc """
-  Inserts (or upserts) one item into a stream slot.
+  Queues an insert for one item in a stream slot.
 
-  The default position is `:at` `-1` (append). `:update_only true` skips the
-  call when the item's `item_key` is not currently in the slot. Insertions
-  that grow the index past `:limit` queue a matching `delete` for the
-  evicted key in the same envelope (per `streams/lifecycle`).
+  The default position is `:at` `-1` (append). The runtime does **not**
+  decide whether the insert is an upsert or new — that is the client's
+  responsibility (LV-aligned). The `:limit` field is passed through verbatim
+  on the wire op; the client trims if the limit is exceeded after applying
+  the insert.
 
   ## Examples
 
@@ -152,38 +184,20 @@ defmodule Arbor.Stream do
   def stream_insert(%Socket{} = socket, name, item, opts)
       when is_atom(name) and is_list(opts) do
     socket = ensure_stream_initialized(socket, name)
-    config = current_config(socket, name)
+    live_stream = fetch_live_stream!(socket, name)
 
-    item_key = compute_item_key(socket, name, opts, config, item)
-    update_only? = Keyword.get(opts, :update_only, false)
-    position = Keyword.get(opts, :at, -1)
-    limit = Keyword.get(opts, :limit, config.limit)
+    item_key = compute_item_key(opts, live_stream.item_key_fun, item, socket.module, name)
+    position = validate_position!(Keyword.get(opts, :at, -1))
+    limit = validate_limit!(Keyword.get(opts, :limit, nil))
 
-    state = stream_state(socket, name)
-    exists? = item_key in state.item_keys
-
-    cond do
-      update_only? and not exists? ->
-        socket
-
-      exists? ->
-        # Upsert: per BDR streams/lifecycle, length is unchanged → no limit
-        # re-evaluation, no delete emitted.
-        queue_op(socket, insert_op(name, item_key, item, position))
-
-      true ->
-        next_keys = position_insert(state.item_keys, item_key, position)
-        {evicted, kept_keys} = apply_limit(next_keys, limit)
-
-        socket
-        |> put_stream_state(name, %{state | item_keys: kept_keys})
-        |> queue_op(insert_op(name, item_key, item, position))
-        |> queue_evictions(name, evicted)
-    end
+    update_live_stream(socket, name, fn ls ->
+      %{ls | inserts: [{item_key, position, item, limit} | ls.inserts]}
+    end)
   end
 
   @doc """
-  Deletes one item from a stream slot by deriving its `item_key` from the item.
+  Queues a delete for one item in a stream slot, deriving its `item_key`
+  from the item via the stream's configured key function.
 
   ## Examples
 
@@ -192,15 +206,13 @@ defmodule Arbor.Stream do
   @spec stream_delete(Socket.t(), stream_name(), term()) :: Socket.t()
   def stream_delete(%Socket{} = socket, name, item) when is_atom(name) do
     socket = ensure_stream_initialized(socket, name)
-    config = current_config(socket, name)
-    item_key = compute_item_key(socket, name, [], config, item)
+    live_stream = fetch_live_stream!(socket, name)
+    item_key = compute_item_key([], live_stream.item_key_fun, item, socket.module, name)
     stream_delete_by_item_key(socket, name, item_key)
   end
 
   @doc """
-  Deletes one item from a stream slot directly by `item_key`.
-
-  No-op when the key is not currently indexed server-side.
+  Queues a delete for one item in a stream slot directly by `item_key`.
 
   ## Examples
 
@@ -210,54 +222,45 @@ defmodule Arbor.Stream do
   def stream_delete_by_item_key(%Socket{} = socket, name, item_key)
       when is_atom(name) and is_binary(item_key) do
     socket = ensure_stream_initialized(socket, name)
-    state = stream_state(socket, name)
 
-    if item_key in state.item_keys do
-      next_keys = List.delete(state.item_keys, item_key)
-
-      socket
-      |> put_stream_state(name, %{state | item_keys: next_keys})
-      |> queue_op(%{op: "delete", name: Atom.to_string(name), item_key: item_key})
-    else
-      socket
-    end
+    update_live_stream(socket, name, fn ls ->
+      %{ls | deletes: [item_key | ls.deletes]}
+    end)
   end
 
   @doc """
-  Pops every pending stream op into queue order and clears the accumulator.
+  Drains the per-socket accumulator populated by `Arbor.Hooks.PruneStreams`
+  and returns the wire ops for this cycle.
 
-  Called by the page runtime once per handler invocation, immediately before
-  building the patch envelope. After the call, `socket.private` no longer
-  carries any pending stream ops or the configure-precedence tracking set.
+  Called by the page runtime once per render cycle, immediately after the
+  resolver finishes (the prune hook has already run by then). After the
+  call, the accumulator is empty.
 
   ## Examples
 
       {ops, socket} = Arbor.Stream.flush_pending_ops(socket)
       ops
-      #=> [%{op: "insert", name: "messages", item_key: "messages-1", item: %{...}, at: -1}]
+      #=> [%{op: "insert", stream: "messages", ref: "0", item_key: "messages-1", item: %{...}, at: -1, limit: nil}]
   """
   @spec flush_pending_ops(Socket.t()) :: {[op()], Socket.t()}
   def flush_pending_ops(%Socket{} = socket) do
-    pending = pending_ops(socket)
+    socket = drain_and_prune(socket)
+    drained = Socket.get_private(socket, @drained_key, [])
 
     Telemetry.emit(
       [:arbor, :stream, :flush],
-      %{count: length(pending)},
+      %{count: length(drained)},
       %{module: socket.module}
     )
 
-    next_socket =
-      socket
-      |> Socket.put_private(@pending_key, [])
-      |> Socket.put_private(@seen_key, MapSet.new())
-
-    {pending, next_socket}
+    {drained, Socket.put_private(socket, @drained_key, [])}
   end
 
   @doc """
-  Returns the queued (but not yet flushed) stream ops for the current handler.
+  Returns the queued stream ops for the current cycle (not yet flushed).
 
-  Useful to peek the accumulator without clearing it (tests, debugging).
+  Reads pending fields from each `Arbor.LiveStream` plus any already-drained
+  ops on the socket-private accumulator. Useful for tests and debugging.
 
   ## Examples
 
@@ -267,32 +270,154 @@ defmodule Arbor.Stream do
   """
   @spec pending_ops(Socket.t()) :: [op()]
   def pending_ops(%Socket{} = socket) do
-    socket
-    |> Socket.get_private(@pending_key, [])
-    |> Enum.reverse()
+    drained = Socket.get_private(socket, @drained_key, [])
+
+    live =
+      socket
+      |> streams_index()
+      |> stream_entries()
+      |> Enum.flat_map(fn {_name, %LiveStream{} = ls} -> build_ops(ls) end)
+
+    drained ++ live
   end
 
-  # ---------------------------------------------------------------------------
-  # Internal: state shape helpers
-  # ---------------------------------------------------------------------------
+  @doc """
+  Drains pending ops from every `Arbor.LiveStream` marked changed, appends
+  them to the socket-private accumulator, prunes each struct, and clears
+  the `__changed__` set. Invoked by `Arbor.Hooks.PruneStreams`.
 
-  defp ensure_stream_initialized(%Socket{} = socket, name) do
-    case stream_state(socket, name) do
+  Streams not in `__changed__` are left untouched.
+  """
+  @spec drain_and_prune(Socket.t()) :: Socket.t()
+  def drain_and_prune(%Socket{} = socket) do
+    case Map.get(socket.assigns, @assigns_key) do
       nil ->
-        config = ensure_config(socket, name)
-
-        Socket.assign(
-          socket,
-          @assigns_key,
-          Map.put(streams_index(socket), name, %{config: config, item_keys: []})
-        )
-
-      _state ->
         socket
+
+      index ->
+        do_drain_and_prune(socket, index)
     end
   end
 
-  defp ensure_config(%Socket{module: module}, name) when is_atom(module) do
+  defp do_drain_and_prune(%Socket{} = socket, index) do
+    changed = Map.get(index, @changed_key, MapSet.new())
+
+    {drained_ops, next_index} =
+      changed
+      |> Enum.sort_by(fn name -> Map.fetch!(index, name).ref end)
+      |> Enum.reduce({[], index}, fn name, {ops_acc, idx_acc} ->
+        case Map.get(idx_acc, name) do
+          %LiveStream{} = ls ->
+            ops = build_ops(ls)
+            {ops_acc ++ ops, Map.put(idx_acc, name, LiveStream.prune(ls))}
+
+          nil ->
+            {ops_acc, idx_acc}
+        end
+      end)
+
+    next_index = Map.put(next_index, @changed_key, MapSet.new())
+
+    prior = Socket.get_private(socket, @drained_key, [])
+    next_drained = prior ++ drained_ops
+
+    socket = put_streams_index(socket, next_index)
+
+    if next_drained == [] and prior == [] do
+      socket
+    else
+      Socket.put_private(socket, @drained_key, next_drained)
+    end
+  end
+
+  @doc """
+  Returns the names of streams marked changed (mutated since the last prune).
+
+  Exposed for `Arbor.Hooks.PruneStreams` and tests.
+
+  ## Examples
+
+      Arbor.Stream.changed_streams(socket)
+      #=> MapSet.new([:messages])
+  """
+  @spec changed_streams(Socket.t()) :: MapSet.t(stream_name())
+  def changed_streams(%Socket{} = socket) do
+    socket |> streams_index() |> Map.get(@changed_key, MapSet.new())
+  end
+
+  # ---------------------------------------------------------------------------
+  # Internal: streams index shape helpers
+  # ---------------------------------------------------------------------------
+
+  defp streams_index(%Socket{assigns: assigns}), do: Map.get(assigns, @assigns_key, %{})
+
+  defp put_streams_index(%Socket{} = socket, index) do
+    %{socket | assigns: Map.put(socket.assigns, @assigns_key, index)}
+  end
+
+  defp update_streams_index(%Socket{} = socket, fun) when is_function(fun, 1) do
+    put_streams_index(socket, fun.(streams_index(socket)))
+  end
+
+  defp stream_entries(index) do
+    index
+    |> Enum.filter(fn
+      {key, %LiveStream{}} when is_atom(key) -> not reserved_key?(key)
+      _other -> false
+    end)
+    |> Enum.sort_by(fn {_name, %LiveStream{ref: ref}} -> ref end)
+  end
+
+  defp reserved_key?(@ref_key), do: true
+  defp reserved_key?(@changed_key), do: true
+  defp reserved_key?(@configured_key), do: true
+  defp reserved_key?(_other), do: false
+
+  defp ensure_stream_initialized(%Socket{} = socket, name) do
+    case Map.get(streams_index(socket), name) do
+      %LiveStream{} ->
+        socket
+
+      nil ->
+        compile_config = compile_config!(socket, name)
+        index = streams_index(socket)
+        configured = Map.get(index, @configured_key, %{})
+        runtime_overrides = Map.get(configured, name, %{})
+        merged = Map.merge(compile_config, runtime_overrides)
+
+        {ref, index} = next_ref(index)
+
+        live_stream = %LiveStream{
+          name: name,
+          item_key_fun: Map.fetch!(merged, :item_key),
+          ref: ref,
+          inserts: [],
+          deletes: [],
+          reset?: false
+        }
+
+        index = stamp_limit_default(index, name, Map.get(merged, :limit))
+
+        next_index = Map.put(index, name, live_stream)
+
+        put_streams_index(socket, next_index)
+    end
+  end
+
+  # Tracks the compile-time/configured `:limit` so each insert can default to
+  # it without re-reading reflection. Stored under the configured map.
+  defp stamp_limit_default(index, name, limit) do
+    configured = Map.get(index, @configured_key, %{})
+    cfg = Map.put(Map.get(configured, name, %{}), :limit, limit)
+    Map.put(index, @configured_key, Map.put(configured, name, cfg))
+  end
+
+  defp next_ref(index) do
+    counter = Map.get(index, @ref_key, 0)
+    {counter, Map.put(index, @ref_key, counter + 1)}
+  end
+
+  defp compile_config!(%Socket{module: module}, name) do
     if module && function_exported?(module, :__arbor_stream_config__, 1) do
       module.__arbor_stream_config__(name)
     else
@@ -301,37 +426,35 @@ defmodule Arbor.Stream do
     end
   end
 
-  defp streams_index(%Socket{assigns: assigns}), do: Map.get(assigns, @assigns_key, %{})
-
-  defp stream_state(%Socket{} = socket, name) do
-    socket |> streams_index() |> Map.get(name)
+  defp fetch_live_stream!(%Socket{} = socket, name) do
+    Map.fetch!(streams_index(socket), name)
   end
 
-  defp put_stream_state(%Socket{} = socket, name, state) do
-    Socket.assign(socket, @assigns_key, Map.put(streams_index(socket), name, state))
+  defp update_live_stream(%Socket{} = socket, name, fun) when is_function(fun, 1) do
+    update_streams_index(socket, fn index ->
+      live_stream = Map.fetch!(index, name)
+      next_live_stream = fun.(live_stream)
+      changed = Map.get(index, @changed_key, MapSet.new())
+
+      index
+      |> Map.put(name, next_live_stream)
+      |> Map.put(@changed_key, MapSet.put(changed, name))
+    end)
   end
 
-  defp current_config(%Socket{} = socket, name) do
-    case stream_state(socket, name) do
-      %{config: config} -> config
-      nil -> ensure_config(socket, name)
-    end
-  end
-
-  defp put_stream_config(%Socket{} = socket, name, config) do
-    state = stream_state(socket, name) || %{config: config, item_keys: []}
-    put_stream_state(socket, name, %{state | config: config})
+  defp mark_reset(%Socket{} = socket, name) do
+    update_live_stream(socket, name, fn ls -> %{ls | reset?: true} end)
   end
 
   # ---------------------------------------------------------------------------
-  # Internal: item_key + limit + position
+  # Internal: item_key + position + limit
   # ---------------------------------------------------------------------------
 
-  defp compute_item_key(%Socket{module: module}, name, opts, config, item) do
+  defp compute_item_key(opts, default_fun, item, module, name) do
     fun =
       case Keyword.fetch(opts, :item_key) do
         {:ok, override} -> validate_item_key_override!(override, name)
-        :error -> Map.fetch!(config, :item_key)
+        :error -> default_fun
       end
 
     invoke_item_key!(fun, item, module, name)
@@ -364,91 +487,56 @@ defmodule Arbor.Stream do
       reraise error, __STACKTRACE__
   end
 
-  defp position_insert(list, key, -1), do: List.insert_at(list, -1, key)
-  defp position_insert(list, key, 0), do: [key | list]
+  defp validate_position!(-1), do: -1
+  defp validate_position!(0), do: 0
+  defp validate_position!(index) when is_integer(index) and index > 0, do: index
 
-  defp position_insert(list, key, index) when is_integer(index) and index > 0 do
-    List.insert_at(list, index, key)
-  end
-
-  defp position_insert(_list, _key, other) do
+  defp validate_position!(other) do
     raise ArgumentError,
           "stream_insert :at expects -1, 0, or a positive integer, got: #{inspect(other)}"
   end
 
-  defp apply_limit(keys, nil), do: {[], keys}
-  defp apply_limit(keys, 0), do: {keys, []}
+  defp validate_limit!(nil), do: nil
+  defp validate_limit!(limit) when is_integer(limit), do: limit
 
-  defp apply_limit(keys, limit) when is_integer(limit) and limit > 0 do
-    excess = length(keys) - limit
-
-    if excess > 0 do
-      {Enum.take(keys, -excess), Enum.take(keys, limit)}
-    else
-      {[], keys}
-    end
-  end
-
-  defp apply_limit(keys, limit) when is_integer(limit) and limit < 0 do
-    abs_limit = -limit
-    excess = length(keys) - abs_limit
-
-    if excess > 0 do
-      {Enum.take(keys, excess), Enum.take(keys, -abs_limit)}
-    else
-      {[], keys}
-    end
+  defp validate_limit!(other) do
+    raise ArgumentError,
+          "stream_insert :limit expects an integer or nil, got: #{inspect(other)}"
   end
 
   # ---------------------------------------------------------------------------
-  # Internal: op accumulator
+  # Internal: op builders
   # ---------------------------------------------------------------------------
 
-  defp insert_op(name, item_key, item, position) do
-    %{
-      op: "insert",
-      name: Atom.to_string(name),
-      item_key: item_key,
-      item: Wire.to_wire(item),
-      at: position
-    }
-  end
+  defp build_ops(%LiveStream{} = ls) do
+    name_str = Atom.to_string(ls.name)
+    ref = Integer.to_string(ls.ref)
 
-  defp queue_evictions(socket, name, evicted_keys) do
-    Enum.reduce(evicted_keys, socket, fn key, acc ->
-      queue_op(acc, %{op: "delete", name: Atom.to_string(name), item_key: key})
-    end)
-  end
+    reset_ops = if ls.reset?, do: [%{op: "reset", stream: name_str, ref: ref}], else: []
 
-  defp queue_op(%Socket{} = socket, op, opts \\ []) do
-    configure? = Keyword.get(opts, :configure?, false)
+    insert_ops =
+      ls.inserts
+      |> Enum.reverse()
+      |> Enum.map(fn {item_key, at, item, limit} ->
+        %{
+          op: "insert",
+          stream: name_str,
+          ref: ref,
+          item_key: item_key,
+          at: at,
+          item: Wire.to_wire(item),
+          limit: limit
+        }
+      end)
 
-    pending = Socket.get_private(socket, @pending_key, [])
-    seen = Socket.get_private(socket, @seen_key, MapSet.new())
-    name = atom_name(op)
+    delete_ops =
+      ls.deletes
+      |> Enum.reverse()
+      |> Enum.map(fn item_key ->
+        %{op: "delete", stream: name_str, ref: ref, item_key: item_key}
+      end)
 
-    next_seen = if configure?, do: seen, else: MapSet.put(seen, name)
-
-    socket
-    |> Socket.put_private(@pending_key, [op | pending])
-    |> Socket.put_private(@seen_key, next_seen)
-  end
-
-  defp atom_name(%{name: bin}) when is_binary(bin), do: String.to_existing_atom(bin)
-
-  defp seen_non_configure?(%Socket{} = socket, name) do
-    socket
-    |> Socket.get_private(@seen_key, MapSet.new())
-    |> MapSet.member?(name)
-  end
-
-  defp reset_stream(%Socket{} = socket, name) do
-    socket = ensure_stream_initialized(socket, name)
-    state = stream_state(socket, name)
-
-    socket
-    |> put_stream_state(name, %{state | item_keys: []})
-    |> queue_op(%{op: "reset", name: Atom.to_string(name)})
+    reset_ops ++ insert_ops ++ delete_ops
   end
 
   defp build_config_overrides(opts, name) do
@@ -464,8 +552,4 @@ defmodule Arbor.Stream do
               "stream_configure(:#{name}, ...) does not accept option #{inspect({key, value})}"
     end)
   end
-
-  @doc false
-  @spec __envelope_struct__() :: module()
-  def __envelope_struct__, do: PatchEnvelope
 end
