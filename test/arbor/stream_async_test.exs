@@ -19,6 +19,15 @@ defmodule Arbor.StreamAsyncTest do
   end
 
   describe "stream_async/3 happy path" do
+    test "initializes the stream slot before task completion" do
+      socket = base_socket()
+      socket = Async.stream_async(socket, :messages, fn -> {:ok, [%{id: "1", body: "hi"}]} end)
+
+      assert %AsyncResult{status: :loading} = socket.assigns.messages
+      assert %{messages: %Stream.Slot{}} = socket.assigns[Stream.assigns_key()]
+      assert Stream.pending_ops(socket) == []
+    end
+
     test "writes loading and seeds stream on success" do
       socket = base_socket()
 

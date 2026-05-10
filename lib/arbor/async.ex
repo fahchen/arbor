@@ -341,7 +341,11 @@ defmodule Arbor.Async do
 
     socket = cancel_prior_for_reassign(socket, name)
     prior = snapshot_prior(socket, [name])
-    socket = write_loading_for_keys(socket, [name], prior, reset)
+
+    socket =
+      socket
+      |> write_loading_for_keys([name], prior, reset)
+      |> Stream.stream(name, [])
 
     {ref, pid, timer_ref} = spawn_task(socket, name, stream_task_body(fun), supervisor, timeout)
 

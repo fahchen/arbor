@@ -651,6 +651,7 @@ defmodule Arbor.Page.Server do
          %{kind: :start} = tracking_entry,
          classified
        ) do
+    emit_async_stop(entry.socket, name, tracking_entry.kind, classified)
     dispatch_handle_async(state, identity, entry, entry.module, name, tracking_entry, classified)
   end
 
@@ -679,15 +680,35 @@ defmodule Arbor.Page.Server do
   end
 
   defp apply_async_down_to_entry(state, identity, entry, name, tracking_entry, reason) do
+    classified = {:exit, tracking_entry.cancel_reason || reason}
+
     emit_async_stop(
       entry.socket,
       name,
       tracking_entry.kind,
-      {:exit, tracking_entry.cancel_reason || reason}
+      classified
     )
 
-    next_socket = Async.apply_task_down(entry.socket, name, tracking_entry, reason)
-    put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+    case tracking_entry.kind do
+      :start ->
+        dispatch_handle_async(
+          state,
+          identity,
+          entry,
+          entry.module,
+          name,
+          tracking_entry,
+          classified
+        )
+
+      :assign ->
+        next_socket = Async.apply_task_down(entry.socket, name, tracking_entry, reason)
+        put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+
+      :stream ->
+        next_socket = Async.apply_task_down(entry.socket, name, tracking_entry, reason)
+        put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+    end
   end
 
   @spec process_async_timeout(StoreRegistry.identity_key(), Async.tracking_name(), State.t()) ::

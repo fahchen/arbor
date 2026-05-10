@@ -26,6 +26,8 @@ defmodule Arbor.Page.ServerAsyncTest do
       payload :name, String.t()
     end
 
+    command :cancel_warm
+
     command :raising_handle_async
 
     command :cancel_profile do
@@ -60,6 +62,16 @@ defmodule Arbor.Page.ServerAsyncTest do
       {:noreply, socket}
     end
 
+    def handle_command(:cancel_warm, _payload, socket) do
+      socket =
+        Arbor.Async.start_async(socket, :warm_cache, fn ->
+          Process.sleep(60_000)
+          {:warmed, "never"}
+        end)
+
+      {:noreply, Arbor.Async.cancel_async(socket, :warm_cache, :user_navigated)}
+    end
+
     def handle_command(:raising_handle_async, _payload, socket) do
       socket = Arbor.Async.start_async(socket, :raises, fn -> :ok end)
       {:noreply, socket}
@@ -78,6 +90,10 @@ defmodule Arbor.Page.ServerAsyncTest do
 
     def handle_async(:warm_cache, {:ok, {:warmed, name}}, socket) do
       {:noreply, Arbor.Socket.assign(socket, :cache_status, "warm:" <> name)}
+    end
+
+    def handle_async(:warm_cache, {:exit, reason}, socket) do
+      {:noreply, Arbor.Socket.assign(socket, :cache_status, "exit:" <> inspect(reason))}
     end
 
     def handle_async(:raises, {:ok, _value}, _socket) do
@@ -130,6 +146,22 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert Enum.any?(ops, fn op ->
                op.op == "replace" and op.path == "/cache_status" and op.value == "warm:ada"
+             end)
+
+      shutdown_server(pid)
+    end
+
+    test "delivers cancel exits to handle_async/3" do
+      pid = start!()
+      flush_initial!()
+
+      assert {:ok, _reply} = Server.command(pid, [], :cancel_warm, %{})
+
+      ops = collect_envelope_ops!(2_000)
+
+      assert Enum.any?(ops, fn op ->
+               op.op == "replace" and op.path == "/cache_status" and
+                 op.value == "exit::user_navigated"
              end)
 
       shutdown_server(pid)
