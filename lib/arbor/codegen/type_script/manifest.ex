@@ -28,17 +28,31 @@ defmodule Arbor.Codegen.TypeScript.Manifest do
   @spec __after_compile__(Macro.Env.t(), binary()) :: :ok
   def __after_compile__(env, _bytecode) do
     if eligible_source?(env.file) do
-      stamp(env.module, env.file, target_dir())
+      data = Map.put(collect(env), :source, env.file)
+      write_state!(env.module, data, target_dir())
     end
 
     :ok
   end
 
+  @doc """
+  Collects expanded `{fields, commands}` reflection for `env.module` using
+  `env`'s alias scope. The renderer consumes the resulting entry directly —
+  every `{:__aliases__, _, _}` AST node is resolved to its fully-qualified
+  form, so no further heuristic walk is needed at render time.
+  """
+  @spec collect(Macro.Env.t()) :: %{module: module(), fields: list(), commands: list()}
+  def collect(%Macro.Env{module: module} = env) do
+    %{
+      module: module,
+      fields: expand_field_aliases(List.wrap(module.__arbor__(:fields)), env),
+      commands: expand_command_aliases(List.wrap(module.__arbor__(:commands)), env)
+    }
+  end
+
   @doc false
   @spec stamp(module(), Path.t(), Path.t()) :: :ok
   def stamp(module, source_file, target) do
-    File.mkdir_p!(module_dir(module, target))
-
     data = %{
       module: module,
       source: source_file,
@@ -46,8 +60,52 @@ defmodule Arbor.Codegen.TypeScript.Manifest do
       commands: List.wrap(module.__arbor__(:commands))
     }
 
+    write_state!(module, data, target)
+  end
+
+  defp write_state!(module, data, target) do
+    File.mkdir_p!(module_dir(module, target))
     File.write!(state_path(module, target), :erlang.term_to_binary(data))
     :ok
+  end
+
+  # Replaces every `{:__aliases__, _, parts}` node inside a field/command
+  # type AST with the fully-qualified alias atoms resolved against `env`'s
+  # alias scope. Preserves anything `Macro.expand/2` can't resolve to an
+  # atom (operators, locals, `unquote` artifacts, …) so the renderer's
+  # fallback path still sees the original AST.
+  defp expand_aliases(ast, env) do
+    Macro.prewalk(ast, fn
+      {:__aliases__, meta, _parts} = node ->
+        case Macro.expand(node, env) do
+          atom when is_atom(atom) ->
+            {:__aliases__, meta, atom |> Module.split() |> Enum.map(&String.to_atom/1)}
+
+          _other ->
+            node
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  defp expand_field_aliases(fields, env) do
+    Enum.map(fields, fn field ->
+      Map.update!(field, :type, &expand_aliases(&1, env))
+    end)
+  end
+
+  defp expand_command_aliases(commands, env) do
+    Enum.map(commands, fn command ->
+      payload_fields =
+        command
+        |> Map.get(:payload_fields, [])
+        |> List.wrap()
+        |> Enum.map(fn field -> Map.update!(field, :type, &expand_aliases(&1, env)) end)
+
+      Map.put(command, :payload_fields, payload_fields)
+    end)
   end
 
   @doc """

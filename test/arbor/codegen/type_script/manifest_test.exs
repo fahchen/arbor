@@ -103,7 +103,7 @@ defmodule Arbor.Codegen.TypeScript.ManifestTest do
     test "stamps modules whose source lives outside test/", %{target: target} do
       Process.put(:__arbor_ts_target_dir__, target)
 
-      env = %{module: TypespecProbe, file: "/abs/lib/whatever/typespec_probe.ex"}
+      env = %{TypespecProbe.__env__() | file: "/abs/lib/whatever/typespec_probe.ex"}
 
       Manifest.__after_compile__(env, "")
 
@@ -114,7 +114,7 @@ defmodule Arbor.Codegen.TypeScript.ManifestTest do
     test "skips modules whose source lives under test/", %{target: target} do
       Process.put(:__arbor_ts_target_dir__, target)
 
-      env = %{module: TypespecProbe, file: "/abs/test/support/typespec_probe.ex"}
+      env = %Macro.Env{module: TypespecProbe, file: "/abs/test/support/typespec_probe.ex"}
 
       Manifest.__after_compile__(env, "")
 
@@ -124,11 +124,34 @@ defmodule Arbor.Codegen.TypeScript.ManifestTest do
     test "skips modules whose source lives in a top-level test/ file", %{target: target} do
       Process.put(:__arbor_ts_target_dir__, target)
 
-      env = %{module: TypespecProbe, file: "/abs/test/something_test.exs"}
+      env = %Macro.Env{module: TypespecProbe, file: "/abs/test/something_test.exs"}
 
       Manifest.__after_compile__(env, "")
 
       refute File.exists?(Path.join([target, inspect(TypespecProbe), "state.term"]))
+    end
+
+    test "expands aliased module references against env.aliases", %{target: target} do
+      # Stamp via the real env captured at TypespecProbe's compile time, but
+      # rewrite the file path so the test/ filter doesn't skip the write.
+      Process.put(:__arbor_ts_target_dir__, target)
+
+      env = %{TypespecProbe.__env__() | file: "/abs/lib/typespec_probe.ex"}
+      Manifest.__after_compile__(env, "")
+
+      [{TypespecProbe, %{fields: fields}}] = Manifest.list(target)
+
+      profile_field = Enum.find(fields, fn %{name: name} -> name == :profile end)
+
+      # `field :profile, Arbor.AsyncResult.of(TypespecProbeChild.t())` — the
+      # `TypespecProbeChild` reference was a single-segment alias in the
+      # source. After expansion, every alias node carries the full path.
+      assert {{:., _dot_meta, [aliases, :of]}, _call_meta, [inner]} = profile_field.type
+      assert {:__aliases__, _alias_meta, [:Arbor, :AsyncResult]} = aliases
+      assert {{:., _inner_dot, [inner_alias, :t]}, _inner_call, []} = inner
+
+      assert {:__aliases__, _inner_alias_meta, [:Arbor, :TestSupport, :TypespecProbeChild]} =
+               inner_alias
     end
   end
 end

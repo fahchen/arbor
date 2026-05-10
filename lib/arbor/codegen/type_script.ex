@@ -45,6 +45,8 @@ defmodule Arbor.Codegen.TypeScript do
   | `Arbor.AsyncResult.of(T)`       | `AsyncResult<T>`                        |
   """
 
+  alias Arbor.Codegen.TypeScript.TypeRenderer
+
   @async_result_alias "AsyncResult"
 
   @typedoc """
@@ -227,52 +229,8 @@ defmodule Arbor.Codegen.TypeScript do
     ]
   end
 
-  defp render_state_decl_for_entry(segment, {module, %{fields: fields}}, indent) do
-    fields = resolve_field_aliases(fields, module)
+  defp render_state_decl_for_entry(segment, {_module, %{fields: fields}}, indent) do
     render_state_decl(segment, fields, indent)
-  end
-
-  # Pre-resolve every `{:__aliases__, _, parts}` node inside a module's field
-  # types against the host module's parent namespaces so codegen can render
-  # the full Elixir module path even when the user `alias`'d the reference.
-  # Replaces alias nodes in-place with the resolved alias atom list.
-  defp resolve_field_aliases(fields, host_module) do
-    Enum.map(fields, fn field ->
-      Map.update!(field, :type, &resolve_aliases(&1, host_module))
-    end)
-  end
-
-  defp resolve_aliases(ast, host_module) do
-    Macro.prewalk(ast, fn
-      {:__aliases__, meta, parts} = node when is_list(parts) ->
-        case resolve_alias_parts(parts, host_module) do
-          {:ok, atom} ->
-            {:__aliases__, meta, atom |> Module.split() |> Enum.map(&String.to_atom/1)}
-
-          :error ->
-            node
-        end
-
-      other ->
-        other
-    end)
-  end
-
-  defp resolve_alias_parts(parts, host_module) do
-    host_parts = host_module |> Module.split() |> Enum.map(&String.to_atom/1)
-
-    # Walk parents from most-specific to least-specific. Use
-    # `Module.safe_concat/1` so we never mint a fresh atom for a module that
-    # was never loaded — only existing atoms can match a real module.
-    Enum.find_value(length(host_parts)..0//-1, :error, fn n ->
-      try do
-        candidate = Module.safe_concat(Enum.take(host_parts, n) ++ parts)
-
-        if Code.ensure_loaded?(candidate), do: {:ok, candidate}, else: nil
-      rescue
-        ArgumentError -> nil
-      end
-    end)
   end
 
   defp render_state_decl(name, fields, indent) do
@@ -280,7 +238,7 @@ defmodule Arbor.Codegen.TypeScript do
       fields
       |> filter_renderable_fields()
       |> Enum.map(fn %{name: field_name, type: type_ast} ->
-        "#{indent}  #{field_name}: #{render_type(type_ast)}"
+        "#{indent}  #{field_name}: #{TypeRenderer.render(type_ast)}"
       end)
 
     [
@@ -336,108 +294,9 @@ defmodule Arbor.Codegen.TypeScript do
   defp render_command_payload(fields) do
     body =
       Enum.map_join(fields, "; ", fn %{name: name, type: type_ast} ->
-        "#{name}: #{render_type(type_ast)}"
+        "#{name}: #{TypeRenderer.render(type_ast)}"
       end)
 
     "{ " <> body <> " }"
   end
-
-  # ---------------------------------------------------------------------------
-  # Type-AST → TypeScript rendering
-  # ---------------------------------------------------------------------------
-
-  @doc """
-  Renders a single Arbor field-type AST node as TypeScript.
-
-  ## Examples
-
-      iex> Arbor.Codegen.TypeScript.render_type(quote(do: String.t()))
-      "string"
-      iex> Arbor.Codegen.TypeScript.render_type(quote(do: list(String.t())))
-      "string[]"
-      iex> Arbor.Codegen.TypeScript.render_type(quote(do: stream(String.t())))
-      "string[]"
-      iex> Arbor.Codegen.TypeScript.render_type(quote(do: String.t() | nil))
-      "string | null"
-  """
-  @spec render_type(Macro.t()) :: String.t()
-  def render_type(type_ast), do: do_render(type_ast)
-
-  defp do_render({:|, _meta, [left, right]}) do
-    do_render(left) <> " | " <> do_render(right)
-  end
-
-  defp do_render({:list, _meta, [inner]}), do: wrap_array(do_render(inner))
-  defp do_render({:stream, _meta, [inner]}), do: wrap_array(do_render(inner))
-
-  defp do_render({:map, _meta, []}), do: "Record<string, unknown>"
-
-  defp do_render({:string, _meta, []}), do: "string"
-  defp do_render({:binary, _meta, []}), do: "string"
-  defp do_render({:integer, _meta, []}), do: "number"
-  defp do_render({:float, _meta, []}), do: "number"
-  defp do_render({:boolean, _meta, []}), do: "boolean"
-  defp do_render({:atom, _meta, []}), do: "string"
-
-  # `String.t()` shortcut — must precede the generic literal-map clause whose
-  # 3-tuple shape would otherwise capture this AST with `pairs=[]`.
-  defp do_render({{:., _dot, [{:__aliases__, _meta, [:String]}, :t]}, _call, []}), do: "string"
-
-  # `Arbor.AsyncResult.of(T)` — resolves the inner T recursively.
-  defp do_render({{:., _dot, [aliased, :of]}, _call, [inner]}) do
-    if async_result_alias?(aliased) do
-      "#{@async_result_alias}<#{do_render(inner)}>"
-    else
-      "unknown"
-    end
-  end
-
-  # `Module.t()` / `Module.state()` — emit the full Elixir alias path. TS
-  # namespace lookup resolves it from inside the call site's namespace.
-  defp do_render({{:., _dot, [aliased, kind]}, _call, []}) when kind in [:t, :state] do
-    full_alias_path(aliased)
-  end
-
-  defp do_render({:%{}, _meta, pairs}) when is_list(pairs) do
-    body =
-      Enum.map_join(pairs, "; ", fn {key, value} ->
-        "#{render_key(key)}: #{do_render(value)}"
-      end)
-
-    "{ " <> body <> " }"
-  end
-
-  defp do_render(nil), do: "null"
-  defp do_render(true), do: "true"
-  defp do_render(false), do: "false"
-
-  defp do_render(literal) when is_atom(literal), do: inspect(Atom.to_string(literal))
-  defp do_render(literal) when is_binary(literal), do: inspect(literal)
-  defp do_render(literal) when is_integer(literal), do: Integer.to_string(literal)
-  defp do_render(literal) when is_float(literal), do: Float.to_string(literal)
-
-  defp do_render(_other), do: "unknown"
-
-  defp wrap_array(rendered) do
-    if String.contains?(rendered, " | ") or String.contains?(rendered, " & ") do
-      "Array<#{rendered}>"
-    else
-      rendered <> "[]"
-    end
-  end
-
-  defp render_key(key) when is_atom(key), do: Atom.to_string(key)
-  defp render_key(key) when is_binary(key), do: inspect(key)
-
-  defp full_alias_path({:__aliases__, _meta, parts}) when is_list(parts) do
-    Enum.map_join(parts, ".", &Atom.to_string/1)
-  end
-
-  defp full_alias_path(module) when is_atom(module) do
-    module |> Module.split() |> Enum.join(".")
-  end
-
-  defp async_result_alias?({:__aliases__, _meta, [:Arbor, :AsyncResult]}), do: true
-  defp async_result_alias?(Arbor.AsyncResult), do: true
-  defp async_result_alias?(_other), do: false
 end
