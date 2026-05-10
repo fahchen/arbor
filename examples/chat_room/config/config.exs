@@ -1,5 +1,7 @@
 import Config
 
+config :arbor, :ts_codegen_output_path, "ui/src/generated/arbor.ts"
+
 config :chat_room, MyAppWeb.Endpoint,
   url: [host: "localhost"],
   pubsub_server: MyApp.PubSub,
