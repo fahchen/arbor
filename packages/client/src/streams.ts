@@ -32,12 +32,16 @@ export function applyStreamOps(
   return next
 }
 
+// Stable empty singleton — `useSyncExternalStore` consumers treat a new []
+// reference as a state change and re-render forever. Share one empty list.
+const EMPTY_STREAM: readonly StreamEntry<unknown>[] = Object.freeze([])
+
 export function getStream<T>(
   streams: ReadonlyMap<string, readonly StreamEntry<unknown>[]>,
   storeId: StoreId,
   streamName: string
 ): readonly StreamEntry<T>[] {
-  return (streams.get(streamStoreKey(storeId, streamName)) ?? []) as readonly StreamEntry<T>[]
+  return (streams.get(streamStoreKey(storeId, streamName)) ?? EMPTY_STREAM) as readonly StreamEntry<T>[]
 }
 
 export function pruneStreams(

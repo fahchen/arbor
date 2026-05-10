@@ -1,5 +1,7 @@
 import Config
 
+config :phoenix, :json_library, Jason
+
 config :arbor, :ts_codegen_output_path, "ui/src/generated/arbor.ts"
 
 config :cart_page, MyAppWeb.Endpoint,
