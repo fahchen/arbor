@@ -28,6 +28,8 @@ arbor-*.tar
 
 # JavaScript / TypeScript workspace artifacts
 /node_modules/
+/node_modules
+node_modules/
 /packages/*/dist/
 /.turbo/
 /coverage/
