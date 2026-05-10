@@ -373,4 +373,40 @@ defmodule Arbor.CompileTimeDslTest do
     assert :state in type_names
     assert :stream in type_names
   end
+
+  test "composite-typed fields (stream, AsyncResult.of, unions, child state) round-trip through the t/0 typespec" do
+    assert {:ok, types} = Code.Typespec.fetch_types(Arbor.TestSupport.TypespecProbe)
+
+    {:type, t_inner} =
+      Enum.find(types, fn
+        {:type, {:t, _def, _args}} -> true
+        _other -> false
+      end)
+
+    rendered = t_inner |> Code.Typespec.type_to_quoted() |> Macro.to_string()
+
+    # stream(T) fields surface as their item-list type via the local stream/1 alias
+    assert rendered =~ "messages: stream(String.t())"
+
+    assert rendered =~
+             "items: stream(Arbor.TestSupport.TypespecProbeChild.t())"
+
+    # Arbor.AsyncResult.of(...) survives as the composite marker, including
+    # nested stream(T) and concrete struct types
+    assert rendered =~
+             "load_stream: Arbor.AsyncResult.of(stream(Arbor.TestSupport.TypespecProbeChild.t()))"
+
+    assert rendered =~
+             "profile: Arbor.AsyncResult.of(Arbor.TestSupport.TypespecProbeChild.t())"
+
+    # Native variant unions survive untouched
+    assert rendered =~ "%{type: :active}"
+    assert rendered =~ "%{type: :paused, value: integer()}"
+
+    # Child Arbor.State module reference survives the typespec emission
+    assert rendered =~ "child: Arbor.TestSupport.TypespecProbeChild.state()"
+
+    # Plain list parameterization survives (rendered in [T] form on the typespec)
+    assert rendered =~ "tags: [String.t()]"
+  end
 end

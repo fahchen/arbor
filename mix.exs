@@ -46,7 +46,8 @@ defmodule Arbor.MixProject do
       {:phoenix, "~> 1.7", optional: true},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:ritual, github: "fahchen/ritual", only: :dev, runtime: false}
+      {:ritual, github: "fahchen/ritual", only: :dev, runtime: false},
+      {:benchee, "~> 1.3", only: :dev, runtime: false}
     ]
   end
 
@@ -57,8 +58,14 @@ defmodule Arbor.MixProject do
         "deps.unlock --unused",
         "format",
         "credo --strict",
+        "compile.arbor_ts --check",
         "dialyzer",
         "test"
+      ],
+      bench: [
+        "run bench/page_runtime_bench.exs",
+        "run bench/diff_bench.exs",
+        "run bench/stream_bench.exs"
       ]
     ]
   end
