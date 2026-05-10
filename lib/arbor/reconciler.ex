@@ -6,6 +6,7 @@ defmodule Arbor.Reconciler do
   alias Arbor.Page.StoreRegistry
   alias Arbor.Page.StoreRegistry.Entry
   alias Arbor.Socket
+  alias Arbor.Stream
   alias Arbor.Telemetry
 
   @type identity_key() :: StoreRegistry.identity_key()
@@ -19,13 +20,14 @@ defmodule Arbor.Reconciler do
   Reconciles one child placeholder against the existing registry entry.
 
   Returns a tagged action describing whether the child must mount, update, or
-  can reuse the previously resolved output.
+  can reuse the previously resolved output. The returned `identity_key` is the
+  child's `store_id` (parent's `store_id ++ [local id]`).
 
   ## Examples
 
       iex> parent_socket = Arbor.Socket.assign(%Arbor.Socket{}, :title, "Inbox")
       iex> child = Arbor.Child.child(ExampleChild, id: "child", title: "Inbox")
-      iex> {:mount, {[], ExampleChild, "child"}, %Arbor.Socket{}, [:title]} =
+      iex> {:mount, ["child"], %Arbor.Socket{}, [:title]} =
       ...>   Arbor.Reconciler.reconcile_child(child, parent_socket, [], Arbor.Page.StoreRegistry.new())
   """
   @spec reconcile_child(Child.t(), Socket.t(), [String.t()], StoreRegistry.t()) ::
@@ -40,39 +42,49 @@ defmodule Arbor.Reconciler do
     id = validate_id!(child)
     assigns = normalize_child_assigns(child.module, child.assigns)
     consumed_keys = Map.keys(assigns)
-    identity = {parent_path, child.module, id}
+    store_id = parent_path ++ [id]
 
-    case StoreRegistry.get(registry, parent_path, child.module, id) do
-      %Entry{} = entry ->
+    case StoreRegistry.get(registry, store_id) do
+      %Entry{module: existing_module} = entry when existing_module == child.module ->
         cond do
           Socket.consumed_keys_changed?(parent_socket, consumed_keys) ->
             next_socket = update_store(entry.socket, assigns)
-            {:update, identity, next_socket, consumed_keys}
+            {:update, store_id, next_socket, consumed_keys}
 
           # Child has internal mutations queued (from a command handler, an
           # async result write, or a stream insert) since the last render. The
           # parent did not change so `update/2` does not run, but the child
           # still needs to re-render so its new state surfaces in the wire diff.
-          child_socket_dirty?(entry.socket) ->
-            {:update, identity, entry.socket, consumed_keys}
+          child_store_dirty?(entry.socket) ->
+            {:update, store_id, entry.socket, consumed_keys}
 
           true ->
-            {:reuse, identity, %{entry | consumed_keys: consumed_keys}, consumed_keys}
+            {:reuse, store_id, %{entry | consumed_keys: consumed_keys}, consumed_keys}
         end
 
-      nil ->
-        {:mount, identity, new_child_socket(parent_path, child.module, id, assigns),
+      _missing_or_module_change ->
+        {:mount, store_id, new_child_socket(parent_path, child.module, id, assigns),
          consumed_keys}
     end
   end
 
-  @spec child_socket_dirty?(Socket.t()) :: boolean()
-  defp child_socket_dirty?(%Socket{assigns: assigns}) do
+  @spec child_store_dirty?(Socket.t()) :: boolean()
+  defp child_store_dirty?(%Socket{assigns: assigns} = socket) do
+    assigns_changed?(assigns) or stream_changed?(socket)
+  end
+
+  defp assigns_changed?(assigns) do
     case Map.get(assigns, :__changed__) do
       nil -> false
       changed when changed == %{} -> false
       _changed -> true
     end
+  end
+
+  defp stream_changed?(%Socket{} = socket) do
+    socket
+    |> Stream.changed_streams()
+    |> MapSet.size() > 0
   end
 
   @doc """
@@ -136,9 +148,7 @@ defmodule Arbor.Reconciler do
       iex> registry =
       ...>   Arbor.Page.StoreRegistry.put(
       ...>     Arbor.Page.StoreRegistry.new(),
-      ...>     [],
-      ...>     Example,
-      ...>     "root",
+      ...>     ["root"],
       ...>     entry
       ...>   )
       iex> Arbor.Reconciler.prune_stale_entries(registry, %{})
@@ -147,12 +157,12 @@ defmodule Arbor.Reconciler do
   @spec prune_stale_entries(StoreRegistry.t(), map()) :: StoreRegistry.t()
   def prune_stale_entries(%StoreRegistry{} = registry, live_identities)
       when is_map(live_identities) do
-    Enum.reduce(StoreRegistry.keys(registry), registry, fn identity, acc ->
-      if Map.has_key?(live_identities, identity) do
+    Enum.reduce(StoreRegistry.keys(registry), registry, fn store_id, acc ->
+      if Map.has_key?(live_identities, store_id) do
         acc
       else
-        emit_lazy_discard(identity)
-        delete_identity(acc, identity)
+        emit_lazy_discard(store_id, registry)
+        StoreRegistry.delete(acc, store_id)
       end
     end)
   end
@@ -185,17 +195,18 @@ defmodule Arbor.Reconciler do
     end)
   end
 
-  @spec delete_identity(StoreRegistry.t(), identity_key()) :: StoreRegistry.t()
-  defp delete_identity(%StoreRegistry{} = registry, {parent_path, module, id}) do
-    StoreRegistry.delete(registry, parent_path, module, id)
-  end
+  @spec emit_lazy_discard(identity_key(), StoreRegistry.t()) :: :ok
+  defp emit_lazy_discard(store_id, %StoreRegistry{} = registry) do
+    module =
+      case StoreRegistry.get(registry, store_id) do
+        %Entry{module: module} -> module
+        nil -> nil
+      end
 
-  @spec emit_lazy_discard(identity_key()) :: :ok
-  defp emit_lazy_discard({parent_path, module, id}) do
     Telemetry.emit(
       [:arbor, :async, :lazy_discard],
       %{count: 1},
-      %{parent_path: parent_path, module: module, id: id}
+      %{store_id: store_id, module: module}
     )
   end
 

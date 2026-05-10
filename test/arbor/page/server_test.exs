@@ -73,14 +73,17 @@ defmodule Arbor.Page.ServerTest do
 
     assert_receive {:patch, %Arbor.Page.PatchEnvelope{base_version: 0, version: 1}}
 
-    assert StoreRegistry.keys(store_registry) == [{[], RootStore, ""}]
+    assert StoreRegistry.keys(store_registry) == [[]]
 
-    assert registry_entry = StoreRegistry.get(store_registry, [], RootStore, "")
+    assert registry_entry = StoreRegistry.get(store_registry, [])
     assert registry_entry.module == RootStore
     assert registry_entry.socket == root_socket
-    assert registry_entry.resolved_state == %{status: "mounted"}
-    assert registry_entry.wire_state == %{"status" => "mounted"}
-    assert StoreRegistry.path_lookup(store_registry, []) == registry_entry
+    assert registry_entry.resolved_state == %{status: "mounted", __arbor_store_id__: []}
+
+    assert registry_entry.wire_state == %{
+             "status" => "mounted",
+             "__arbor_store_id__" => []
+           }
 
     GenServer.stop(pid)
   end

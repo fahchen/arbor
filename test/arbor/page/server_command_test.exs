@@ -240,7 +240,7 @@ defmodule Arbor.Page.ServerCommandTest do
                Server.command(pid, ["filters"], :change_query, %{"query" => "shirt"})
 
       %State{store_registry: registry} = :sys.get_state(pid)
-      entry = StoreRegistry.path_lookup(registry, ["filters"])
+      entry = StoreRegistry.get(registry, ["filters"])
       assert entry.socket.assigns.query == "shirt"
 
       GenServer.stop(pid)
@@ -383,7 +383,7 @@ defmodule Arbor.Page.ServerCommandTest do
   end
 
   describe "Scenario: Successful command emits start and stop telemetry" do
-    test "emits :start and :stop with metadata page_id, path, command, status" do
+    test "emits :start and :stop with metadata page_id, store_id, command, status" do
       handler_id = "command-telemetry-#{System.unique_integer([:positive, :monotonic])}"
 
       :telemetry.attach_many(
@@ -408,14 +408,14 @@ defmodule Arbor.Page.ServerCommandTest do
       assert_receive {:telemetry, [:arbor, :command, :start], _,
                       %{
                         page_id: "home",
-                        path: ["filters"],
+                        store_id: ["filters"],
                         command: :wipe
                       }}
 
       assert_receive {:telemetry, [:arbor, :command, :stop], _,
                       %{
                         page_id: "home",
-                        path: ["filters"],
+                        store_id: ["filters"],
                         command: :wipe,
                         status: :ok
                       }}
@@ -505,17 +505,12 @@ defmodule Arbor.Page.ServerCommandTest do
   end
 
   defp sync_root_into_registry(%State{root_socket: root_socket, store_registry: registry} = state) do
-    case StoreRegistry.path_lookup(registry, []) do
+    case StoreRegistry.get(registry, []) do
       nil ->
         state
 
       entry ->
-        next_registry =
-          StoreRegistry.put(registry, [], entry.module, root_socket.id || "", %{
-            entry
-            | socket: root_socket
-          })
-
+        next_registry = StoreRegistry.put(registry, [], %{entry | socket: root_socket})
         %{state | store_registry: next_registry}
     end
   end

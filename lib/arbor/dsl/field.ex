@@ -36,6 +36,8 @@ defmodule Arbor.DSL.Field do
   @spec field(atom(), Macro.t()) :: Macro.t()
   @spec field(atom(), Macro.t(), keyword()) :: Macro.t()
   defmacro field(name, type, opts \\ []) when is_atom(name) and is_list(opts) do
+    validate_reserved!(name)
+
     quote do
       TypedStructor.field(
         unquote(name),
@@ -43,5 +45,23 @@ defmodule Arbor.DSL.Field do
         unquote(Macro.escape(opts))
       )
     end
+  end
+
+  @doc false
+  @spec validate_reserved!(atom()) :: :ok
+  def validate_reserved!(name) when is_atom(name) do
+    if reserved?(name) do
+      raise ArgumentError,
+            "field name #{inspect(name)} uses the reserved `__arbor_*` prefix; " <>
+              "those keys are injected by the runtime (e.g. `__arbor_store_id__`)"
+    end
+
+    :ok
+  end
+
+  defp reserved?(name) do
+    name
+    |> Atom.to_string()
+    |> String.starts_with?("__arbor_")
   end
 end

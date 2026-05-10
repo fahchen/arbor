@@ -2,10 +2,12 @@ defmodule Arbor.Async.Telemetry do
   @moduledoc """
   Canonical telemetry-event emitters for the async lifecycle.
 
-  Every event metadata map carries `page_id`, `path`, `name`, and `kind`
-  so consumers can filter by page, store node, or async family without
-  re-deriving them. `Arbor.Telemetry.emit/3` is the underlying call —
-  it is a no-op when `:telemetry` is not loaded.
+  Every event metadata map carries `page_id`, `store_id`, `name`, and
+  `kind` so consumers can filter by page, store node, or async family
+  without re-deriving them. `store_id` is the runtime identity of the
+  store node — the array of local ids from root, equivalent to
+  `Arbor.Socket.store_id/1`. `Arbor.Telemetry.emit/3` is the underlying
+  call — it is a no-op when `:telemetry` is not loaded.
   """
 
   alias Arbor.Async
@@ -87,7 +89,7 @@ defmodule Arbor.Async.Telemetry do
   def base_metadata(%Socket{} = socket, name, kind) do
     %{
       page_id: page_id(socket),
-      path: socket_path(socket),
+      store_id: Socket.store_id(socket),
       module: socket.module,
       name: name,
       kind: kind
@@ -96,13 +98,5 @@ defmodule Arbor.Async.Telemetry do
 
   defp page_id(%Socket{assigns: assigns}) do
     Map.get(assigns, :page_id) || Map.get(assigns, "page_id")
-  end
-
-  defp socket_path(%Socket{parent_path: parent_path, id: id}) do
-    case {parent_path, id} do
-      {[], nil} -> []
-      {[], ""} -> []
-      _other -> Enum.reverse([id || "" | Enum.reverse(parent_path)])
-    end
   end
 end

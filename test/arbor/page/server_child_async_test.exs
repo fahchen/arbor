@@ -245,7 +245,7 @@ defmodule Arbor.Page.ServerChildAsyncTest do
 
   defp child_assign(pid, key) do
     %{store_registry: registry} = :sys.get_state(pid)
-    entry = StoreRegistry.get(registry, [], WidgetStore, "w1")
+    entry = StoreRegistry.get(registry, ["w1"])
     Map.get(entry.socket.assigns, key)
   end
 

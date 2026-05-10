@@ -292,11 +292,6 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
   end
 
-  setup do
-    Process.flag(:trap_exit, true)
-    :ok
-  end
-
   describe "assign_async/3,4" do
     test "writes the final ok value onto the socket" do
       pid = start!()
@@ -310,7 +305,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  &match?(%AsyncResult{status: :ok, result: %{name: "ada"}}, &1.assigns.profile)
                ).assigns.profile
 
-      shutdown_server(pid)
     end
 
     test "exposes the loading state while a task is still running" do
@@ -336,7 +330,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  &match?(%AsyncResult{status: :ok, result: %{name: "ada"}}, &1.assigns.profile)
                ).assigns.profile
 
-      shutdown_server(pid)
     end
 
     test "writes all keys for multi-key tasks" do
@@ -354,7 +347,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %AsyncResult{status: :ok, result: "ada"} = socket.assigns.user
       assert %AsyncResult{status: :ok, result: "arbor"} = socket.assigns.org
 
-      shutdown_server(pid)
     end
 
     test "marks invalid return values as failed" do
@@ -368,7 +360,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
                socket.assigns.profile
 
-      shutdown_server(pid)
     end
 
     test "marks missing multi-key results as failed" do
@@ -389,7 +380,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
                socket.assigns.org
 
-      shutdown_server(pid)
     end
 
     test "marks raised exceptions as failed exits" do
@@ -405,7 +395,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                reason: {:exit, {:error, %RuntimeError{message: "boom"}, _stack}}
              } = socket.assigns.profile
 
-      shutdown_server(pid)
     end
 
     test "marks exited tasks as failed exits" do
@@ -418,7 +407,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %AsyncResult{status: :failed, reason: {:exit, :boom}} = socket.assigns.profile
 
-      shutdown_server(pid)
     end
 
     test "cancel_async by name resolves the tracked assign to failed" do
@@ -449,7 +437,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %AsyncResult{status: :failed, reason: {:exit, :user_left}} = socket.assigns.profile
       assert %{} = Async.tracking(socket)
 
-      shutdown_server(pid)
     end
 
     test "cancel_async by AsyncResult pre-writes the failure and drops tracking" do
@@ -480,7 +467,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %AsyncResult{status: :failed, reason: {:exit, :user_left}} = socket.assigns.profile
       assert %{} = Async.tracking(socket)
 
-      shutdown_server(pid)
     end
   end
 
@@ -500,7 +486,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %{assigns: %{cache_status: "warm:ada"}} =
                await_root_socket!(pid, &match?("warm:ada", &1.assigns.cache_status))
 
-      shutdown_server(pid)
     end
 
     test "delivers raised task failures to handle_async/3" do
@@ -514,7 +499,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert reason =~ "RuntimeError"
       assert reason =~ "boom"
 
-      shutdown_server(pid)
     end
 
     test "delivers task exits to handle_async/3" do
@@ -526,7 +510,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %{assigns: %{cache_status: "exit::boom"}} =
                await_root_socket!(pid, &match?("exit::boom", &1.assigns.cache_status))
 
-      shutdown_server(pid)
     end
 
     test "delivers cancel exits to handle_async/3" do
@@ -542,7 +525,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %{assigns: %{cache_status: "exit::user_navigated"}} =
                await_root_socket!(pid, &match?("exit::user_navigated", &1.assigns.cache_status))
 
-      shutdown_server(pid)
     end
 
     test "same-name overwrite keeps the latest result and lazy-discards the stale task" do
@@ -565,7 +547,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %{name: :warm_cache, kind: :start} = metadata
       assert %{assigns: %{cache_status: "warm:second"}} = root_socket(pid)
 
-      shutdown_server(pid)
     end
   end
 
@@ -597,7 +578,6 @@ defmodule Arbor.Page.ServerAsyncTest do
         Logger.flush()
       end)
 
-      shutdown_server(pid)
     end
   end
 
@@ -626,7 +606,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
                ).assigns.messages
 
-      shutdown_server(pid)
     end
 
     test "shows loading while the stream task is running" do
@@ -647,7 +626,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
                ).assigns.messages
 
-      shutdown_server(pid)
     end
 
     test "emits insert ops with returned stream opts" do
@@ -670,7 +648,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
                ).assigns.messages
 
-      shutdown_server(pid)
     end
 
     test "emits a reset op when the task returns reset stream opts" do
@@ -689,7 +666,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                  &match?(%AsyncResult{status: :ok, result: true}, Map.get(&1.assigns, :messages))
                ).assigns.messages
 
-      shutdown_server(pid)
     end
 
     test "writes failed on {:error, reason} and leaves the stream slot untouched" do
@@ -719,7 +695,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
 
-      shutdown_server(pid)
     end
 
     test "marks invalid return values as failed" do
@@ -746,7 +721,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
 
-      shutdown_server(pid)
     end
 
     test "marks non-enumerable stream results as failed" do
@@ -774,7 +748,6 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
 
-      shutdown_server(pid)
     end
 
     test "marks raised stream tasks as failed" do
@@ -800,7 +773,6 @@ defmodule Arbor.Page.ServerAsyncTest do
                reason: {:exit, {:error, %RuntimeError{message: "boom"}, _stack}}
              } = socket.assigns.messages
 
-      shutdown_server(pid)
     end
 
     test "marks exited stream tasks as failed" do
@@ -826,7 +798,6 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       assert %AsyncResult{status: :failed, reason: {:exit, :boom}} = socket.assigns.messages
 
-      shutdown_server(pid)
     end
 
     test "cancel_async by name resolves the stream assign to failed" do
@@ -866,17 +837,13 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert %Stream.Slot{inserts: [], deletes: [], reset?: false} =
                root_stream_slot(pid, :messages)
 
-      shutdown_server(pid)
     end
   end
 
   defp start!(store \\ AsyncStore) do
-    {:ok, pid} =
-      Server.start_link(
-        {store, %{"page_id" => "p1", "test_pid" => self()}, %{transport_pid: self()}}
-      )
-
-    pid
+    start_supervised!(
+      {Server, {store, %{"page_id" => "p1", "test_pid" => self()}, %{transport_pid: self()}}}
+    )
   end
 
   defp flush_initial! do
@@ -916,7 +883,7 @@ defmodule Arbor.Page.ServerAsyncTest do
 
   defp root_socket(pid) do
     state = :sys.get_state(pid)
-    %StoreRegistry.Entry{socket: socket} = StoreRegistry.path_lookup(state.store_registry, [])
+    %StoreRegistry.Entry{socket: socket} = StoreRegistry.get(state.store_registry, [])
     socket
   end
 
@@ -966,23 +933,4 @@ defmodule Arbor.Page.ServerAsyncTest do
     on_exit(fn -> :telemetry.detach(handler_id) end)
   end
 
-  # Page-server shutdown emits a runtime log from `terminate/2`. Synchronize
-  # teardown under `capture_log/1` so repeated seeded test runs stay quiet.
-  defp shutdown_server(pid) when is_pid(pid) do
-    if Process.alive?(pid) do
-      ref = Process.monitor(pid)
-
-      capture_log(fn ->
-        GenServer.stop(pid, :shutdown)
-
-        receive do
-          {:DOWN, ^ref, _type, _object, _reason} -> :ok
-        after
-          1_000 -> :ok
-        end
-
-        Logger.flush()
-      end)
-    end
-  end
 end

@@ -1,17 +1,19 @@
 defmodule Arbor.Page.StoreRegistry do
-  @moduledoc "Runtime-internal registry for mounted Arbor store nodes."
+  @moduledoc "Runtime-internal registry for mounted Arbor store nodes, keyed by `store_id`."
 
   use TypedStructor
 
   alias Arbor.Page.StoreRegistry.Entry
+  alias Arbor.Socket
 
-  @type identity_key() :: {[atom() | String.t()], module(), String.t()}
+  @typedoc "Runtime identity of a store node — array of local ids from root. Same shape as `Arbor.Socket.store_id/1`."
+  @type identity_key() :: Socket.store_id()
 
   typed_structor do
     field :entries, %{optional(identity_key()) => Entry.t()},
       default: %{},
       doc:
-        "Map of identity tuples `{parent_path, module, id}` to mounted store node entries. Updated after each render+reconcile cycle and consulted for command path resolution."
+        "Map of `store_id` (path of local ids) to mounted store node entries. The store `module` is metadata on each entry, not part of the key. Updated after each render+reconcile cycle and consulted by the command router."
   end
 
   @doc """
@@ -26,91 +28,62 @@ defmodule Arbor.Page.StoreRegistry do
   def new, do: %__MODULE__{}
 
   @doc """
-  Stores one mounted node entry by its `{parent_path, module, id}` identity.
+  Stores one mounted node entry under its `store_id`.
 
   ## Examples
 
       iex> entry = %Arbor.Page.StoreRegistry.Entry{socket: %Arbor.Socket{}, module: Example}
-      iex> registry = Arbor.Page.StoreRegistry.put(Arbor.Page.StoreRegistry.new(), [], Example, "root", entry)
+      iex> registry = Arbor.Page.StoreRegistry.put(Arbor.Page.StoreRegistry.new(), [], entry)
       iex> match?(%Arbor.Page.StoreRegistry{}, registry)
       true
   """
-  @spec put(t(), [atom() | String.t()], module(), String.t(), Entry.t()) :: t()
-  def put(%__MODULE__{entries: entries} = registry, parent_path, module, id, %Entry{} = entry)
-      when is_list(parent_path) and is_atom(module) and is_binary(id) do
-    %{registry | entries: Map.put(entries, {parent_path, module, id}, entry)}
+  @spec put(t(), identity_key(), Entry.t()) :: t()
+  def put(%__MODULE__{entries: entries} = registry, store_id, %Entry{} = entry)
+      when is_list(store_id) do
+    %{registry | entries: Map.put(entries, store_id, entry)}
   end
 
   @doc """
-  Looks up one mounted node entry by identity.
+  Looks up one mounted node entry by `store_id`.
 
   ## Examples
 
       iex> entry = %Arbor.Page.StoreRegistry.Entry{socket: %Arbor.Socket{}, module: Example}
-      iex> registry = Arbor.Page.StoreRegistry.put(Arbor.Page.StoreRegistry.new(), [], Example, "root", entry)
-      iex> Arbor.Page.StoreRegistry.get(registry, [], Example, "root")
+      iex> registry = Arbor.Page.StoreRegistry.put(Arbor.Page.StoreRegistry.new(), [], entry)
+      iex> Arbor.Page.StoreRegistry.get(registry, [])
       entry
   """
-  @spec get(t(), [atom() | String.t()], module(), String.t()) :: Entry.t() | nil
-  def get(%__MODULE__{entries: entries}, parent_path, module, id)
-      when is_list(parent_path) and is_atom(module) and is_binary(id) do
-    Map.get(entries, {parent_path, module, id})
+  @spec get(t(), identity_key()) :: Entry.t() | nil
+  def get(%__MODULE__{entries: entries}, store_id) when is_list(store_id) do
+    Map.get(entries, store_id)
   end
 
   @doc """
-  Deletes one mounted node entry by identity.
+  Deletes one mounted node entry by `store_id`.
 
   ## Examples
 
       iex> entry = %Arbor.Page.StoreRegistry.Entry{socket: %Arbor.Socket{}, module: Example}
-      iex> registry = Arbor.Page.StoreRegistry.put(Arbor.Page.StoreRegistry.new(), [], Example, "root", entry)
-      iex> registry = Arbor.Page.StoreRegistry.delete(registry, [], Example, "root")
-      iex> Arbor.Page.StoreRegistry.get(registry, [], Example, "root")
+      iex> registry = Arbor.Page.StoreRegistry.put(Arbor.Page.StoreRegistry.new(), [], entry)
+      iex> registry = Arbor.Page.StoreRegistry.delete(registry, [])
+      iex> Arbor.Page.StoreRegistry.get(registry, [])
       nil
   """
-  @spec delete(t(), [atom() | String.t()], module(), String.t()) :: t()
-  def delete(%__MODULE__{entries: entries} = registry, parent_path, module, id)
-      when is_list(parent_path) and is_atom(module) and is_binary(id) do
-    %{registry | entries: Map.delete(entries, {parent_path, module, id})}
+  @spec delete(t(), identity_key()) :: t()
+  def delete(%__MODULE__{entries: entries} = registry, store_id) when is_list(store_id) do
+    %{registry | entries: Map.delete(entries, store_id)}
   end
 
   @doc """
-  Returns every identity key currently stored in the registry.
+  Returns every `store_id` currently stored in the registry.
 
   ## Examples
 
       iex> entry = %Arbor.Page.StoreRegistry.Entry{socket: %Arbor.Socket{}, module: Example}
-      iex> registry = Arbor.Page.StoreRegistry.put(Arbor.Page.StoreRegistry.new(), [], Example, "root", entry)
+      iex> registry = Arbor.Page.StoreRegistry.put(Arbor.Page.StoreRegistry.new(), [], entry)
       iex> Arbor.Page.StoreRegistry.keys(registry)
-      [{[], Example, "root"}]
+      [[]]
   """
   @spec keys(t()) :: [identity_key()]
   def keys(%__MODULE__{entries: entries}), do: Map.keys(entries)
-
-  @doc """
-  Finds a registry entry by its rendered tree path.
-
-  ## Examples
-
-      iex> entry = %Arbor.Page.StoreRegistry.Entry{socket: %Arbor.Socket{}, module: Example}
-      iex> registry = Arbor.Page.StoreRegistry.put(Arbor.Page.StoreRegistry.new(), ["page"], Example, "child", entry)
-      iex> Arbor.Page.StoreRegistry.path_lookup(registry, ["page", "child"])
-      entry
-  """
-  @spec path_lookup(t(), [String.t()]) :: Entry.t() | nil
-  def path_lookup(%__MODULE__{entries: entries}, path) when is_list(path) do
-    Enum.find_value(entries, fn {{parent_path, _module, id}, entry} ->
-      if entry_path(parent_path, id) == path, do: entry
-    end)
-  end
-
-  @spec entry_path([atom() | String.t()], String.t()) :: [String.t()]
-  defp entry_path([], ""), do: []
-
-  defp entry_path(parent_path, id) do
-    parent_path
-    |> Enum.map(&to_string/1)
-    |> Enum.reverse()
-    |> then(&Enum.reverse([id | &1]))
-  end
 end

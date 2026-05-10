@@ -44,7 +44,7 @@ defmodule Arbor.Page.Server do
   alias Arbor.Telemetry
 
   @type start_arg() :: {module(), map(), term()}
-  @type command_path() :: [String.t()]
+  @type store_id() :: Socket.store_id()
   @type command_payload() :: map()
   @type command_reply() :: map()
 
@@ -68,14 +68,14 @@ defmodule Arbor.Page.Server do
   This is the public entry point a transport adapter calls to execute one
   client command end-to-end. The pipeline:
 
-    1. Route `path` to a mounted store via `Arbor.Page.StoreRegistry.path_lookup/2`.
+    1. Route `store_id` to a mounted store via `Arbor.Page.StoreRegistry.get/2`.
     2. Run `:before_command` hooks root-first along the chain of sockets.
     3. Dispatch `handle_command/3` on the addressed store module.
     4. Run `:after_command` hooks root-first along the chain.
     5. Return `{:ok, reply_payload}`.
     6. Render → diff → push patch envelope (after the reply lands).
 
-  Path or command-name resolution failures `raise` (BDR-0003 let-it-crash);
+  store_id or command-name resolution failures `raise` (BDR-0003 let-it-crash);
   the GenServer crashes and the supervisor/transport observe the exit.
 
   ## Examples
@@ -83,11 +83,11 @@ defmodule Arbor.Page.Server do
       Arbor.Page.Server.command(pid, ["filters"], :change_query, %{"query" => "shirt"})
       #=> {:ok, %{}}
   """
-  @spec command(GenServer.server(), command_path(), atom(), command_payload()) ::
+  @spec command(GenServer.server(), store_id(), atom(), command_payload()) ::
           {:ok, command_reply()}
-  def command(server, path, command_name, payload)
-      when is_list(path) and is_atom(command_name) and is_map(payload) do
-    GenServer.call(server, {:command, path, command_name, payload})
+  def command(server, store_id, command_name, payload)
+      when is_list(store_id) and is_atom(command_name) and is_map(payload) do
+    GenServer.call(server, {:command, store_id, command_name, payload})
   end
 
   @impl GenServer
@@ -113,7 +113,7 @@ defmodule Arbor.Page.Server do
       |> Reconciler.mount_store()
 
     store_registry =
-      StoreRegistry.put(StoreRegistry.new(), [], root_module, root_socket.id, %Entry{
+      StoreRegistry.put(StoreRegistry.new(), [], %Entry{
         socket: root_socket,
         module: root_module
       })
@@ -146,20 +146,20 @@ defmodule Arbor.Page.Server do
 
   @impl GenServer
   @spec handle_call(
-          {:command, command_path(), atom(), command_payload()},
+          {:command, store_id(), atom(), command_payload()},
           GenServer.from(),
           State.t()
         ) ::
           {:reply, {:ok, command_reply()}, State.t(),
            {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
-  def handle_call({:command, path, command_name, payload}, _from, %State{} = state) do
-    base_meta = %{page_id: page_id(state), path: path, command: command_name}
+  def handle_call({:command, store_id, command_name, payload}, _from, %State{} = state) do
+    base_meta = %{page_id: page_id(state), store_id: store_id, command: command_name}
     started_at = System.monotonic_time()
     Telemetry.emit([:arbor, :command, :start], %{system_time: System.system_time()}, base_meta)
 
     try do
       {pipeline_status, reply, next_state, envelope} =
-        run_command_with_render(path, command_name, payload, state)
+        run_command_with_render(store_id, command_name, payload, state)
 
       Telemetry.emit(
         [:arbor, :command, :stop],
@@ -215,7 +215,7 @@ defmodule Arbor.Page.Server do
   @impl GenServer
   def handle_info({ref, {:arbor_async_result, name, kind, classified}}, %State{} = state)
       when is_reference(ref) do
-    handle_async_result(ref, classified, {name, kind}, state)
+    handle_async_result(ref, classified, {nil, name, kind}, state)
   end
 
   def handle_info({ref, classified}, %State{} = state) when is_reference(ref) do
@@ -250,10 +250,11 @@ defmodule Arbor.Page.Server do
   # Command pipeline + render
   # ---------------------------------------------------------------------------
 
-  @spec run_command_with_render(command_path(), atom(), command_payload(), State.t()) ::
+  @spec run_command_with_render(store_id(), atom(), command_payload(), State.t()) ::
           {:ok | :halted, command_reply(), State.t(), PatchEnvelope.t() | nil}
-  defp run_command_with_render(path, command_name, payload, %State{} = state) do
-    {pipeline_status, reply, state} = run_command_pipeline(path, command_name, payload, state)
+  defp run_command_with_render(store_id, command_name, payload, %State{} = state) do
+    {pipeline_status, reply, state} =
+      run_command_pipeline(store_id, command_name, payload, state)
 
     case pipeline_status do
       :ok ->
@@ -291,13 +292,13 @@ defmodule Arbor.Page.Server do
     {next_state, envelope}
   end
 
-  @spec run_command_pipeline(command_path(), atom(), command_payload(), State.t()) ::
+  @spec run_command_pipeline(store_id(), atom(), command_payload(), State.t()) ::
           {:ok | :halted, command_reply(), State.t()}
-  defp run_command_pipeline(path, command_name, payload, %State{} = state) do
-    addressed = lookup_or_raise!(state.store_registry, path)
+  defp run_command_pipeline(store_id, command_name, payload, %State{} = state) do
+    addressed = lookup_or_raise!(state.store_registry, store_id)
     validate_command_declared!(addressed.module, command_name)
 
-    chain = path_chain(path)
+    chain = store_id_chain(store_id)
     state = stamp_command_target(state, chain, addressed.module)
 
     case run_hook_chain(:before_command, chain, [command_name, payload], state, true) do
@@ -311,7 +312,7 @@ defmodule Arbor.Page.Server do
 
       {:cont, state} ->
         state = clear_command_target(state, chain)
-        {reply, state} = dispatch_handler(path, command_name, payload, state)
+        {reply, state} = dispatch_handler(store_id, command_name, payload, state)
 
         case run_hook_chain(:after_command, chain, [command_name, payload], state, false) do
           {:cont, state} -> {:ok, reply, state}
@@ -320,14 +321,14 @@ defmodule Arbor.Page.Server do
     end
   end
 
-  @spec lookup_or_raise!(StoreRegistry.t(), command_path()) :: Entry.t()
-  defp lookup_or_raise!(registry, path) do
-    case StoreRegistry.path_lookup(registry, path) do
+  @spec lookup_or_raise!(StoreRegistry.t(), store_id()) :: Entry.t()
+  defp lookup_or_raise!(registry, store_id) do
+    case StoreRegistry.get(registry, store_id) do
       %Entry{} = entry ->
         entry
 
       nil ->
-        raise ArgumentError, "no store mounted at path #{inspect(path)}"
+        raise ArgumentError, "no store mounted at store_id #{inspect(store_id)}"
     end
   end
 
@@ -348,23 +349,24 @@ defmodule Arbor.Page.Server do
     end
   end
 
-  # Walk path prefixes from root ([]) to the addressed full path so hooks
-  # attached on ancestor sockets fire before hooks attached on descendants.
-  @spec path_chain(command_path()) :: [command_path()]
-  defp path_chain([]), do: [[]]
+  # Walk store_id prefixes from root ([]) to the addressed full store_id so
+  # hooks attached on ancestor sockets fire before hooks attached on
+  # descendants.
+  @spec store_id_chain(store_id()) :: [store_id()]
+  defp store_id_chain([]), do: [[]]
 
-  defp path_chain(path) when is_list(path) do
-    Enum.map(0..length(path), &Enum.take(path, &1))
+  defp store_id_chain(store_id) when is_list(store_id) do
+    Enum.map(0..length(store_id), &Enum.take(store_id, &1))
   end
 
-  @spec stamp_command_target(State.t(), [command_path()], module()) :: State.t()
+  @spec stamp_command_target(State.t(), [store_id()], module()) :: State.t()
   defp stamp_command_target(state, chain, target_module) do
     update_chain_sockets(state, chain, fn socket ->
       Socket.put_private(socket, ValidateCommandSchema.target_private_key(), target_module)
     end)
   end
 
-  @spec clear_command_target(State.t(), [command_path()]) :: State.t()
+  @spec clear_command_target(State.t(), [store_id()]) :: State.t()
   defp clear_command_target(state, chain) do
     key = ValidateCommandSchema.target_private_key()
 
@@ -373,13 +375,13 @@ defmodule Arbor.Page.Server do
     end)
   end
 
-  @spec update_chain_sockets(State.t(), [command_path()], (Socket.t() -> Socket.t())) :: State.t()
+  @spec update_chain_sockets(State.t(), [store_id()], (Socket.t() -> Socket.t())) :: State.t()
   defp update_chain_sockets(state, chain, fun) do
-    Enum.reduce(chain, state, fn chain_path, acc ->
-      case StoreRegistry.path_lookup(acc.store_registry, chain_path) do
+    Enum.reduce(chain, state, fn chain_id, acc ->
+      case StoreRegistry.get(acc.store_registry, chain_id) do
         %Entry{socket: socket} = entry ->
           next_entry = %{entry | socket: fun.(socket)}
-          put_entry(acc, chain_path, next_entry)
+          put_entry(acc, chain_id, next_entry)
 
         nil ->
           acc
@@ -389,20 +391,20 @@ defmodule Arbor.Page.Server do
 
   @spec run_hook_chain(
           Lifecycle.stage(),
-          [command_path()],
+          [store_id()],
           [term()],
           State.t(),
           boolean()
         ) ::
           {:cont, State.t()} | {:halt, State.t()} | {:halt_reply, command_reply(), State.t()}
   defp run_hook_chain(stage, chain, hook_args, state, halt_payloads_allowed?) do
-    Enum.reduce_while(chain, {:cont, state}, fn chain_path, {:cont, acc} ->
-      run_hook_chain_step(chain_path, stage, hook_args, halt_payloads_allowed?, acc)
+    Enum.reduce_while(chain, {:cont, state}, fn chain_id, {:cont, acc} ->
+      run_hook_chain_step(chain_id, stage, hook_args, halt_payloads_allowed?, acc)
     end)
   end
 
   @spec run_hook_chain_step(
-          command_path(),
+          store_id(),
           Lifecycle.stage(),
           [term()],
           boolean(),
@@ -411,47 +413,47 @@ defmodule Arbor.Page.Server do
           {:cont, {:cont, State.t()}}
           | {:halt, {:halt, State.t()}}
           | {:halt, {:halt_reply, command_reply(), State.t()}}
-  defp run_hook_chain_step(chain_path, stage, hook_args, halt_payloads_allowed?, %State{} = acc) do
-    case StoreRegistry.path_lookup(acc.store_registry, chain_path) do
+  defp run_hook_chain_step(chain_id, stage, hook_args, halt_payloads_allowed?, %State{} = acc) do
+    case StoreRegistry.get(acc.store_registry, chain_id) do
       %Entry{socket: socket} = entry ->
         socket
         |> Lifecycle.run_hooks(stage, hook_args, halt_payloads_allowed?)
-        |> wrap_hook_result(acc, chain_path, entry)
+        |> wrap_hook_result(acc, chain_id, entry)
 
       nil ->
         {:cont, {:cont, acc}}
     end
   end
 
-  @spec wrap_hook_result(Lifecycle.hook_result(), State.t(), command_path(), Entry.t()) ::
+  @spec wrap_hook_result(Lifecycle.hook_result(), State.t(), store_id(), Entry.t()) ::
           {:cont, {:cont, State.t()}}
           | {:halt, {:halt, State.t()}}
           | {:halt, {:halt_reply, command_reply(), State.t()}}
-  defp wrap_hook_result({:cont, %Socket{} = next_socket}, acc, chain_path, entry) do
-    {:cont, {:cont, put_entry(acc, chain_path, %{entry | socket: next_socket})}}
+  defp wrap_hook_result({:cont, %Socket{} = next_socket}, acc, chain_id, entry) do
+    {:cont, {:cont, put_entry(acc, chain_id, %{entry | socket: next_socket})}}
   end
 
-  defp wrap_hook_result({:halt, %Socket{} = next_socket}, acc, chain_path, entry) do
-    {:halt, {:halt, put_entry(acc, chain_path, %{entry | socket: next_socket})}}
+  defp wrap_hook_result({:halt, %Socket{} = next_socket}, acc, chain_id, entry) do
+    {:halt, {:halt, put_entry(acc, chain_id, %{entry | socket: next_socket})}}
   end
 
-  defp wrap_hook_result({:halt, reply, %Socket{} = next_socket}, acc, chain_path, entry) do
-    {:halt, {:halt_reply, reply, put_entry(acc, chain_path, %{entry | socket: next_socket})}}
+  defp wrap_hook_result({:halt, reply, %Socket{} = next_socket}, acc, chain_id, entry) do
+    {:halt, {:halt_reply, reply, put_entry(acc, chain_id, %{entry | socket: next_socket})}}
   end
 
-  @spec dispatch_handler(command_path(), atom(), command_payload(), State.t()) ::
+  @spec dispatch_handler(store_id(), atom(), command_payload(), State.t()) ::
           {command_reply(), State.t()}
-  defp dispatch_handler(path, command_name, payload, %State{} = state) do
+  defp dispatch_handler(store_id, command_name, payload, %State{} = state) do
     %Entry{socket: socket, module: module} =
       entry =
-      lookup_or_raise!(state.store_registry, path)
+      lookup_or_raise!(state.store_registry, store_id)
 
     case module.handle_command(command_name, payload, socket) do
       {:noreply, %Socket{} = next_socket} ->
-        {%{}, put_entry(state, path, %{entry | socket: next_socket})}
+        {%{}, put_entry(state, store_id, %{entry | socket: next_socket})}
 
       {:reply, reply, %Socket{} = next_socket} when is_map(reply) ->
-        {reply, put_entry(state, path, %{entry | socket: next_socket})}
+        {reply, put_entry(state, store_id, %{entry | socket: next_socket})}
 
       other ->
         raise ArgumentError,
@@ -460,25 +462,18 @@ defmodule Arbor.Page.Server do
     end
   end
 
-  @spec put_entry(State.t(), command_path(), Entry.t()) :: State.t()
-  defp put_entry(%State{store_registry: registry} = state, path, %Entry{} = entry) do
-    {parent_path, id} = entry_identity(entry)
-
-    next_registry = StoreRegistry.put(registry, parent_path, entry.module, id, entry)
+  @spec put_entry(State.t(), store_id(), Entry.t()) :: State.t()
+  defp put_entry(%State{store_registry: registry} = state, store_id, %Entry{} = entry) do
+    next_registry = StoreRegistry.put(registry, store_id, entry)
 
     next_root_socket =
-      if path == [] do
+      if store_id == [] do
         entry.socket
       else
         state.root_socket
       end
 
     %{state | store_registry: next_registry, root_socket: next_root_socket}
-  end
-
-  @spec entry_identity(Entry.t()) :: {[Socket.path_segment()], String.t()}
-  defp entry_identity(%Entry{socket: %Socket{parent_path: parent_path, id: id}}) do
-    {parent_path, id || ""}
   end
 
   # ---------------------------------------------------------------------------
@@ -502,16 +497,16 @@ defmodule Arbor.Page.Server do
   end
 
   @spec root_wire(StoreRegistry.t(), Socket.t()) :: {term(), StoreRegistry.t()}
-  defp root_wire(%StoreRegistry{} = registry, %Socket{module: module}) do
-    case StoreRegistry.get(registry, [], module, "") do
+  defp root_wire(%StoreRegistry{} = registry, %Socket{}) do
+    case StoreRegistry.get(registry, []) do
       %Entry{wire_state: wire_state} -> {wire_state, registry}
       nil -> {nil, registry}
     end
   end
 
   @spec root_socket(StoreRegistry.t(), Socket.t()) :: Socket.t()
-  defp root_socket(%StoreRegistry{} = registry, %Socket{module: module} = fallback) do
-    case StoreRegistry.get(registry, [], module, "") do
+  defp root_socket(%StoreRegistry{} = registry, %Socket{} = fallback) do
+    case StoreRegistry.get(registry, []) do
       %Entry{socket: socket} -> socket
       nil -> fallback
     end
@@ -526,22 +521,22 @@ defmodule Arbor.Page.Server do
     sorted_keys =
       registry
       |> StoreRegistry.keys()
-      |> Enum.sort_by(fn {parent_path, _module, _id} -> length(parent_path) end)
+      |> Enum.sort_by(&length/1)
 
-    Enum.reduce(sorted_keys, {[], registry}, fn identity, {ops_acc, reg_acc} ->
-      flush_entry(reg_acc, identity, ops_acc)
+    Enum.reduce(sorted_keys, {[], registry}, fn store_id, {ops_acc, reg_acc} ->
+      flush_entry(reg_acc, store_id, ops_acc)
     end)
   end
 
   @spec flush_entry(StoreRegistry.t(), StoreRegistry.identity_key(), [Stream.op()]) ::
           {[Stream.op()], StoreRegistry.t()}
-  defp flush_entry(%StoreRegistry{} = registry, {parent_path, module, id} = _identity, ops_acc) do
-    case StoreRegistry.get(registry, parent_path, module, id) do
+  defp flush_entry(%StoreRegistry{} = registry, store_id, ops_acc) do
+    case StoreRegistry.get(registry, store_id) do
       %Entry{socket: socket} = entry ->
         {entry_ops, next_socket} = Stream.flush_pending_ops(socket)
 
         next_registry =
-          StoreRegistry.put(registry, parent_path, module, id, %{entry | socket: next_socket})
+          StoreRegistry.put(registry, store_id, %{entry | socket: next_socket})
 
         {ops_acc ++ entry_ops, next_registry}
 
@@ -583,23 +578,22 @@ defmodule Arbor.Page.Server do
   # Async message routing
   # ---------------------------------------------------------------------------
 
-  @spec handle_async_result(
-          reference(),
-          term(),
-          {Async.tracking_name(), Async.kind()} | nil,
-          State.t()
-        ) ::
+  @typedoc "Discard hint plumbed alongside async messages so a stale-ref lazy_discard can still attribute to a `store_id`/`name`/`kind`."
+  @type discard_meta() ::
+          {store_id() | nil, Async.tracking_name() | nil, Async.kind() | nil} | nil
+
+  @spec handle_async_result(reference(), term(), discard_meta(), State.t()) ::
           {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
   defp handle_async_result(ref, classified, discard_meta, %State{} = state) do
     case Map.fetch(state.async_index, ref) do
-      {:ok, {identity, name}} ->
+      {:ok, {store_id, name, kind}} ->
         # Demonitor + flush any pending :DOWN for this ref so it does not
         # also drive a failed write after the success path has run.
         Process.demonitor(ref, [:flush])
-        process_async_result(identity, name, classified, discard_meta, state)
+        process_async_result(store_id, name, kind, classified, state)
 
       :error ->
-        emit_lazy_discard(state, discard_meta)
+        emit_lazy_discard(state, enrich_discard_meta(discard_meta))
         {:noreply, state, {:continue, {:push_patch, nil}}}
     end
   end
@@ -608,8 +602,8 @@ defmodule Arbor.Page.Server do
           {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
   defp handle_async_down(ref, reason, %State{} = state) do
     case Map.fetch(state.async_index, ref) do
-      {:ok, {identity, name}} ->
-        process_async_down(identity, name, reason, state)
+      {:ok, {store_id, name, kind}} ->
+        process_async_down(store_id, name, kind, reason, state)
 
       :error ->
         # Either the matching {ref, result} already arrived (success path
@@ -623,8 +617,8 @@ defmodule Arbor.Page.Server do
           {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
   defp handle_async_timeout(ref, %State{} = state) do
     case Map.fetch(state.async_index, ref) do
-      {:ok, {identity, name}} ->
-        process_async_timeout(identity, name, state)
+      {:ok, {store_id, name, _kind}} ->
+        process_async_timeout(store_id, name, state)
 
       :error ->
         {:noreply, state, {:continue, {:push_patch, nil}}}
@@ -632,57 +626,52 @@ defmodule Arbor.Page.Server do
   end
 
   @spec process_async_result(
-          StoreRegistry.identity_key(),
+          store_id(),
           Async.tracking_name(),
+          Async.kind(),
           term(),
-          {Async.tracking_name(), Async.kind()} | nil,
           State.t()
         ) ::
           {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
-  defp process_async_result(identity, name, classified, discard_meta, %State{} = state) do
-    with %Entry{} = entry <- fetch_entry(state, identity),
+  defp process_async_result(store_id, name, kind, classified, %State{} = state) do
+    with %Entry{} = entry <- fetch_entry(state, store_id),
          {:ok, tracking_entry} <- Async.fetch_tracking(entry.socket, name) do
       next_state =
-        apply_async_result_to_entry(state, identity, entry, name, tracking_entry, classified)
+        apply_async_result_to_entry(state, store_id, entry, name, tracking_entry, classified)
 
       {next_state, envelope} = render_and_envelope(next_state)
       {:noreply, next_state, {:continue, {:push_patch, envelope}}}
     else
       _missing ->
-        emit_lazy_discard(state, discard_meta || {name, nil})
+        emit_lazy_discard(state, {store_id, name, kind})
         {:noreply, state, {:continue, {:push_patch, nil}}}
     end
   end
 
   defp apply_async_result_to_entry(
          state,
-         identity,
+         store_id,
          entry,
          name,
          %{kind: :start} = tracking_entry,
          classified
        ) do
     emit_async_stop(entry.socket, name, tracking_entry.kind, classified)
-    dispatch_handle_async(state, identity, entry, entry.module, name, tracking_entry, classified)
+    dispatch_handle_async(state, store_id, entry, entry.module, name, tracking_entry, classified)
   end
 
-  defp apply_async_result_to_entry(state, identity, entry, name, tracking_entry, classified) do
+  defp apply_async_result_to_entry(state, store_id, entry, name, tracking_entry, classified) do
     emit_async_stop(entry.socket, name, tracking_entry.kind, classified)
     next_socket = Async.apply_task_result(entry.socket, name, tracking_entry, classified)
-    put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+    put_entry_by_store_id(state, store_id, %{entry | socket: next_socket})
   end
 
-  @spec process_async_down(
-          StoreRegistry.identity_key(),
-          Async.tracking_name(),
-          term(),
-          State.t()
-        ) ::
+  @spec process_async_down(store_id(), Async.tracking_name(), Async.kind(), term(), State.t()) ::
           {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
-  defp process_async_down(identity, name, reason, %State{} = state) do
-    with %Entry{} = entry <- fetch_entry(state, identity),
+  defp process_async_down(store_id, name, _kind, reason, %State{} = state) do
+    with %Entry{} = entry <- fetch_entry(state, store_id),
          {:ok, tracking_entry} <- Async.fetch_tracking(entry.socket, name) do
-      next_state = apply_async_down_to_entry(state, identity, entry, name, tracking_entry, reason)
+      next_state = apply_async_down_to_entry(state, store_id, entry, name, tracking_entry, reason)
       {next_state, envelope} = render_and_envelope(next_state)
       {:noreply, next_state, {:continue, {:push_patch, envelope}}}
     else
@@ -690,7 +679,7 @@ defmodule Arbor.Page.Server do
     end
   end
 
-  defp apply_async_down_to_entry(state, identity, entry, name, tracking_entry, reason) do
+  defp apply_async_down_to_entry(state, store_id, entry, name, tracking_entry, reason) do
     classified = {:exit, tracking_entry.cancel_reason || reason}
 
     emit_async_stop(
@@ -704,7 +693,7 @@ defmodule Arbor.Page.Server do
       :start ->
         dispatch_handle_async(
           state,
-          identity,
+          store_id,
           entry,
           entry.module,
           name,
@@ -714,21 +703,21 @@ defmodule Arbor.Page.Server do
 
       :assign ->
         next_socket = Async.apply_task_down(entry.socket, name, tracking_entry, reason)
-        put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+        put_entry_by_store_id(state, store_id, %{entry | socket: next_socket})
 
       :stream ->
         next_socket = Async.apply_task_down(entry.socket, name, tracking_entry, reason)
-        put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+        put_entry_by_store_id(state, store_id, %{entry | socket: next_socket})
     end
   end
 
-  @spec process_async_timeout(StoreRegistry.identity_key(), Async.tracking_name(), State.t()) ::
+  @spec process_async_timeout(store_id(), Async.tracking_name(), State.t()) ::
           {:noreply, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
-  defp process_async_timeout(identity, name, %State{} = state) do
-    with %Entry{} = entry <- fetch_entry(state, identity),
+  defp process_async_timeout(store_id, name, %State{} = state) do
+    with %Entry{} = entry <- fetch_entry(state, store_id),
          {next_socket, %{pid: pid}} <- Async.mark_timeout(entry.socket, name) do
       if Process.alive?(pid), do: Process.exit(pid, :kill)
-      next_state = put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+      next_state = put_entry_by_store_id(state, store_id, %{entry | socket: next_socket})
       # No envelope yet — the resulting :DOWN will run render.
       {:noreply, next_state, {:continue, {:push_patch, nil}}}
     else
@@ -738,47 +727,41 @@ defmodule Arbor.Page.Server do
 
   @spec dispatch_handle_async(
           State.t(),
-          StoreRegistry.identity_key(),
+          store_id(),
           Entry.t(),
           module(),
           Async.tracking_name(),
           Async.tracking_entry(),
           term()
         ) :: State.t()
-  defp dispatch_handle_async(state, identity, entry, module, name, tracking_entry, classified) do
+  defp dispatch_handle_async(state, store_id, entry, module, name, tracking_entry, classified) do
     socket = Async.drop_tracking_only(entry.socket, name)
     cancel_tracked_timer(tracking_entry)
 
     delivered = unwrap_for_handle_async(classified)
-    chain_path = entry_path(identity)
-    chain = path_chain(chain_path)
+    chain = store_id_chain(store_id)
 
-    state = put_entry_by_identity(state, identity, %{entry | socket: socket})
+    state = put_entry_by_store_id(state, store_id, %{entry | socket: socket})
 
     case run_hook_chain(:handle_async, chain, [name, delivered], state, false) do
       {:cont, state} ->
-        invoke_handle_async(state, identity, module, name, delivered)
+        invoke_handle_async(state, store_id, module, name, delivered)
 
       {:halt, state} ->
         state
     end
   end
 
-  @spec invoke_handle_async(
-          State.t(),
-          StoreRegistry.identity_key(),
-          module(),
-          Async.tracking_name(),
-          term()
-        ) :: State.t()
-  defp invoke_handle_async(state, identity, module, name, delivered) do
-    %Entry{socket: socket} = entry = fetch_entry(state, identity)
+  @spec invoke_handle_async(State.t(), store_id(), module(), Async.tracking_name(), term()) ::
+          State.t()
+  defp invoke_handle_async(state, store_id, module, name, delivered) do
+    %Entry{socket: socket} = entry = fetch_entry(state, store_id)
 
     if function_exported?(module, :handle_async, 3) do
       try do
         case module.handle_async(name, delivered, socket) do
           {:noreply, %Socket{} = next_socket} ->
-            put_entry_by_identity(state, identity, %{entry | socket: next_socket})
+            put_entry_by_store_id(state, store_id, %{entry | socket: next_socket})
 
           other ->
             raise ArgumentError,
@@ -812,34 +795,24 @@ defmodule Arbor.Page.Server do
     :ok
   end
 
-  @spec fetch_entry(State.t(), StoreRegistry.identity_key()) :: Entry.t() | nil
-  defp fetch_entry(%State{store_registry: registry}, {parent_path, module, id}) do
-    StoreRegistry.get(registry, parent_path, module, id)
+  @spec fetch_entry(State.t(), store_id()) :: Entry.t() | nil
+  defp fetch_entry(%State{store_registry: registry}, store_id) when is_list(store_id) do
+    StoreRegistry.get(registry, store_id)
   end
 
-  @spec put_entry_by_identity(State.t(), StoreRegistry.identity_key(), Entry.t()) :: State.t()
-  defp put_entry_by_identity(
-         %State{store_registry: registry} = state,
-         {parent_path, module, id},
-         %Entry{} = entry
-       ) do
-    next_registry = StoreRegistry.put(registry, parent_path, module, id, entry)
+  @spec put_entry_by_store_id(State.t(), store_id(), Entry.t()) :: State.t()
+  defp put_entry_by_store_id(%State{store_registry: registry} = state, store_id, %Entry{} = entry)
+       when is_list(store_id) do
+    next_registry = StoreRegistry.put(registry, store_id, entry)
 
     next_root_socket =
-      if parent_path == [] and id == "" do
+      if store_id == [] do
         entry.socket
       else
         state.root_socket
       end
 
     %{state | store_registry: next_registry, root_socket: next_root_socket}
-  end
-
-  @spec entry_path(StoreRegistry.identity_key()) :: command_path()
-  defp entry_path({[], _module, ""}), do: []
-
-  defp entry_path({parent_path, _module, id}) do
-    Enum.reverse([id | parent_path |> Enum.map(&to_string/1) |> Enum.reverse()])
   end
 
   @spec rebuild_async_index(State.t()) :: State.t()
@@ -850,17 +823,19 @@ defmodule Arbor.Page.Server do
     %{state | async_index: index}
   end
 
-  defp collect_entry_refs(registry, {parent_path, module, id} = identity, acc) do
-    case StoreRegistry.get(registry, parent_path, module, id) do
+  defp collect_entry_refs(registry, store_id, acc) do
+    case StoreRegistry.get(registry, store_id) do
       %Entry{socket: socket} ->
-        Enum.reduce(Async.tracking(socket), acc, &put_ref(&1, identity, &2))
+        Enum.reduce(Async.tracking(socket), acc, &put_ref(&1, store_id, &2))
 
       nil ->
         acc
     end
   end
 
-  defp put_ref({name, %{ref: ref}}, identity, acc), do: Map.put(acc, ref, {identity, name})
+  defp put_ref({name, %{ref: ref, kind: kind}}, store_id, acc) do
+    Map.put(acc, ref, {store_id, name, kind})
+  end
 
   @spec emit_async_stop(Socket.t(), Async.tracking_name(), Async.kind(), term()) :: :ok
   defp emit_async_stop(socket, name, kind, classified) do
@@ -874,16 +849,24 @@ defmodule Arbor.Page.Server do
     Arbor.Async.Telemetry.stop(socket, name, kind, status)
   end
 
-  @spec emit_lazy_discard(State.t(), {Async.tracking_name(), Async.kind()} | nil) :: :ok
+  @spec enrich_discard_meta(discard_meta()) :: discard_meta()
+  defp enrich_discard_meta(nil), do: nil
+  defp enrich_discard_meta({_store_id, _name, _kind} = meta), do: meta
+
+  @spec emit_lazy_discard(State.t(), discard_meta()) :: :ok
   defp emit_lazy_discard(%State{} = state, discard_meta) do
-    {name, kind} =
+    {store_id, name, kind} =
       case discard_meta do
-        {tracking_name, tracking_kind} -> {tracking_name, tracking_kind}
-        nil -> {nil, nil}
+        {sid, n, k} -> {sid, n, k}
+        nil -> {nil, nil, nil}
       end
 
     Arbor.Async.Telemetry.lazy_discard(
-      %{page_id: page_id(state), module: state.root_module},
+      %{
+        page_id: page_id(state),
+        module: state.root_module,
+        store_id: store_id
+      },
       name,
       kind
     )

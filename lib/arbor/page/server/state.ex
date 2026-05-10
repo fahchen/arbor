@@ -19,7 +19,7 @@ defmodule Arbor.Page.Server.State do
     field :store_registry, StoreRegistry.t(),
       enforce: true,
       doc:
-        "Runtime-internal table of currently mounted store nodes keyed by `(parent_path, module, id)`."
+        "Runtime-internal table of currently mounted store nodes keyed by `store_id`."
 
     field :version, non_neg_integer(),
       default: 0,
@@ -37,9 +37,15 @@ defmodule Arbor.Page.Server.State do
         "Transport-adapter session info (Phoenix Channel pid + opts). Set at mount; M4 forwards patch envelopes to it after each render cycle."
 
     field :async_index,
-          %{reference() => {StoreRegistry.identity_key(), Arbor.Async.tracking_name()}},
+          %{
+            reference() => {
+              StoreRegistry.identity_key(),
+              Arbor.Async.tracking_name(),
+              Arbor.Async.kind()
+            }
+          },
           default: %{},
           doc:
-            "Aux index `task_ref => {identity, name}` rebuilt after every handler call. Lets the page server route incoming `{ref, result}` and `{:DOWN, ref, ...}` messages to the originating store entry without scanning the registry."
+            "Aux index `task_ref => {store_id, name, kind}` rebuilt after every handler call. Lets the page server route incoming `{ref, result}` and `{:DOWN, ref, ...}` messages to the originating store entry without scanning the registry, and lets stale-ref lazy-discard telemetry attribute the dropped task to a specific node + family."
   end
 end
