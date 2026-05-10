@@ -48,6 +48,7 @@ The high-leverage review questions, beyond the conventions in `AGENTS.md`:
 - **handle_info dispatch.** The page server's catch-all `handle_info/2` clause dispatches application messages to the root store's `handle_info/2` after running the `:handle_info` hook chain and emits `[:arbor, :pubsub, :receive]` (BDR-0005). Diffs that bypass the hook chain, swallow the dispatch, or drop the telemetry are spec violations.
 - **Auth deny telemetry.** `:before_command` halt-with-reply is the documented graceful-denial pattern (BDR-0008). The runtime emits `[:arbor, :auth, :deny]` with `%{module, path, command, reply}`. Diffs that omit the emission or attach it to a different stage are wrong.
 - **Channel adapter cleanup.** `Arbor.Transport.Channel.terminate/2` must unlink the linked page server, call `GenServer.stop/3` with the channel's terminate reason (so the page server's `terminate/2` runs with the actual context — `:normal`, `:shutdown`, `{:shutdown, :left}`, etc), and emit `[:arbor, :channel, :terminate]`. Diffs that hardcode `:shutdown` (or rely solely on the link, which would deliver a noproc-style EXIT and skip the page server's `terminate/2`) lose the operator-visible reason.
+- **Examples are not test deps.** `examples/<name>/` mini-apps depend on `arbor` via `path: "../.."`. Diffs that add them to the main project's `deps/0` or its test suite mistake documentation for runtime code. Each example owns its own `.gitignore` for `_build/`, `deps/`, `cover/`, `priv/codegen/`; the root `.gitignore` does not whitelist them.
 
 ## Test review
 
