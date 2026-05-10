@@ -24,7 +24,8 @@ defmodule CartPage.MixProject do
       {:arbor, path: "../.."},
       {:phoenix, "~> 1.8"},
       {:phoenix_pubsub, "~> 2.1"},
-      {:plug_cowboy, "~> 2.7"}
+      {:plug_cowboy, "~> 2.7"},
+      {:jason, "~> 1.4"}
     ]
   end
 end
