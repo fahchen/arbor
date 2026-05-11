@@ -3,7 +3,7 @@ defmodule MyAppWeb.UserSocket do
 
   use Phoenix.Socket
 
-  channel("page:*", MyAppWeb.PageChannel)
+  channel("arbor:*", MyAppWeb.PageChannel)
 
   @doc false
   @impl Phoenix.Socket

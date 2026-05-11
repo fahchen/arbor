@@ -1,11 +1,20 @@
 defmodule Arbor.TestSupport.TypespecProbeChild do
   @moduledoc false
 
-  use Arbor.State
+  use Arbor.Store
 
   state do
     field :amount, integer()
   end
+
+  @impl Arbor.Store
+  def mount(socket), do: {:ok, socket}
+
+  @impl Arbor.Store
+  def render(_socket), do: %{amount: 0}
+
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
   # Snapshot the compile-time env (alias scope, module name, file) so codegen
   # tests can drive `Arbor.Codegen.TypeScript.Manifest.collect/1` against the

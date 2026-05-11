@@ -104,7 +104,12 @@ defmodule Arbor.Codegen.TypeScript.Manifest do
         |> List.wrap()
         |> Enum.map(fn field -> Map.update!(field, :type, &expand_aliases(&1, env)) end)
 
-      Map.put(command, :payload_fields, payload_fields)
+      command
+      |> Map.put(:payload_fields, payload_fields)
+      |> Map.update(:reply, nil, fn
+        nil -> nil
+        ast -> expand_aliases(ast, env)
+      end)
     end)
   end
 

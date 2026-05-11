@@ -260,6 +260,14 @@ defmodule Arbor.Type do
             "#{inspect(host_module)}.#{field_name}: type #{Macro.to_string(type_ast)} references " <>
               "#{inspect(ref_module)}.#{kind}() but #{inspect(ref_module)} is not a loadable Arbor runtime module"
 
+      kind == :state and arbor_kind(ref_module) != :store ->
+        raise CompileError,
+          description:
+            "#{inspect(host_module)}.#{field_name}: type #{Macro.to_string(type_ast)} uses " <>
+              "#{inspect(ref_module)}.state() but #{inspect(ref_module)} is not an Arbor.Store. " <>
+              "Use #{inspect(ref_module)}.t() to reference an Arbor.State, or change " <>
+              "#{inspect(ref_module)} to `use Arbor.Store` if it should mount as a child."
+
       true ->
         :ok
     end
@@ -269,6 +277,12 @@ defmodule Arbor.Type do
     case Code.ensure_loaded(module) do
       {:module, ^module} -> function_exported?(module, :__arbor_runtime_module__, 0)
       _other -> false
+    end
+  end
+
+  defp arbor_kind(module) do
+    if function_exported?(module, :__arbor_kind__, 0) do
+      module.__arbor_kind__()
     end
   end
 

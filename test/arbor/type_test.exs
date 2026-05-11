@@ -21,7 +21,7 @@ defmodule Arbor.TypeTest do
     alias Arbor.TypeTest.LeafState
 
     state do
-      field :leaf, LeafState.state()
+      field :leaf, LeafState.t()
     end
   end
 
@@ -88,18 +88,30 @@ defmodule Arbor.TypeTest do
       assert Type.valid?("Inbox", quote(do: String.t() | nil))
     end
 
-    test "Module.state() resolves through host_module namespace" do
+    test "Module.t() resolves through host_module namespace" do
       assert Type.valid?(
                %{"title" => "Inbox"},
-               quote(do: LeafState.state()),
+               quote(do: LeafState.t()),
                ContainerState
              )
 
       refute Type.valid?(
                %{"title" => 42},
-               quote(do: LeafState.state()),
+               quote(do: LeafState.t()),
                ContainerState
              )
+    end
+
+    test "Module.state() referencing a non-store module raises at compile time" do
+      defmodule Arbor.TypeTest.FakeStateRefHost do
+        def __arbor__(:fields) do
+          [%{name: :leaf, type: quote(do: Arbor.TypeTest.LeafState.state())}]
+        end
+      end
+
+      assert_raise CompileError, ~r/is not an Arbor\.Store/, fn ->
+        Type.verify_module!(Arbor.TypeTest.FakeStateRefHost)
+      end
     end
   end
 

@@ -21,7 +21,7 @@ defmodule Arbor.Transport.ChannelTest do
     @moduledoc false
     use Phoenix.Socket
 
-    channel("page:*", Arbor.Transport.ChannelTest.PageChannel)
+    channel("arbor:*", Arbor.Transport.ChannelTest.ArborChannel)
 
     def connect(_params, socket, _connect_info), do: {:ok, socket}
     def id(_socket), do: nil
@@ -50,13 +50,16 @@ defmodule Arbor.Transport.ChannelTest do
       do: {:noreply, Arbor.Socket.assign(socket, :title, title)}
   end
 
-  defmodule PageChannel do
+  defmodule ArborChannel do
     @moduledoc false
-    use Arbor.Transport.Channel, root: Arbor.Transport.ChannelTest.RootStore
+    use Arbor.Transport.Channel, stores: [Arbor.Transport.ChannelTest.RootStore]
   end
 
   import Phoenix.ChannelTest
   @endpoint TestEndpoint
+
+  @root_module_str "Arbor.Transport.ChannelTest.RootStore"
+  @root_id "home"
 
   setup_all do
     start_supervised!({Phoenix.PubSub, name: Arbor.Transport.ChannelTest.PubSub})
@@ -69,10 +72,6 @@ defmodule Arbor.Transport.ChannelTest do
     :ok
   end
 
-  # Channel teardown emits a `Logger.error` from the linked page server's
-  # `terminate/2`. Global `capture_log: true` is racy here because the page
-  # server lives in its own process and its log write can outlive the test
-  # body, so we synchronize the teardown explicitly under `capture_log/1`.
   defp shutdown_channel(%Phoenix.Socket{channel_pid: channel_pid}) do
     ref = Process.monitor(channel_pid)
 
@@ -89,11 +88,20 @@ defmodule Arbor.Transport.ChannelTest do
     end)
   end
 
+  defp join_root(payload \\ %{}) do
+    full_payload =
+      Map.merge(
+        %{"module" => @root_module_str, "id" => @root_id, "params" => %{}},
+        payload
+      )
+
+    UserSocket
+    |> socket("user_id", %{})
+    |> subscribe_and_join(ArborChannel, "arbor:#{@root_id}", full_payload)
+  end
+
   test "join starts a page server and pushes the initial patch envelope" do
-    {:ok, _reply, socket} =
-      UserSocket
-      |> socket("user_id", %{})
-      |> subscribe_and_join(PageChannel, "page:home", %{})
+    {:ok, _reply, socket} = join_root()
 
     assert_push("patch", %{
       "type" => "patch",
@@ -107,10 +115,7 @@ defmodule Arbor.Transport.ChannelTest do
   end
 
   test "command event flows through Arbor.Page.Server.command/4 and replies + patches" do
-    {:ok, _reply, socket} =
-      UserSocket
-      |> socket("user_id", %{})
-      |> subscribe_and_join(PageChannel, "page:home", %{})
+    {:ok, _reply, socket} = join_root()
 
     assert_push("patch", %{"version" => 1})
 
@@ -147,13 +152,10 @@ defmodule Arbor.Transport.ChannelTest do
 
     on_exit(fn -> :telemetry.detach("arbor-channel-test") end)
 
-    {:ok, _reply, channel_socket} =
-      UserSocket
-      |> socket("user_id", %{})
-      |> subscribe_and_join(PageChannel, "page:home", %{})
+    {:ok, _reply, channel_socket} = join_root()
 
     assert_receive {:channel_event, [:arbor, :channel, :join],
-                    %{module: RootStore, topic: "page:home", page_pid: page_pid}}
+                    %{module: RootStore, id: @root_id, page_pid: page_pid}}
 
     assert is_pid(page_pid)
     assert Process.alive?(page_pid)
@@ -164,9 +166,22 @@ defmodule Arbor.Transport.ChannelTest do
     assert_reply(leave_ref, :ok)
 
     assert_receive {:channel_event, [:arbor, :channel, :terminate],
-                    %{module: RootStore, topic: "page:home"}}
+                    %{module: RootStore, id: @root_id}}
 
     assert_receive {:DOWN, ^page_ref, :process, ^page_pid, _reason}, 1_000
+  end
+
+  test "join rejects a module not in the allowlist" do
+    assert {:error, %{reason: reason}} =
+             UserSocket
+             |> socket("user_id", %{})
+             |> subscribe_and_join(ArborChannel, "arbor:home", %{
+               "module" => "MyApp.Unknown",
+               "id" => @root_id,
+               "params" => %{}
+             })
+
+    assert reason =~ "not in the channel allowlist"
   end
 
   test "to_wire/1 returns string-keyed envelope ready for Phoenix.Channel.push/3" do
