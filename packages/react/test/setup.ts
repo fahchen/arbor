@@ -1,94 +1,56 @@
 import { cleanup } from "@testing-library/react"
 import { afterEach } from "vitest"
 
-import type { ArborClient, StoreId, StreamEntry } from "@arbor/client"
+import type { StoreModule, StoreProxy, StoreSnapshot } from "@arbor/client"
 
 afterEach(() => {
   cleanup()
 })
 
-export class FakeArborClient
-  implements Pick<ArborClient, "subscribe" | "getState" | "getStream" | "command">
-{
-  readonly commandCalls: Array<{
-    storeId: StoreId
-    name: string
-    payload: Record<string, unknown>
-  }> = []
+/**
+ * Minimal stand-in for a real `StoreProxy<M>` used by the React adapter
+ * tests. The fake exposes the four reserved runtime members and a settable
+ * snapshot/dispatch impl, but skips proxy field access — tests assert on
+ * snapshot values, not on bracket-style field reads through the proxy.
+ */
+export class FakeStoreProxy<M extends StoreModule> {
+  readonly __arbor_store_id__: string[] = []
 
-  private readonly storeSubscribers = new Map<string, Set<() => void>>()
-  private readonly states = new Map<string, unknown>()
-  private readonly streams = new Map<string, readonly StreamEntry<unknown>[]>()
-  private commandImpl: (
-    storeId: StoreId,
-    name: string,
-    payload: Record<string, unknown>
-  ) => Promise<unknown> = async () => undefined
+  private snapshotValue: StoreSnapshot<M>
+  private readonly subscribers = new Set<() => void>()
 
-  subscribe(storeId: StoreId, listener: () => void): () => void {
-    const key = JSON.stringify(storeId)
-    const listeners = this.storeSubscribers.get(key) ?? new Set<() => void>()
+  readonly dispatchCalls: Array<{ name: string; payload: unknown }> = []
+  private dispatchImpl: (name: string, payload: unknown) => Promise<unknown> = async () =>
+    undefined
 
-    listeners.add(listener)
-    this.storeSubscribers.set(key, listeners)
+  constructor(initialSnapshot: StoreSnapshot<M>) {
+    this.snapshotValue = initialSnapshot
+  }
 
+  subscribe = (listener: () => void): (() => void) => {
+    this.subscribers.add(listener)
     return () => {
-      listeners.delete(listener)
-
-      if (listeners.size === 0) {
-        this.storeSubscribers.delete(key)
-      }
+      this.subscribers.delete(listener)
     }
   }
 
-  getState<T = unknown>(storeId: StoreId): T | undefined {
-    return this.states.get(JSON.stringify(storeId)) as T | undefined
+  snapshot = (): StoreSnapshot<M> => this.snapshotValue
+
+  dispatchCommand = async (name: string, payload: unknown): Promise<unknown> => {
+    this.dispatchCalls.push({ name, payload })
+    return this.dispatchImpl(name, payload)
   }
 
-  getStream<T = unknown>(storeId: StoreId, name: string): readonly StreamEntry<T>[] {
-    return (this.streams.get(streamKey(storeId, name)) ?? []) as readonly StreamEntry<T>[]
+  setSnapshot(next: StoreSnapshot<M>): void {
+    this.snapshotValue = next
+    for (const listener of this.subscribers) listener()
   }
 
-  async command<Reply = unknown>(
-    storeId: StoreId,
-    name: string,
-    payload: Record<string, unknown>
-  ): Promise<Reply> {
-    this.commandCalls.push({ storeId, name, payload })
-    return (await this.commandImpl(storeId, name, payload)) as Reply
+  onDispatch(impl: (name: string, payload: unknown) => Promise<unknown>): void {
+    this.dispatchImpl = impl
   }
 
-  setState(storeId: StoreId, value: unknown): void {
-    this.states.set(JSON.stringify(storeId), value)
+  asProxy(): StoreProxy<M> {
+    return this as unknown as StoreProxy<M>
   }
-
-  setStream(storeId: StoreId, name: string, entries: readonly StreamEntry<unknown>[]): void {
-    this.streams.set(streamKey(storeId, name), entries)
-  }
-
-  emit(storeId: StoreId): void {
-    const listeners = this.storeSubscribers.get(JSON.stringify(storeId))
-
-    for (const listener of listeners ?? []) {
-      listener()
-    }
-  }
-
-  onCommand(
-    handler: (
-      storeId: StoreId,
-      name: string,
-      payload: Record<string, unknown>
-    ) => Promise<unknown>
-  ): void {
-    this.commandImpl = handler
-  }
-
-  asProviderClient(): ArborClient {
-    return this as unknown as ArborClient
-  }
-}
-
-function streamKey(storeId: StoreId, name: string): string {
-  return `${JSON.stringify(storeId)}:${name}`
 }

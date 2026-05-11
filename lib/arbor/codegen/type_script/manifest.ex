@@ -47,10 +47,16 @@ defmodule Arbor.Codegen.TypeScript.Manifest do
   def collect(%Macro.Env{module: module} = env) do
     %{
       module: module,
-      kind: module_kind(module),
+      kind: env_kind(env) || module_kind(module),
       fields: expand_field_aliases(List.wrap(module.__arbor__(:fields)), env),
       commands: expand_command_aliases(List.wrap(module.__arbor__(:commands)), env)
     }
+  end
+
+  defp env_kind(%Macro.Env{module: module}) when is_atom(module) do
+    Module.get_attribute(module, :__arbor_kind__)
+  rescue
+    ArgumentError -> nil
   end
 
   @doc false

@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
-import { useCommand, useStore } from "@arbor/react"
+import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
 
 import "./generated/arbor"
 
-const ROOT_STORE_ID = [] as const
+type RootModule = "MyApp.Stores.CartPageStore"
 
 const PRODUCT_OPTIONS = [
   { sku: "mug", label: "Coffee Mug" },
@@ -13,29 +13,22 @@ const PRODUCT_OPTIONS = [
 ] as const
 
 export default function App() {
-  const page = useStore<"MyApp.Stores.CartPageStore">(ROOT_STORE_ID)
-  const cartStoreId = page?.cart?.__arbor_store_id__ ?? ROOT_STORE_ID
-  const addItem = useCommand<"MyApp.Stores.CartStore", "add_item", Record<string, never> | { error: string }>(
-    cartStoreId,
-    "add_item"
-  )
-  const removeLine = useCommand<"MyApp.Stores.CartStore", "remove_line", Record<string, never>>(
-    cartStoreId,
-    "remove_line"
-  )
-  const checkout = useCommand<"MyApp.Stores.CartStore", "checkout", { order_id?: string; error?: string }>(
-    cartStoreId,
-    "checkout"
-  )
+  const root = useArborRoot<RootModule>()
+  const page = useArborSnapshot(root)
+
+  const cartProxy = root.cart
+  const addItem = useArborCommand(cartProxy, "add_item")
+  const removeLine = useArborCommand(cartProxy, "remove_line")
+  const checkout = useArborCommand(cartProxy, "checkout")
 
   const [sku, setSku] = useState<(typeof PRODUCT_OPTIONS)[number]["sku"]>("mug")
   const [feedback, setFeedback] = useState<string>("")
   const [busy, setBusy] = useState<"add" | "checkout" | "remove" | null>(null)
 
-  const lineCount = page?.cart.lines.reduce((sum, line) => sum + line.qty, 0) ?? 0
+  const lineCount = page.cart.lines.reduce((sum, line) => sum + line.qty, 0)
 
   const headerLabel = useMemo(() => {
-    if (!page?.header) {
+    if (!page.header) {
       return "Connecting to Arbor..."
     }
 
@@ -44,22 +37,14 @@ export default function App() {
     }
 
     return `Signed in as ${page.header.user_name ?? "Unknown"}`
-  }, [page?.header])
-
-  if (!page || !page.cart?.__arbor_store_id__) {
-    return (
-      <main className="shell">
-        <section className="panel loading">Waiting for the first patch envelope…</section>
-      </main>
-    )
-  }
+  }, [page.header])
 
   async function handleAddItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy("add")
 
     try {
-      const reply = await addItem({ sku })
+      const reply = (await addItem({ sku })) as Record<string, never> | { error: string }
       setFeedback("error" in reply ? `Add failed: ${reply.error}` : `Added ${sku} to demo-cart.`)
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Add failed.")
@@ -72,7 +57,7 @@ export default function App() {
     setBusy("checkout")
 
     try {
-      const reply = await checkout({})
+      const reply = (await checkout({})) as { order_id?: string; error?: string }
 
       if (reply.order_id) {
         setFeedback(`Checkout succeeded: ${reply.order_id}`)
@@ -120,7 +105,9 @@ export default function App() {
         <article className="panel">
           <h2>Session</h2>
           <p>{headerLabel}</p>
-          <p className="muted">Cart id: <code>demo-cart</code></p>
+          <p className="muted">
+            Cart id: <code>demo-cart</code>
+          </p>
           <p className="muted">
             Reload the page after adding lines to see the ETS-backed mount reload path.
           </p>
@@ -186,7 +173,11 @@ export default function App() {
             <p className="muted">Subtotal</p>
             <strong>{formatMoney(page.cart.subtotal_cents)}</strong>
           </div>
-          <button type="button" onClick={() => void handleCheckout()} disabled={busy === "checkout" || page.cart.lines.length === 0}>
+          <button
+            type="button"
+            onClick={() => void handleCheckout()}
+            disabled={busy === "checkout" || page.cart.lines.length === 0}
+          >
             {busy === "checkout" ? "Checking out…" : "Checkout"}
           </button>
         </div>

@@ -3,17 +3,17 @@ import { createRoot } from "react-dom/client"
 import { ArborProvider } from "@arbor/react"
 
 import App from "./App"
-import { client } from "./arbor"
+import { connectRoot } from "./arbor"
 import "./App.css"
 
 const root = createRoot(document.getElementById("root")!)
 
 try {
-  await client.connect()
+  const proxy = await connectRoot()
 
   root.render(
     <StrictMode>
-      <ArborProvider client={client}>
+      <ArborProvider proxy={proxy}>
         <App />
       </ArborProvider>
     </StrictMode>

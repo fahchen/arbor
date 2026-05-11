@@ -1,45 +1,30 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { useAsyncResult, useCommand, useStore, useStream } from "@arbor/react"
+import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
 
 import "./generated/arbor"
-import type * as ArborTypes from "./generated/arbor"
 
-const ROOT_STORE_ID = [] as const
+type RootModule = "MyApp.Stores.ChatRoomStore"
 type OnlineUser = { id: string; name: string }
 
 export default function App() {
-  const room = useStore<"MyApp.Stores.ChatRoomStore">(ROOT_STORE_ID)
-  const messages = useStream<"MyApp.Stores.ChatRoomStore", ArborTypes.MyApp.MessageState>(
-    ROOT_STORE_ID,
-    "messages"
-  )
-  // Codegen currently reflects `list(map())` here, so keep the item shape explicit at the hook.
-  const onlineUsers = useAsyncResult<OnlineUser[]>(ROOT_STORE_ID, "online_users")
-  const reload = useCommand<"MyApp.Stores.ChatRoomStore", "reload", Record<string, never>>(
-    ROOT_STORE_ID,
-    "reload"
-  )
-  const refresh = useCommand<"MyApp.Stores.ChatRoomStore", "refresh", Record<string, never>>(
-    ROOT_STORE_ID,
-    "refresh"
-  )
-  const sendMessage = useCommand<"MyApp.Stores.ChatRoomStore", "send_message", { queued: boolean }>(
-    ROOT_STORE_ID,
-    "send_message"
-  )
+  const root = useArborRoot<RootModule>()
+  const room = useArborSnapshot(root)
+
+  const reload = useArborCommand(root, "reload")
+  const refresh = useArborCommand(root, "refresh")
+  const sendMessage = useArborCommand(root, "send_message")
 
   const [body, setBody] = useState("")
   const [feedback, setFeedback] = useState("")
   const [busy, setBusy] = useState<"send" | "reload" | "refresh" | null>(null)
 
-  if (!room) {
-    return (
-      <main className="shell">
-        <section className="panel loading">Waiting for the chat room bootstrap patch…</section>
-      </main>
-    )
-  }
+  const onlineUsers = room.online_users as
+    | { status: "loading"; data: OnlineUser[] | null; error: null }
+    | { status: "ok"; data: OnlineUser[]; error: null }
+    | { status: "failed"; data: OnlineUser[] | null; error: unknown }
+
+  const messages = room.messages as Array<{ id: string; body: string; sender: string }>
 
   async function handleSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -54,7 +39,7 @@ export default function App() {
     setBusy("send")
 
     try {
-      const reply = await sendMessage({ body: nextBody })
+      const reply = (await sendMessage({ body: nextBody })) as { queued: boolean }
       setFeedback(reply.queued ? "Message queued for async delivery." : "Send request returned.")
       setBody("")
     } catch (error) {
@@ -66,7 +51,7 @@ export default function App() {
 
   async function runAction(
     action: "reload" | "refresh",
-    command: (payload: Record<string, never>) => Promise<Record<string, never>>
+    command: (payload: Record<string, never>) => Promise<unknown>
   ) {
     setBusy(action)
 
@@ -99,41 +84,50 @@ export default function App() {
         <article className="panel">
           <div className="section-header">
             <h2>Online users</h2>
-            <span className={`status-pill status-${onlineUsers?.status ?? "loading"}`}>
-              {onlineUsers?.status ?? "loading"}
-            </span>
+            <span className={`status-pill status-${onlineUsers.status}`}>{onlineUsers.status}</span>
           </div>
 
-          {onlineUsers?.status === "ok" ? (
+          {onlineUsers.status === "ok" ? (
             <ul className="users">
-              {onlineUsers.result.map((user) => (
+              {onlineUsers.data.map((user) => (
                 <li key={user.id}>
                   <strong>{user.name}</strong>
                   <span className="muted">{user.id}</span>
                 </li>
               ))}
             </ul>
-          ) : onlineUsers?.status === "loading" || !onlineUsers ? (
+          ) : onlineUsers.status === "loading" ? (
             <p className="muted">Loading online users…</p>
           ) : (
-            <p className="muted">
-              Presence fetch failed.
-            </p>
+            <p className="muted">Presence fetch failed.</p>
           )}
         </article>
 
         <article className="panel">
           <h2>Controls</h2>
           <div className="actions">
-            <button type="button" onClick={() => void runAction("reload", reload)} disabled={busy !== null}>
+            <button
+              type="button"
+              onClick={() => void runAction("reload", reload)}
+              disabled={busy !== null}
+            >
               {busy === "reload" ? "Reloading…" : "Reload stream"}
             </button>
-            <button type="button" className="ghost" onClick={() => void runAction("refresh", refresh)} disabled={busy !== null}>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => void runAction("refresh", refresh)}
+              disabled={busy !== null}
+            >
               {busy === "refresh" ? "Refreshing…" : "Refresh with async"}
             </button>
           </div>
-          <p className="muted">Room id: <code>general</code></p>
-          <p className="muted">Last send status: <strong>{renderSendStatus(room.last_send_status)}</strong></p>
+          <p className="muted">
+            Room id: <code>general</code>
+          </p>
+          <p className="muted">
+            Last send status: <strong>{renderSendStatus(room.last_send_status)}</strong>
+          </p>
         </article>
       </section>
 
@@ -160,13 +154,13 @@ export default function App() {
           <p className="empty">No messages have been materialized yet.</p>
         ) : (
           <ul className="messages">
-            {messages.map((entry) => (
-              <li key={entry.itemKey} className="message">
+            {messages.map((message) => (
+              <li key={message.id} className="message">
                 <header>
-                  <strong>{entry.item.sender}</strong>
-                  <span className="muted">{entry.item.id}</span>
+                  <strong>{message.sender}</strong>
+                  <span className="muted">{message.id}</span>
                 </header>
-                <p>{entry.item.body}</p>
+                <p>{message.body}</p>
               </li>
             ))}
           </ul>
@@ -176,13 +170,17 @@ export default function App() {
   )
 }
 
-function renderSendStatus(status: ArborTypes.MyApp.Stores.ChatRoomStore["last_send_status"]): string {
+function renderSendStatus(status: {
+  type: "idle" | "ok" | "failed"
+  id?: string
+  reason?: string
+}): string {
   switch (status.type) {
     case "idle":
       return "idle"
     case "ok":
-      return `ok (${status.id})`
+      return `ok (${status.id ?? ""})`
     case "failed":
-      return `failed (${status.reason})`
+      return `failed (${status.reason ?? ""})`
   }
 }
