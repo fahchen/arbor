@@ -72,8 +72,9 @@ defmodule Arbor.Codegen.TypeScript.TypeRendererTest do
       assert TypeRenderer.render(quote(do: list(String.t()))) == "string[]"
     end
 
-    test "stream(T) (renders identical to list — server forgets values)" do
-      assert TypeRenderer.render(quote(do: stream(String.t()))) == "string[]"
+    test "stream(T) renders as Arbor.StreamField<T> phantom marker" do
+      assert TypeRenderer.render(quote(do: stream(String.t()))) ==
+               "Arbor.StreamField<string>"
     end
 
     test "list of nested list" do
@@ -120,9 +121,9 @@ defmodule Arbor.Codegen.TypeScript.TypeRendererTest do
       assert TypeRenderer.render(ast) == "Array<string | number>"
     end
 
-    test "stream of union also falls back to Array<...>" do
+    test "stream of union renders as Arbor.StreamField<union>" do
       ast = quote(do: stream(String.t() | integer()))
-      assert TypeRenderer.render(ast) == "Array<string | number>"
+      assert TypeRenderer.render(ast) == "Arbor.StreamField<string | number>"
     end
 
     test "union of literal maps" do
@@ -137,24 +138,28 @@ defmodule Arbor.Codegen.TypeScript.TypeRendererTest do
       assert TypeRenderer.render(ast) == "Arbor.TestSupport.TypespecProbeChild"
     end
 
-    test "Module.state() emits the full Elixir alias path" do
+    test "Module.state() emits Arbor.StoreField<\"...\"> phantom marker" do
       ast = quote(do: Arbor.TestSupport.TypespecProbeChild.state())
-      assert TypeRenderer.render(ast) == "Arbor.TestSupport.TypespecProbeChild"
+
+      assert TypeRenderer.render(ast) ==
+               ~s|Arbor.StoreField<"Arbor.TestSupport.TypespecProbeChild">|
     end
 
-    test "Arbor.AsyncResult.of(T) renders the generic alias" do
+    test "Arbor.AsyncResult.of(T) renders as Arbor.AsyncField<T>" do
       ast = quote(do: Arbor.AsyncResult.of(String.t()))
-      assert TypeRenderer.render(ast) == "AsyncResult<string>"
+      assert TypeRenderer.render(ast) == "Arbor.AsyncField<string>"
     end
 
-    test "AsyncResult.of(stream(T)) renders the inner as T[]" do
+    test "AsyncResult.of(stream(T)) renders as Arbor.AsyncField<Arbor.StreamField<T>>" do
       ast = quote(do: Arbor.AsyncResult.of(stream(String.t())))
-      assert TypeRenderer.render(ast) == "AsyncResult<string[]>"
+      assert TypeRenderer.render(ast) == "Arbor.AsyncField<Arbor.StreamField<string>>"
     end
 
     test "AsyncResult.of with cross-module ref" do
       ast = quote(do: Arbor.AsyncResult.of(Arbor.TestSupport.TypespecProbeChild.t()))
-      assert TypeRenderer.render(ast) == "AsyncResult<Arbor.TestSupport.TypespecProbeChild>"
+
+      assert TypeRenderer.render(ast) ==
+               "Arbor.AsyncField<Arbor.TestSupport.TypespecProbeChild>"
     end
 
     test "non-AsyncResult `.of/1` falls back to unknown" do

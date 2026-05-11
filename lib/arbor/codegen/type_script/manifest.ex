@@ -22,7 +22,7 @@ defmodule Arbor.Codegen.TypeScript.Manifest do
 
   @subdir "arbor-codegen-ts"
 
-  @type entry() :: {module(), %{fields: list(), commands: list()}}
+  @type entry() :: {module(), %{kind: :state | :store, fields: list(), commands: list()}}
 
   @doc false
   @spec __after_compile__(Macro.Env.t(), binary()) :: :ok
@@ -36,15 +36,18 @@ defmodule Arbor.Codegen.TypeScript.Manifest do
   end
 
   @doc """
-  Collects expanded `{fields, commands}` reflection for `env.module` using
-  `env`'s alias scope. The renderer consumes the resulting entry directly —
-  every `{:__aliases__, _, _}` AST node is resolved to its fully-qualified
-  form, so no further heuristic walk is needed at render time.
+  Collects expanded `{kind, fields, commands}` reflection for `env.module`
+  using `env`'s alias scope. The renderer consumes the resulting entry
+  directly — every `{:__aliases__, _, _}` AST node is resolved to its
+  fully-qualified form, so no further heuristic walk is needed at render
+  time.
   """
-  @spec collect(Macro.Env.t()) :: %{module: module(), fields: list(), commands: list()}
+  @spec collect(Macro.Env.t()) ::
+          %{module: module(), kind: :state | :store, fields: list(), commands: list()}
   def collect(%Macro.Env{module: module} = env) do
     %{
       module: module,
+      kind: module_kind(module),
       fields: expand_field_aliases(List.wrap(module.__arbor__(:fields)), env),
       commands: expand_command_aliases(List.wrap(module.__arbor__(:commands)), env)
     }
@@ -56,11 +59,20 @@ defmodule Arbor.Codegen.TypeScript.Manifest do
     data = %{
       module: module,
       source: source_file,
+      kind: module_kind(module),
       fields: List.wrap(module.__arbor__(:fields)),
       commands: List.wrap(module.__arbor__(:commands))
     }
 
     write_state!(module, data, target)
+  end
+
+  defp module_kind(module) do
+    if function_exported?(module, :__arbor_kind__, 0) do
+      module.__arbor_kind__()
+    else
+      :state
+    end
   end
 
   defp write_state!(module, data, target) do
@@ -188,7 +200,8 @@ defmodule Arbor.Codegen.TypeScript.Manifest do
          {:ok, bin} <- File.read(state_path),
          %{module: module} = data <- safe_term(bin),
          true <- Code.ensure_loaded?(module) do
-      [{module, Map.take(data, [:fields, :commands])}]
+      kind = Map.get(data, :kind) || module_kind(module)
+      [{module, %{kind: kind, fields: data.fields, commands: data.commands}}]
     else
       _failure -> []
     end

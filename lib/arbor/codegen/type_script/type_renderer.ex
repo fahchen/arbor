@@ -22,13 +22,12 @@ defmodule Arbor.Codegen.TypeScript.TypeRenderer do
   | `map()`                         | `Record<string, unknown>`               |
   | `%{key: T}`                     | `{ key: T }` (literal-keyed map)        |
   | `list(T)` / `[T]`               | `T[]`                                   |
-  | `stream(T)`                     | `T[]` (server forgets values)           |
+  | `stream(T)`                     | `Arbor.StreamField<T>`                  |
   | `T \\| U`                       | `T \| U`                                |
-  | `Module.t()` / `Module.state()` | full Elixir alias path                  |
-  | `Arbor.AsyncResult.of(T)`       | `AsyncResult<T>`                        |
+  | `Module.t()`                    | full Elixir alias path                  |
+  | `Module.state()`                | `Arbor.StoreField<"Full.Module">`       |
+  | `Arbor.AsyncResult.of(T)`       | `Arbor.AsyncField<T>`                   |
   """
-
-  @async_result_alias "AsyncResult"
 
   @doc """
   Renders a single Arbor field-type AST node as TypeScript.
@@ -40,7 +39,7 @@ defmodule Arbor.Codegen.TypeScript.TypeRenderer do
       iex> Arbor.Codegen.TypeScript.TypeRenderer.render(quote(do: list(String.t())))
       "string[]"
       iex> Arbor.Codegen.TypeScript.TypeRenderer.render(quote(do: stream(String.t())))
-      "string[]"
+      "Arbor.StreamField<string>"
       iex> Arbor.Codegen.TypeScript.TypeRenderer.render(quote(do: String.t() | nil))
       "string | null"
   """
@@ -52,7 +51,7 @@ defmodule Arbor.Codegen.TypeScript.TypeRenderer do
   end
 
   defp do_render({:list, _meta, [inner]}), do: wrap_array(do_render(inner))
-  defp do_render({:stream, _meta, [inner]}), do: wrap_array(do_render(inner))
+  defp do_render({:stream, _meta, [inner]}), do: "Arbor.StreamField<#{do_render(inner)}>"
 
   defp do_render({:map, _meta, []}), do: "Record<string, unknown>"
 
@@ -70,15 +69,20 @@ defmodule Arbor.Codegen.TypeScript.TypeRenderer do
   # `Arbor.AsyncResult.of(T)` — resolves the inner T recursively.
   defp do_render({{:., _dot, [aliased, :of]}, _call, [inner]}) do
     if async_result_alias?(aliased) do
-      "#{@async_result_alias}<#{do_render(inner)}>"
+      "Arbor.AsyncField<#{do_render(inner)}>"
     else
       "unknown"
     end
   end
 
-  # `Module.t()` / `Module.state()` — emit the full Elixir alias path. TS
-  # namespace lookup resolves it from inside the call site's namespace.
-  defp do_render({{:., _dot, [aliased, kind]}, _call, []}) when kind in [:t, :state] do
+  # `Module.state()` — mounted child store marker.
+  defp do_render({{:., _dot, [aliased, :state]}, _call, []}) do
+    "Arbor.StoreField<#{inspect(full_alias_path(aliased))}>"
+  end
+
+  # `Module.t()` — bare alias path. TS namespace lookup resolves it from the
+  # call site's namespace.
+  defp do_render({{:., _dot, [aliased, :t]}, _call, []}) do
     full_alias_path(aliased)
   end
 
