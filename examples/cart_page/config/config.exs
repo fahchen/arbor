@@ -5,6 +5,7 @@ config :phoenix, :json_library, Jason
 config :arbor, :ts_codegen_output_path, "ui/src/generated/arbor.d.ts"
 
 config :cart_page, MyAppWeb.Endpoint,
+  adapter: Bandit.PhoenixAdapter,
   url: [host: "localhost"],
   pubsub_server: MyApp.PubSub,
   secret_key_base: "cart_page_secret_key_base_for_example_only_0123456789abcdef",
