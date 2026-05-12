@@ -143,7 +143,7 @@ export default function App() {
         <p>
           Cart id <code>demo-cart</code>
         </p>
-        <p>Reload after adding lines to exercise the ETS-backed mount reload path.</p>
+        <p>Open a second tab to watch the ETS-backed cart synchronize live.</p>
       </section>
 
       <div className="workspace">

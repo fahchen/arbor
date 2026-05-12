@@ -2,8 +2,8 @@
 
 A command-driven shopping cart example built as a small Arbor store tree. It
 demonstrates child store composition, command routing to a nested cart store,
-lifecycle hooks for auth/audit/persistence, and reconnect recovery through the
-application persistence layer.
+lifecycle hooks for auth/audit, shared cart storage, cross-tab synchronization,
+and reconnect recovery through the application persistence layer.
 
 ## Store tree
 

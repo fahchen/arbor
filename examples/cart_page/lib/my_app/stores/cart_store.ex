@@ -8,12 +8,12 @@ defmodule MyApp.Stores.CartStore do
     * `:authz` on `:before_command` — only `:checkout` requires a signed-in
       user; halt-with-reply emits `[:arbor, :auth, :deny]` (BDR-0008)
     * `:audit` on `:after_command` — writes a structured log entry per command
-    * `:persist` on `:after_command` — saves the cart snapshot to ETS via
-      `MyApp.Persistence` (the `docs/persistence-pattern.md` recipe)
+    * storage writes through `MyApp.Persistence` — every mutation uses the
+      latest shared snapshot and broadcasts it to other tabs
 
-  Mount loads any previously-persisted lines for the supplied `cart_id`,
-  modeling reconnect = recovery (BDR-0015): a fresh page server reads from
-  the application's storage layer rather than relying on in-memory carry.
+  The root store loads and subscribes to the shared cart snapshot, then passes
+  it through `:cart_lines`. That models reconnect = recovery (BDR-0015) while
+  keeping already-open tabs synchronized.
   """
 
   use Arbor.Store
@@ -26,6 +26,19 @@ defmodule MyApp.Stores.CartStore do
   alias MyApp.Stores.CartLineStore
 
   attr(:cart_id, String.t(), required: true)
+
+  attr(
+    :cart_lines,
+    list(%{
+      id: String.t(),
+      sku: String.t(),
+      name: String.t(),
+      price_cents: integer(),
+      qty: integer()
+    }),
+    required: true
+  )
+
   attr(:current_user, %{id: String.t(), name: String.t()} | nil, default: nil)
 
   state do
@@ -53,15 +66,23 @@ defmodule MyApp.Stores.CartStore do
 
   @impl Arbor.Store
   def mount(socket) do
-    lines = Persistence.load_cart(socket.assigns.cart_id)
-
     socket =
       socket
-      |> Arbor.Socket.assign(:lines, lines)
+      |> Arbor.Socket.assign(:lines, socket.assigns.cart_lines)
       |> Arbor.Socket.assign(:status, %{type: :open})
       |> Arbor.Lifecycle.attach_hook(:authz, :before_command, &authz/3)
       |> Arbor.Lifecycle.attach_hook(:audit, :after_command, &audit/3)
-      |> Arbor.Lifecycle.attach_hook(:persist, :after_command, &persist/3)
+
+    {:ok, socket}
+  end
+
+  @impl Arbor.Store
+  def update(params, socket) do
+    socket =
+      socket
+      |> Arbor.Socket.assign(params)
+      |> Arbor.Socket.assign(:lines, params.cart_lines)
+      |> reopen_if_lines_present(params.cart_lines)
 
     {:ok, socket}
   end
@@ -83,8 +104,17 @@ defmodule MyApp.Stores.CartStore do
   def handle_command(:add_item, %{"sku" => sku}, socket) do
     case Catalog.fetch(sku) do
       {:ok, product} ->
-        next_lines = upsert_line(socket.assigns.lines, product)
-        {:noreply, Arbor.Socket.assign(socket, :lines, next_lines)}
+        next_lines =
+          Persistence.update_cart(socket.assigns.cart_id, fn lines ->
+            upsert_line(lines, product)
+          end)
+
+        socket =
+          socket
+          |> Arbor.Socket.assign(:lines, next_lines)
+          |> Arbor.Socket.assign(:status, %{type: :open})
+
+        {:noreply, socket}
 
       :error ->
         {:reply, %{"error" => "unknown_sku"}, socket}
@@ -93,13 +123,19 @@ defmodule MyApp.Stores.CartStore do
 
   @impl Arbor.Store
   def handle_command(:remove_line, %{"id" => id}, socket) do
-    next_lines = Enum.reject(socket.assigns.lines, &(&1.id == id))
+    next_lines =
+      Persistence.update_cart(socket.assigns.cart_id, fn lines ->
+        Enum.reject(lines, &(&1.id == id))
+      end)
+
     {:noreply, Arbor.Socket.assign(socket, :lines, next_lines)}
   end
 
   @impl Arbor.Store
   def handle_command(:checkout, _payload, socket) do
     order_id = "order-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    :ok = Persistence.save_cart(socket.assigns.cart_id, [])
 
     socket =
       socket
@@ -132,16 +168,13 @@ defmodule MyApp.Stores.CartStore do
     {:cont, socket}
   end
 
-  # Save only when `:lines` actually changed during this command cycle.
-  # `Arbor.Socket.changed?/2` checks the runtime's mutation-tracking map
-  # (BDR-0013). Skipping unchanged commands keeps the persistence layer
-  # quiet for read-only handlers.
-  defp persist(_command, _payload, socket) do
-    if Arbor.Socket.changed?(socket, :lines) do
-      Persistence.save_cart(socket.assigns.cart_id, socket.assigns.lines)
-    end
+  defp reopen_if_lines_present(socket, []), do: socket
 
-    {:cont, socket}
+  defp reopen_if_lines_present(socket, _lines) do
+    case socket.assigns.status do
+      %{type: :checked_out} -> Arbor.Socket.assign(socket, :status, %{type: :open})
+      _status -> socket
+    end
   end
 
   # ---------------------------------------------------------------------------

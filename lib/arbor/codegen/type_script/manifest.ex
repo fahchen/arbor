@@ -62,6 +62,8 @@ defmodule Arbor.Codegen.TypeScript.Manifest do
   @doc false
   @spec stamp(module(), Path.t(), Path.t()) :: :ok
   def stamp(module, source_file, target) do
+    Code.ensure_loaded?(module)
+
     data = %{
       module: module,
       source: source_file,
