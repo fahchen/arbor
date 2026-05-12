@@ -3,7 +3,7 @@ defmodule MyApp.Stores.HeaderStore do
 
   use Arbor.Store
 
-  attr(:current_user, map() | nil, default: nil)
+  attr(:current_user, %{id: String.t(), name: String.t()} | nil, default: nil)
 
   state do
     field(:signed_in, boolean())
@@ -17,7 +17,7 @@ defmodule MyApp.Stores.HeaderStore do
     socket =
       socket
       |> Arbor.Socket.assign(:signed_in, MyApp.Auth.signed_in?(user))
-      |> Arbor.Socket.assign(:user_name, user && Map.get(user, :name))
+      |> Arbor.Socket.assign(:user_name, user_name(user))
 
     {:ok, socket}
   end
@@ -29,7 +29,7 @@ defmodule MyApp.Stores.HeaderStore do
     socket =
       socket
       |> Arbor.Socket.assign(:signed_in, MyApp.Auth.signed_in?(user))
-      |> Arbor.Socket.assign(:user_name, user && Map.get(user, :name))
+      |> Arbor.Socket.assign(:user_name, user_name(user))
 
     {:ok, socket}
   end
@@ -41,4 +41,8 @@ defmodule MyApp.Stores.HeaderStore do
 
   @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
+
+  defp user_name(nil), do: nil
+  defp user_name(%{name: name}) when is_binary(name), do: name
+  defp user_name(_user), do: nil
 end

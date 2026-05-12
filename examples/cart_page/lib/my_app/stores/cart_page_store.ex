@@ -10,7 +10,7 @@ defmodule MyApp.Stores.CartPageStore do
   alias MyApp.Stores.HeaderStore
 
   attr(:cart_id, String.t(), required: true)
-  attr(:current_user, map() | nil, default: nil)
+  attr(:current_user, %{id: String.t(), name: String.t()} | nil, default: nil)
 
   state do
     field(:header, HeaderStore.state())
