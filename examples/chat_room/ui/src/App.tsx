@@ -20,6 +20,7 @@ export default function App() {
   const currentUser = room.current_user
   const onlineUsers = room.online_users
   const messages = room.messages
+  const onlineCount = onlineUsers.status === "ok" ? onlineUsers.data.length : 0
 
   useEffect(() => {
     setNameDraft(currentUser.name)
@@ -71,101 +72,127 @@ export default function App() {
   }
 
   return (
-    <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">Arbor Example</p>
-        <div className="hero-row">
+    <main className="chat-shell">
+      <aside className="sidebar" aria-label="Chat room details">
+        <div className="room-card">
+          <div className="room-mark">#</div>
           <div>
-            <h1>Chat room</h1>
-            <p className="hero-copy">
-              Stream updates, async assigns, and async command replies over the same channel.
-            </p>
+            <p className="eyebrow">Room</p>
+            <h1>general</h1>
           </div>
-          <div className="badge">{messages.length} recent messages</div>
         </div>
-      </section>
 
-      <section className="grid">
-        <article className="panel">
-          <div className="section-header">
-            <h2>Online users</h2>
-            <span className={`status-pill status-${onlineUsers.status}`}>{onlineUsers.status}</span>
+        <section className="identity-card" aria-label="Your profile">
+          <div className="avatar self-avatar">{initials(currentUser.name)}</div>
+          <div className="identity-copy">
+            <span>Posting as</span>
+            <strong>{currentUser.name}</strong>
+          </div>
+        </section>
+
+        <form className="name-form" onSubmit={handleSetName}>
+          <label className="sr-only" htmlFor="display-name">
+            Display name
+          </label>
+          <input
+            id="display-name"
+            value={nameDraft}
+            onChange={(event) => setNameDraft(event.target.value)}
+            placeholder="Display name"
+          />
+          <button type="submit" disabled={busy === "name"}>
+            {busy === "name" ? "Saving" : "Rename"}
+          </button>
+        </form>
+
+        <section className="presence-panel" aria-label="Online users">
+          <div className="section-heading">
+            <h2>Online</h2>
+            <span className={`status-dot status-${onlineUsers.status}`} />
           </div>
 
           {onlineUsers.status === "ok" ? (
             <ul className="users">
               {onlineUsers.data.map((user) => (
                 <li key={user.id}>
-                  <strong>{user.name}</strong>
-                  <span className="muted">{user.id}</span>
+                  <span className="avatar">{initials(user.name)}</span>
+                  <span className="user-meta">
+                    <strong>{user.name}</strong>
+                    <small>{user.id}</small>
+                  </span>
                 </li>
               ))}
             </ul>
           ) : onlineUsers.status === "loading" ? (
-            <p className="muted">Loading online users…</p>
+            <p className="side-note">Loading presence</p>
           ) : (
-            <p className="muted">Presence fetch failed.</p>
+            <p className="side-note">Presence unavailable</p>
           )}
-        </article>
+        </section>
+      </aside>
 
-        <article className="panel">
-          <h2>Your profile</h2>
-          <form className="composer" onSubmit={handleSetName}>
+      <section className="chatbox" aria-label="Chat messages">
+        <header className="chat-header">
+          <div>
+            <p className="eyebrow">Live chat</p>
+            <h2>Chat room</h2>
+          </div>
+          <div className="chat-stats" aria-label="Room activity">
+            <span>{onlineCount} online</span>
+            <span>{messages.length} messages</span>
+          </div>
+        </header>
+
+        <div className="messages-viewport">
+          {messages.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-mark">+</div>
+              <p>No messages yet.</p>
+            </div>
+          ) : (
+            <ol className="messages">
+              {messages.map((message) => {
+                const fromSelf = message.sender === currentUser.name
+
+                return (
+                  <li
+                    key={message.id}
+                    className={fromSelf ? "message message-self" : "message"}
+                  >
+                    <span className="avatar">{initials(message.sender)}</span>
+                    <article className="bubble">
+                      <header>
+                        <strong>{message.sender}</strong>
+                        <small>{shortMessageId(message.id)}</small>
+                      </header>
+                      <p>{message.body}</p>
+                    </article>
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+        </div>
+
+        <footer className="composer-dock">
+          <div className="send-state" aria-live="polite">
+            {feedback || renderSendStatus(room.last_send_status)}
+          </div>
+          <form className="message-form" onSubmit={handleSend}>
+            <label className="sr-only" htmlFor="message-body">
+              Message
+            </label>
             <input
-              value={nameDraft}
-              onChange={(event) => setNameDraft(event.target.value)}
-              placeholder="Display name"
+              id="message-body"
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder="Write a message"
             />
-            <button type="submit" disabled={busy === "name"}>
-              {busy === "name" ? "Saving…" : "Set name"}
+            <button type="submit" disabled={busy === "send"}>
+              {busy === "send" ? "Sending" : "Send"}
             </button>
           </form>
-          <p className="muted">
-            Room id: <code>general</code>
-          </p>
-          <p className="muted">
-            Signed in as <strong>{currentUser.name}</strong>
-          </p>
-          <p className="muted">
-            Last send status: <strong>{renderSendStatus(room.last_send_status)}</strong>
-          </p>
-        </article>
-      </section>
-
-      <section className="panel">
-        <h2>Send message</h2>
-        <form className="composer" onSubmit={handleSend}>
-          <input
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            placeholder="Type a message"
-          />
-          <button type="submit" disabled={busy === "send"}>
-            {busy === "send" ? "Sending…" : "Send"}
-          </button>
-        </form>
-
-        {feedback ? <p className="notice">{feedback}</p> : null}
-      </section>
-
-      <section className="panel">
-        <h2>Message stream</h2>
-
-        {messages.length === 0 ? (
-          <p className="empty">No messages have been materialized yet.</p>
-        ) : (
-          <ul className="messages">
-            {messages.map((message) => (
-              <li key={message.id} className="message">
-                <header>
-                  <strong>{message.sender}</strong>
-                  <span className="muted">{message.id}</span>
-                </header>
-                <p>{message.body}</p>
-              </li>
-            ))}
-          </ul>
-        )}
+        </footer>
       </section>
     </main>
   )
@@ -184,4 +211,19 @@ function renderSendStatus(status: {
     case "failed":
       return `failed (${status.reason ?? ""})`
   }
+}
+
+function initials(name: string): string {
+  const letters = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("")
+
+  return letters || "?"
+}
+
+function shortMessageId(id: string): string {
+  return id.length > 10 ? id.slice(-10) : id
 }
