@@ -5,7 +5,7 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     the channel module's allowlist.
 
     The public client API connects to a root by `{module, id}` (see
-    `docs/client-contract-design.md`). `topic` is an internal transport detail:
+    `docs/client-contract.md`). `topic` is an internal transport detail:
     the client builds an opaque topic of the form `"arbor:<opaque_ref>"` and
     carries the requested `module`, `id`, and optional `params` in the channel
     join payload.
