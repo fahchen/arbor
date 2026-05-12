@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import type { FormEvent } from "react"
+import type { SubmitEvent } from "react"
 import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
 
 type Registry = Arbor.Stores
@@ -38,7 +38,7 @@ export default function App() {
     return `Signed in as ${page.header.user_name ?? "Unknown"}`
   }, [page.header])
 
-  async function handleAddItem(event: FormEvent<HTMLFormElement>) {
+  async function handleAddItem(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy("add")
 

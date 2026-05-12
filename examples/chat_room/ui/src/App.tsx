@@ -1,5 +1,5 @@
 import { useState } from "react"
-import type { FormEvent } from "react"
+import type { SubmitEvent } from "react"
 import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
 
 type Registry = Arbor.Stores
@@ -20,7 +20,7 @@ export default function App() {
   const onlineUsers = room.online_users
   const messages = room.messages
 
-  async function handleSend(event: FormEvent<HTMLFormElement>) {
+  async function handleSend(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
 
     const nextBody = body.trim()
