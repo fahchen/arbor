@@ -51,6 +51,6 @@ export class FakeStoreProxy<R, M extends StoreModule<R>> {
   }
 
   asProxy(): StoreProxy<R, M> {
-    return this as unknown as StoreProxy<R, M>
+    return this as StoreProxy<R, M>
   }
 }

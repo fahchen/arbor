@@ -152,8 +152,8 @@ type TestStores = {
 
 type Equal<Left, Right> =
   (<T>() => T extends Left ? 1 : 2) extends (<T>() => T extends Right ? 1 : 2)
-    ? true
-    : false
+  ? true
+  : false
 
 type Assert<T extends true> = T
 
@@ -202,7 +202,7 @@ describe("connectStore", () => {
     const proxy = await proxyPromise
     expect(proxy.title).toBe("Inbox")
     expect(proxy.counter).toBe(1)
-    expect((proxy as unknown as { __arbor_store_id__: string[] }).__arbor_store_id__).toEqual([])
+    expect(proxy.__arbor_store_id__).toEqual([])
   })
 
   test("nested store field returns a stable child proxy", async () => {

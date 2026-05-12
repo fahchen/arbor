@@ -19,6 +19,6 @@ export function connectRoot() {
   return connectStore<Arbor.Stores>(socket, {
     module: ROOT_MODULE,
     id: ROOT_ID,
-    params: DEFAULT_JOIN_PARAMS as unknown as Record<string, unknown>
+    params: DEFAULT_JOIN_PARAMS
   })
 }

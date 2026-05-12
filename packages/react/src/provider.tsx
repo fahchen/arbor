@@ -30,5 +30,5 @@ export function useArborRoot<R, M extends StoreModule<R>>(): StoreProxy<R, M> {
     throw new Error("useArborRoot must be used inside <ArborProvider>")
   }
 
-  return store as unknown as StoreProxy<R, M>
+  return store as StoreProxy<R, M>
 }
