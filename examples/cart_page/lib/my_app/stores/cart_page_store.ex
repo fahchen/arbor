@@ -35,8 +35,30 @@ defmodule MyApp.Stores.CartPageStore do
   end
 
   @impl Arbor.Store
-  def mount(socket), do: {:ok, socket}
+  def mount(socket) do
+    socket =
+      Arbor.Socket.assign(
+        socket,
+        :current_user,
+        normalize_current_user(socket.assigns.current_user)
+      )
+
+    {:ok, socket}
+  end
 
   @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
+
+  defp normalize_current_user(nil), do: nil
+
+  defp normalize_current_user(%{id: id, name: name}) when is_binary(id) and is_binary(name) do
+    %{id: id, name: name}
+  end
+
+  defp normalize_current_user(%{"id" => id, "name" => name})
+       when is_binary(id) and is_binary(name) do
+    %{id: id, name: name}
+  end
+
+  defp normalize_current_user(_current_user), do: nil
 end
