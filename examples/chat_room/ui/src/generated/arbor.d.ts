@@ -39,17 +39,14 @@ declare namespace Arbor {
       "MyApp.Stores.ChatRoomStore",
       {
         messages: Arbor.StreamField<MyApp.MessageState>
+        current_user: MyApp.OnlineUser
         online_users: Arbor.AsyncField<MyApp.OnlineUser[]>
         last_send_status: { type: "idle" } | { type: "ok"; id: string } | { type: "failed"; reason: string }
       },
       {
-        reload: {
-          payload: {}
-          reply: unknown
-        }
-        refresh: {
-          payload: {}
-          reply: unknown
+        set_name: {
+          payload: { name: string }
+          reply: { ok: boolean; name: string }
         }
         send_message: {
           payload: { body: string }

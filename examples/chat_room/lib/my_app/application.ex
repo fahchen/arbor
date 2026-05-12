@@ -7,6 +7,8 @@ defmodule MyApp.Application do
   def start(_type, _args) do
     children = [
       {Phoenix.PubSub, name: MyApp.PubSub},
+      MyApp.Chat,
+      MyApp.Presence,
       MyAppWeb.Endpoint
     ]
 

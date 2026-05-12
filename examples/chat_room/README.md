@@ -1,8 +1,10 @@
 # chat_room
 
 A real-time chat room example built as a single Arbor store. It demonstrates
-streamed messages, async assigns for online users, PubSub delivery, and async
-command handling over the Phoenix Channel transport.
+streamed messages, Agent-backed online users, PubSub delivery, and async
+command handling over the Phoenix Channel transport. Messages and presence are
+kept in application-owned Elixir agents; each room stores and streams only the
+latest 100 messages.
 
 ## Store tree
 
@@ -11,6 +13,7 @@ MyApp.Stores.ChatRoomStore (root)
   attrs: room_id
   state:
     messages          stream of MyApp.MessageState
+    current_user      MyApp.OnlineUser
     online_users      AsyncResult<list(MyApp.OnlineUser)>
     last_send_status  idle | ok | failed
 ```
@@ -19,8 +22,7 @@ MyApp.Stores.ChatRoomStore (root)
 
 | Command | Payload | Reply | Behavior |
 | :-- | :-- | :-- | :-- |
-| `reload` | `{}` | none | Silently resets and refills the message stream. |
-| `refresh` | `{}` | none | Refills the message stream through `stream_async/3`. |
+| `set_name` | `{ name: string }` | `{ ok: boolean, name: string }` | Updates the current user's display name and broadcasts the room's online-user list. |
 | `send_message` | `{ body: string }` | `{ queued: boolean }` | Queues message delivery and updates `last_send_status` when the async task completes. |
 
 ## Start the example

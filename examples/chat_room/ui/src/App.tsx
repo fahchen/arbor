@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import type { SubmitEvent } from "react"
 import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
 
@@ -9,16 +9,43 @@ export default function App() {
   const root = useArborRoot<Registry, RootModule>()
   const room = useArborSnapshot(root)
 
-  const reload = useArborCommand(root, "reload")
-  const refresh = useArborCommand(root, "refresh")
+  const setName = useArborCommand(root, "set_name")
   const sendMessage = useArborCommand(root, "send_message")
 
+  const [nameDraft, setNameDraft] = useState("")
   const [body, setBody] = useState("")
   const [feedback, setFeedback] = useState("")
-  const [busy, setBusy] = useState<"send" | "reload" | "refresh" | null>(null)
+  const [busy, setBusy] = useState<"name" | "send" | null>(null)
 
+  const currentUser = room.current_user
   const onlineUsers = room.online_users
   const messages = room.messages
+
+  useEffect(() => {
+    setNameDraft(currentUser.name)
+  }, [currentUser.name])
+
+  async function handleSetName(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const nextName = nameDraft.trim()
+
+    if (!nextName) {
+      setFeedback("Name cannot be empty.")
+      return
+    }
+
+    setBusy("name")
+
+    try {
+      const reply = await setName({ name: nextName })
+      setFeedback(`Name updated to ${reply.name}.`)
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Name update failed.")
+    } finally {
+      setBusy(null)
+    }
+  }
 
   async function handleSend(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -43,22 +70,6 @@ export default function App() {
     }
   }
 
-  async function runAction(
-    action: "reload" | "refresh",
-    command: (payload: Record<string, never>) => Promise<unknown>
-  ) {
-    setBusy(action)
-
-    try {
-      await command({})
-      setFeedback(action === "reload" ? "Silent stream reload sent." : "Refresh command sent.")
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : `${action} failed.`)
-    } finally {
-      setBusy(null)
-    }
-  }
-
   return (
     <main className="shell">
       <section className="hero">
@@ -70,7 +81,7 @@ export default function App() {
               Stream updates, async assigns, and async command replies over the same channel.
             </p>
           </div>
-          <div className="badge">{messages.length} streamed messages</div>
+          <div className="badge">{messages.length} recent messages</div>
         </div>
       </section>
 
@@ -98,26 +109,22 @@ export default function App() {
         </article>
 
         <article className="panel">
-          <h2>Controls</h2>
-          <div className="actions">
-            <button
-              type="button"
-              onClick={() => void runAction("reload", reload)}
-              disabled={busy !== null}
-            >
-              {busy === "reload" ? "Reloading…" : "Reload stream"}
+          <h2>Your profile</h2>
+          <form className="composer" onSubmit={handleSetName}>
+            <input
+              value={nameDraft}
+              onChange={(event) => setNameDraft(event.target.value)}
+              placeholder="Display name"
+            />
+            <button type="submit" disabled={busy === "name"}>
+              {busy === "name" ? "Saving…" : "Set name"}
             </button>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => void runAction("refresh", refresh)}
-              disabled={busy !== null}
-            >
-              {busy === "refresh" ? "Refreshing…" : "Refresh with async"}
-            </button>
-          </div>
+          </form>
           <p className="muted">
             Room id: <code>general</code>
+          </p>
+          <p className="muted">
+            Signed in as <strong>{currentUser.name}</strong>
           </p>
           <p className="muted">
             Last send status: <strong>{renderSendStatus(room.last_send_status)}</strong>
