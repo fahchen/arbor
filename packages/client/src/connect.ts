@@ -1,12 +1,11 @@
-import type { Socket } from "phoenix"
-
 import { getRootProxy } from "./proxy"
 import {
+  connectionKey,
   disconnectRootConnection,
   getSharedRuntime,
-  openRootConnection,
-  connectionKey
+  openRootConnection
 } from "./runtime"
+import type { SocketLike } from "./runtime"
 import type { StoreModule, StoreProxy } from "./types"
 
 export interface ConnectStoreOptions<M extends StoreModule> {
@@ -16,7 +15,7 @@ export interface ConnectStoreOptions<M extends StoreModule> {
 }
 
 export async function connectStore<M extends StoreModule>(
-  socket: Socket,
+  socket: SocketLike,
   options: ConnectStoreOptions<M>
 ): Promise<StoreProxy<M>> {
   const { connection, ready } = openRootConnection(socket, {
@@ -31,7 +30,7 @@ export async function connectStore<M extends StoreModule>(
 }
 
 export function disconnectStore<M extends StoreModule>(
-  socket: Socket,
+  socket: SocketLike,
   options: { module: M; id: string }
 ): void {
   const runtime = getSharedRuntime(socket)

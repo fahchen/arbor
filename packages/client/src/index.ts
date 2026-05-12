@@ -1,5 +1,6 @@
 export { connectStore, disconnectStore } from "./connect"
 export type { ConnectStoreOptions } from "./connect"
+export type { ChannelLike, PushLike, SocketLike } from "./runtime"
 
 export { applyPatch, parsePointer } from "./patch"
 export { applyStreamOps, getStream, pruneStreams } from "./streams"

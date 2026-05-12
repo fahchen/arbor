@@ -169,7 +169,7 @@ describe("connectStore", () => {
     const socket = new MockSocket()
     let resolved = false
 
-    const proxyPromise = connectStore(socket as unknown as never, {
+    const proxyPromise = connectStore(socket, {
       module: "Test.Store",
       id: "root"
     })
@@ -200,7 +200,7 @@ describe("connectStore", () => {
   test("nested store field returns a stable child proxy", async () => {
     const { connectStore } = await import("../src/connect")
     const socket = new MockSocket()
-    const proxyPromise = connectStore(socket as unknown as never, {
+    const proxyPromise = connectStore(socket, {
       module: "Test.Store",
       id: "root"
     })
@@ -218,7 +218,7 @@ describe("connectStore", () => {
   test("dispatchCommand sends a command and resolves with the reply", async () => {
     const { connectStore } = await import("../src/connect")
     const socket = new MockSocket()
-    const proxyPromise = connectStore(socket as unknown as never, {
+    const proxyPromise = connectStore(socket, {
       module: "Test.Store",
       id: "root"
     })
@@ -245,7 +245,7 @@ describe("connectStore", () => {
   test("subscribe fires when the store node mutates", async () => {
     const { connectStore } = await import("../src/connect")
     const socket = new MockSocket()
-    const proxyPromise = connectStore(socket as unknown as never, {
+    const proxyPromise = connectStore(socket, {
       module: "Test.Store",
       id: "root"
     })
@@ -270,7 +270,7 @@ describe("connectStore", () => {
   test("snapshot returns a plain object tree", async () => {
     const { connectStore } = await import("../src/connect")
     const socket = new MockSocket()
-    const proxyPromise = connectStore(socket as unknown as never, {
+    const proxyPromise = connectStore(socket, {
       module: "Test.Store",
       id: "root"
     })

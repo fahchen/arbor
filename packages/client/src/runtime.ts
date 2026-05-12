@@ -1,5 +1,3 @@
-import type { Socket } from "phoenix"
-
 import { applyPatch } from "./patch"
 import {
   applyStreamOps,
@@ -15,10 +13,24 @@ import type {
 } from "./types"
 import { STORE_ID_KEY, storeIdKey } from "./types"
 
-type ChannelLike = ReturnType<Socket["channel"]>
 type PushStatus = "ok" | "error" | "timeout"
-type PushLike = {
+
+export interface PushLike {
   receive(status: PushStatus, callback: (payload: unknown) => void): PushLike
+}
+
+export interface ChannelLike {
+  on(event: string, callback: (payload: unknown) => void): unknown
+  onClose(callback: (reason: unknown) => void): unknown
+  onError(callback: (reason: unknown) => void): unknown
+  join(): PushLike
+  push(event: string, payload: unknown): PushLike
+  leave(): unknown
+}
+
+export interface SocketLike {
+  connect(): unknown
+  channel(topic: string, payload?: object): ChannelLike
 }
 
 type PendingConnect = {
@@ -54,13 +66,13 @@ export interface RootConnection {
 }
 
 export interface SharedRuntime {
-  readonly socket: Socket
+  readonly socket: SocketLike
   readonly connections: Map<string, RootConnection>
 }
 
-const RUNTIMES: WeakMap<Socket, SharedRuntime> = new WeakMap()
+const RUNTIMES: WeakMap<SocketLike, SharedRuntime> = new WeakMap()
 
-export function getSharedRuntime(socket: Socket): SharedRuntime {
+export function getSharedRuntime(socket: SocketLike): SharedRuntime {
   const existing = RUNTIMES.get(socket)
 
   if (existing) {
@@ -87,7 +99,7 @@ export interface OpenRootOptions {
 }
 
 export function openRootConnection(
-  socket: Socket,
+  socket: SocketLike,
   options: OpenRootOptions
 ): { connection: RootConnection; ready: Promise<void> } {
   const runtime = getSharedRuntime(socket)
@@ -125,7 +137,7 @@ export function openRootConnection(
 }
 
 export function disconnectRootConnection(
-  socket: Socket,
+  socket: SocketLike,
   connection: RootConnection
 ): void {
   connection.pendingConnect?.reject(new Error("Disconnected"))
@@ -224,7 +236,7 @@ function ensureConnected(connection: RootConnection): Promise<void> {
 }
 
 function connectFreshChannel(
-  socket: Socket,
+  socket: SocketLike,
   connection: RootConnection,
   joinParams: Record<string, unknown>
 ): Promise<void> {
@@ -240,7 +252,7 @@ function connectFreshChannel(
 }
 
 async function doConnect(
-  socket: Socket,
+  socket: SocketLike,
   connection: RootConnection,
   joinParams: Record<string, unknown>
 ): Promise<void> {
@@ -260,8 +272,8 @@ async function doConnect(
   connection.channel = channel
   connection.suppressDisconnectEvent = false
 
-  channel.on("patch", (payload: PatchEnvelope) => {
-    handlePatch(socket, connection, payload, generation, joinParams)
+  channel.on("patch", (payload: unknown) => {
+    handlePatch(socket, connection, payload as PatchEnvelope, generation, joinParams)
   })
 
   channel.onClose((reason: unknown) => {
@@ -301,7 +313,7 @@ async function doConnect(
 }
 
 function handlePatch(
-  socket: Socket,
+  socket: SocketLike,
   connection: RootConnection,
   envelope: PatchEnvelope,
   generation: number,
@@ -399,7 +411,7 @@ function notifySubscribers(
 }
 
 async function recoverFromVersionMismatch(
-  socket: Socket,
+  socket: SocketLike,
   connection: RootConnection,
   joinParams: Record<string, unknown>
 ): Promise<void> {

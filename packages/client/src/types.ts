@@ -1,54 +1,35 @@
-// Phantom marker shapes mirror the type-only codegen output in
-// `priv/codegen/ts/arbor.ts`. Consumers that import this package without
-// generating the bundle still need these types to exist so TypeScript can
-// resolve the projection helpers below. The generated bundle augments the
-// global `Arbor` namespace with the `Arbor.Stores` registry; an empty
-// fallback is provided below so the package compiles in isolation.
+// The generated codegen bundle (`priv/codegen/ts/arbor.ts`) is the canonical
+// declaration site for the `Arbor.*` global namespace — it ships the phantom
+// marker types (`StoreId`, `AsyncResult`, `StoreDef`, `StoreField`,
+// `StreamField`, `AsyncField`) plus the `Stores` registry entries.
+//
+// This package only seeds an empty `Arbor.Stores` registry so the client
+// compiles in isolation; the registry is augmented (via interface merging)
+// once a consumer imports the generated bundle. The projection helpers below
+// match marker shapes structurally on `__arbor__kind__` so they don't depend
+// on the generated marker type names being in scope.
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Arbor {
-    type StoreId = string[]
-
-    type AsyncError =
-      | { kind: "error"; value: unknown }
-      | { kind: "exit"; value: unknown }
-
-    type AsyncResult<T> =
-      | { status: "loading"; data: T | null; error: null }
-      | { status: "ok"; data: T; error: null }
-      | { status: "failed"; data: T | null; error: AsyncError | unknown }
-
-    interface StoreDef<Module extends string, Shape, Commands> {
-      readonly __arbor__module__?: Module
-      readonly __arbor__shape__?: Shape
-      readonly __arbor__commands__?: Commands
-    }
-
-    type StoreField<Module extends string> = {
-      readonly __arbor__kind__?: "store"
-      readonly __arbor__module__?: Module
-    }
-
-    type StreamField<Item> = {
-      readonly __arbor__kind__?: "stream"
-      readonly __arbor__item__?: Item
-    }
-
-    type AsyncField<Value> = {
-      readonly __arbor__kind__?: "async"
-      readonly __arbor__value__?: Value
-    }
-
-    // Generated bundle augments this interface via `declare global`. Without
-    // the bundle, the registry is empty and `StoreModule` resolves to `never`.
     // eslint-disable-next-line @typescript-eslint/no-empty-interface
     interface Stores {}
   }
 }
 
-export type StoreId = Arbor.StoreId
-export type AsyncError = Arbor.AsyncError
-export type AsyncResult<T> = Arbor.AsyncResult<T>
+// ---------------------------------------------------------------------------
+// Public runtime types
+// ---------------------------------------------------------------------------
+
+export type StoreId = string[]
+
+export type AsyncError =
+  | { kind: "error"; value: unknown }
+  | { kind: "exit"; value: unknown }
+
+export type AsyncResult<T> =
+  | { status: "loading"; data: T | null; error: null }
+  | { status: "ok"; data: T; error: null }
+  | { status: "failed"; data: T | null; error: AsyncError | unknown }
 
 // ---------------------------------------------------------------------------
 // Module / Def / Shape / Commands accessors
@@ -59,13 +40,13 @@ export type StoreModule = Extract<keyof Arbor.Stores, string>
 export type DefOf<M extends StoreModule> = Arbor.Stores[M]
 
 export type ShapeOf<M extends StoreModule> =
-  DefOf<M> extends Arbor.StoreDef<infer _Module, infer Shape, infer _Commands>
-    ? Shape
+  DefOf<M> extends { readonly __arbor__shape__?: infer Shape }
+    ? NonNullable<Shape>
     : never
 
 export type CommandsOf<M extends StoreModule> =
-  DefOf<M> extends Arbor.StoreDef<infer _Module, infer _Shape, infer Commands>
-    ? Commands
+  DefOf<M> extends { readonly __arbor__commands__?: infer Commands }
+    ? NonNullable<Commands>
     : never
 
 export type CommandName<M extends StoreModule> = keyof CommandsOf<M>
@@ -77,23 +58,36 @@ export type CommandReply<M extends StoreModule, K extends CommandName<M>> =
   CommandsOf<M>[K] extends { reply: infer Reply } ? Reply : unknown
 
 // ---------------------------------------------------------------------------
-// Snapshot and proxy projection
+// Snapshot and proxy projection (structural marker matching)
 // ---------------------------------------------------------------------------
 
+type IsStoreField<T> = T extends { readonly __arbor__kind__?: "store" } ? true : false
+type IsStreamField<T> = T extends { readonly __arbor__kind__?: "stream" } ? true : false
+type IsAsyncField<T> = T extends { readonly __arbor__kind__?: "async" } ? true : false
+
+type StoreFieldModule<T> =
+  T extends { readonly __arbor__module__?: infer M } ? NonNullable<M> : never
+type StreamFieldItem<T> =
+  T extends { readonly __arbor__item__?: infer Item } ? NonNullable<Item> : never
+type AsyncFieldValue<T> =
+  T extends { readonly __arbor__value__?: infer Value } ? NonNullable<Value> : never
+
 type SnapshotAsyncValue<T> =
-  T extends Arbor.StreamField<infer U>
-    ? SnapshotValue<U>[]
+  IsStreamField<T> extends true
+    ? SnapshotValue<StreamFieldItem<T>>[]
     : SnapshotValue<T>
 
 export type SnapshotValue<T> =
-  T extends Arbor.StoreField<infer M>
-    ? M extends StoreModule
-      ? StoreSnapshot<M>
+  IsStoreField<T> extends true
+    ? StoreFieldModule<T> extends infer M
+      ? M extends StoreModule
+        ? StoreSnapshot<M>
+        : never
       : never
-    : T extends Arbor.AsyncField<infer U>
-      ? AsyncResult<SnapshotAsyncValue<U>>
-      : T extends Arbor.StreamField<infer U>
-        ? SnapshotValue<U>[]
+    : IsAsyncField<T> extends true
+      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>>>
+      : IsStreamField<T> extends true
+        ? SnapshotValue<StreamFieldItem<T>>[]
         : T extends readonly (infer U)[]
           ? SnapshotValue<U>[]
           : T extends object
@@ -107,14 +101,16 @@ export type StoreSnapshot<M extends StoreModule> = {
 }
 
 export type ProxyValue<T> =
-  T extends Arbor.StoreField<infer M>
-    ? M extends StoreModule
-      ? StoreProxy<M>
+  IsStoreField<T> extends true
+    ? StoreFieldModule<T> extends infer M
+      ? M extends StoreModule
+        ? StoreProxy<M>
+        : never
       : never
-    : T extends Arbor.AsyncField<infer U>
-      ? AsyncResult<SnapshotAsyncValue<U>>
-      : T extends Arbor.StreamField<infer U>
-        ? SnapshotValue<U>[]
+    : IsAsyncField<T> extends true
+      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>>>
+      : IsStreamField<T> extends true
+        ? SnapshotValue<StreamFieldItem<T>>[]
         : T extends readonly (infer U)[]
           ? SnapshotValue<U>[]
           : T extends object

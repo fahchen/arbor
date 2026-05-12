@@ -56,7 +56,9 @@ defmodule Mix.Tasks.Compile.ArborTsTest do
 
       contents = File.read!(output_path)
       assert contents =~ "declare global {"
-      assert contents =~ ~s|import "@arbor/client"|
+      assert contents =~ "type AsyncResult<T>"
+      assert contents =~ "interface StoreDef<Module extends string, Shape, Commands>"
+      refute contents =~ ~s|import "@arbor/client"|
       assert contents =~ ~s|"Arbor.TestSupport.TypespecProbe": StoreDef<|
       assert contents =~ ~s|"Arbor.TestSupport.TypespecProbeChild": StoreDef<|
       assert contents =~ "Arbor.StreamField<"
