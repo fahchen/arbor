@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
-import type { PatchEnvelope } from "../src/types"
+import type { PatchEnvelope, SnapshotValue } from "../src/types"
 
 type PushStatus = "ok" | "error" | "timeout"
 type PushCallback = (payload: unknown) => void
@@ -149,6 +149,19 @@ type TestStores = {
     {}
   >
 }
+
+type Equal<Left, Right> =
+  (<T>() => T extends Left ? 1 : 2) extends (<T>() => T extends Right ? 1 : 2)
+    ? true
+    : false
+
+type Assert<T extends true> = T
+
+type PlainObjectSnapshot = Assert<
+  Equal<SnapshotValue<TestStores, { title: string }>, { title: string }>
+>
+
+type EmptyObjectSnapshot = Assert<Equal<SnapshotValue<TestStores, {}>, {}>>
 
 describe("connectStore", () => {
   beforeEach(() => {

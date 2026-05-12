@@ -60,8 +60,7 @@ defmodule Arbor.Codegen.TypeScript do
   module-callback lookups itself.
   """
   @type entry() ::
-          {module(),
-           %{kind: :state | :store, fields: list(), commands: list()}}
+          {module(), %{kind: :state | :store, fields: list(), commands: list()}}
 
   @doc """
   Renders one TypeScript bundle covering every `{module, data}` entry in
@@ -157,25 +156,26 @@ defmodule Arbor.Codegen.TypeScript do
         | { status: "ok"; data: T; error: null }
         | { status: "failed"; data: T | null; error: AsyncError | unknown }
 
+      const Type: unique symbol
+
       interface StoreDef<Module extends string, Shape, Commands> {
-        readonly __arbor__module__?: Module
-        readonly __arbor__shape__?: Shape
-        readonly __arbor__commands__?: Commands
+        readonly [Type]: {
+          module: Module
+          shape: Shape
+          commands: Commands
+        }
       }
 
       type StoreField<Module extends string> = {
-        readonly __arbor__kind__?: "store"
-        readonly __arbor__module__?: Module
+        readonly [Type]: { kind: "store"; module: Module }
       }
 
       type StreamField<Item> = {
-        readonly __arbor__kind__?: "stream"
-        readonly __arbor__item__?: Item
+        readonly [Type]: { kind: "stream"; item: Item }
       }
 
       type AsyncField<Value> = {
-        readonly __arbor__kind__?: "async"
-        readonly __arbor__value__?: Value
+        readonly [Type]: { kind: "async"; value: Value }
       }
     """
   end
@@ -308,60 +308,53 @@ defmodule Arbor.Codegen.TypeScript do
     |> Enum.intersperse("\n")
   end
 
+  defp emit_state_node({segment, {children, nil}}, depth, root) do
+    indent = String.duplicate("  ", depth)
+    children_body = emit_state_tree(children, depth + 1, root)
+
+    emit_namespace_block(segment, children_body, indent, namespace_keyword(depth))
+  end
+
+  # Top-level leaf with no children: wrap in `declare namespace` so the
+  # ambient .d.ts file picks it up. Nested leaves stay as bare
+  # `interface` declarations inside their parent namespace.
+  defp emit_state_node({segment, {children, leaf_entry}}, 0, root)
+       when map_size(children) == 0 do
+    emit_namespace_block(
+      segment,
+      render_state_interface(segment, fields_from(leaf_entry), "  ", root),
+      "",
+      namespace_keyword(0)
+    )
+  end
+
+  defp emit_state_node({segment, {children, leaf_entry}}, depth, root)
+       when map_size(children) == 0 do
+    indent = String.duplicate("  ", depth)
+    render_state_interface(segment, fields_from(leaf_entry), indent, root)
+  end
+
   defp emit_state_node({segment, {children, leaf_entry}}, depth, root) do
     indent = String.duplicate("  ", depth)
     children_body = emit_state_tree(children, depth + 1, root)
 
     leaf_interface =
-      case leaf_entry do
-        nil -> []
-        {_module, %{fields: fields}} -> render_state_interface(segment, fields, indent, root)
-      end
+      render_state_interface(segment, fields_from(leaf_entry), indent <> "  ", root)
 
-    namespace_keyword = if depth == 0, do: "declare namespace ", else: "namespace "
-
-    cond do
-      leaf_entry && map_size(children) == 0 && depth == 0 ->
-        # Top-level leaf with no children: wrap in `declare namespace` so the
-        # ambient .d.ts file picks it up. Nested leaves stay as bare
-        # `interface` declarations inside their parent namespace.
-        [
-          indent,
-          namespace_keyword,
-          segment,
-          " {\n",
-          render_state_interface(segment, fields_from(leaf_entry), indent <> "  ", root),
-          indent,
-          "}\n"
-        ]
-
-      leaf_entry && map_size(children) == 0 ->
-        leaf_interface
-
-      leaf_entry ->
-        [
-          indent,
-          namespace_keyword,
-          segment,
-          " {\n",
-          render_state_interface(segment, fields_from(leaf_entry), indent <> "  ", root),
-          children_body,
-          indent,
-          "}\n"
-        ]
-
-      true ->
-        [
-          indent,
-          namespace_keyword,
-          segment,
-          " {\n",
-          children_body,
-          indent,
-          "}\n"
-        ]
-    end
+    emit_namespace_block(
+      segment,
+      [leaf_interface, children_body],
+      indent,
+      namespace_keyword(depth)
+    )
   end
+
+  defp emit_namespace_block(segment, body, indent, keyword) do
+    [indent, keyword, segment, " {\n", body, indent, "}\n"]
+  end
+
+  defp namespace_keyword(0), do: "declare namespace "
+  defp namespace_keyword(_depth), do: "namespace "
 
   defp fields_from({_module, %{fields: fields}}), do: fields
 

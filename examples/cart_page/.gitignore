@@ -1,2 +1,4 @@
+/_build/
+/deps/
 /priv/static/
 /ui/node_modules/

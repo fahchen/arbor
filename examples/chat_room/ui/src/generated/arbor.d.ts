@@ -12,25 +12,26 @@ declare namespace Arbor {
     | { status: "ok"; data: T; error: null }
     | { status: "failed"; data: T | null; error: AsyncError | unknown }
 
+  const Type: unique symbol
+
   interface StoreDef<Module extends string, Shape, Commands> {
-    readonly __arbor__module__?: Module
-    readonly __arbor__shape__?: Shape
-    readonly __arbor__commands__?: Commands
+    readonly [Type]: {
+      module: Module
+      shape: Shape
+      commands: Commands
+    }
   }
 
   type StoreField<Module extends string> = {
-    readonly __arbor__kind__?: "store"
-    readonly __arbor__module__?: Module
+    readonly [Type]: { kind: "store"; module: Module }
   }
 
   type StreamField<Item> = {
-    readonly __arbor__kind__?: "stream"
-    readonly __arbor__item__?: Item
+    readonly [Type]: { kind: "stream"; item: Item }
   }
 
   type AsyncField<Value> = {
-    readonly __arbor__kind__?: "async"
-    readonly __arbor__value__?: Value
+    readonly [Type]: { kind: "async"; value: Value }
   }
 
   interface Stores {

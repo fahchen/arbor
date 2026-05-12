@@ -31,15 +31,33 @@ export type StoreModule<R> = Extract<keyof R, string>
 
 export type DefOf<R, M extends StoreModule<R>> = R[M & keyof R]
 
+type SymbolMarker<T> = T extends object
+  ? NonNullable<T[Extract<keyof T, symbol>]>
+  : never
+
+type StoreDefMarker<T> = Extract<
+  SymbolMarker<T>,
+  { readonly module: string; readonly shape: unknown; readonly commands: unknown }
+>
+
+type FieldMarker<T> = Extract<
+  SymbolMarker<T>,
+  { readonly kind: "store" | "stream" | "async" }
+>
+
 export type ShapeOf<R, M extends StoreModule<R>> =
-  DefOf<R, M> extends { readonly __arbor__shape__?: infer Shape }
-    ? NonNullable<Shape>
-    : never
+  [StoreDefMarker<DefOf<R, M>>] extends [never]
+    ? never
+    : StoreDefMarker<DefOf<R, M>> extends { readonly shape: infer Shape }
+      ? Shape
+      : never
 
 export type CommandsOf<R, M extends StoreModule<R>> =
-  DefOf<R, M> extends { readonly __arbor__commands__?: infer Commands }
-    ? NonNullable<Commands>
-    : never
+  [StoreDefMarker<DefOf<R, M>>] extends [never]
+    ? never
+    : StoreDefMarker<DefOf<R, M>> extends { readonly commands: infer Commands }
+      ? Commands
+      : never
 
 export type CommandName<R, M extends StoreModule<R>> = keyof CommandsOf<R, M>
 
@@ -56,19 +74,36 @@ export type CommandReply<
 > = CommandsOf<R, M>[K] extends { reply: infer Reply } ? Reply : unknown
 
 // ---------------------------------------------------------------------------
-// Snapshot and proxy projection (structural marker matching)
+// Snapshot and proxy projection (symbol-branded generated marker matching)
 // ---------------------------------------------------------------------------
 
-type IsStoreField<T> = T extends { readonly __arbor__kind__?: "store" } ? true : false
-type IsStreamField<T> = T extends { readonly __arbor__kind__?: "stream" } ? true : false
-type IsAsyncField<T> = T extends { readonly __arbor__kind__?: "async" } ? true : false
+type FieldMarkerOfKind<T, Kind extends "store" | "stream" | "async"> = Extract<
+  FieldMarker<T>,
+  { readonly kind: Kind }
+>
+
+type IsStoreField<T> = [FieldMarkerOfKind<T, "store">] extends [never] ? false : true
+type IsStreamField<T> = [FieldMarkerOfKind<T, "stream">] extends [never] ? false : true
+type IsAsyncField<T> = [FieldMarkerOfKind<T, "async">] extends [never] ? false : true
 
 type StoreFieldModule<T> =
-  T extends { readonly __arbor__module__?: infer M } ? NonNullable<M> : never
+  [FieldMarkerOfKind<T, "store">] extends [never]
+    ? never
+    : FieldMarkerOfKind<T, "store"> extends { readonly module: infer M }
+      ? M
+      : never
 type StreamFieldItem<T> =
-  T extends { readonly __arbor__item__?: infer Item } ? NonNullable<Item> : never
+  [FieldMarkerOfKind<T, "stream">] extends [never]
+    ? never
+    : FieldMarkerOfKind<T, "stream"> extends { readonly item: infer Item }
+      ? Item
+      : never
 type AsyncFieldValue<T> =
-  T extends { readonly __arbor__value__?: infer Value } ? NonNullable<Value> : never
+  [FieldMarkerOfKind<T, "async">] extends [never]
+    ? never
+    : FieldMarkerOfKind<T, "async"> extends { readonly value: infer Value }
+      ? Value
+      : never
 
 type SnapshotAsyncValue<R, T> =
   IsStreamField<T> extends true
