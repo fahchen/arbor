@@ -297,6 +297,34 @@ describe("connectStore", () => {
       child: { __arbor_store_id__: ["child"], count: 1 }
     })
   })
+
+  test("snapshot is cached until a patch changes runtime state", async () => {
+    const { connectStore } = await import("../src/connect")
+    const socket = new MockSocket()
+    const proxyPromise = connectStore<TestStores>(socket, {
+      module: "Test.Store",
+      id: "root"
+    })
+
+    const channel = lastChannel(socket)
+    channel.resolveJoin()
+    channel.emit("patch", initialEnvelope(rootState()))
+
+    const proxy = await proxyPromise
+    const first = proxy.snapshot()
+
+    expect(proxy.snapshot()).toBe(first)
+
+    channel.emit(
+      "patch",
+      patchEnvelope(1, 2, [{ op: "replace", path: "/counter", value: 2 }], [])
+    )
+
+    const second = proxy.snapshot()
+    expect(second).not.toBe(first)
+    expect(second.counter).toBe(2)
+    expect(proxy.snapshot()).toBe(second)
+  })
 })
 
 function lastChannel(socket: MockSocket): MockChannel {

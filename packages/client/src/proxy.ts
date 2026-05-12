@@ -237,10 +237,18 @@ export function snapshotStore<R, M extends StoreModule<R>>(
   storeId: StoreId
 ): StoreSnapshot<R, M> {
   const key = storeIdKey(storeId)
+  const cached = connection.snapshotCache.get(key)
+
+  if (cached) {
+    return cached as StoreSnapshot<R, M>
+  }
+
   const node = connection.storeIndex.get(key) as Record<string, unknown> | undefined
 
   if (!node) {
-    return { __arbor_store_id__: storeId } as StoreSnapshot<R, M>
+    const missing = { __arbor_store_id__: storeId } as StoreSnapshot<R, M>
+    connection.snapshotCache.set(key, missing)
+    return missing
   }
 
   const out: Record<string, unknown> = { __arbor_store_id__: storeId }
@@ -250,7 +258,9 @@ export function snapshotStore<R, M extends StoreModule<R>>(
     out[fieldName] = snapshotField(connection, storeId, fieldName, wireValue)
   }
 
-  return out as StoreSnapshot<R, M>
+  const snapshot = out as StoreSnapshot<R, M>
+  connection.snapshotCache.set(key, snapshot)
+  return snapshot
 }
 
 function snapshotField(

@@ -52,6 +52,7 @@ export interface RootConnection {
   storeIndex: Map<string, unknown>
   streams: Map<string, readonly StreamEntry<unknown>[]>
   proxyCache: Map<string, unknown>
+  snapshotCache: Map<string, unknown>
   storeListeners: Map<string, Set<() => void>>
   pendingCommandRejectors: Set<(reason: Error) => void>
   pendingConnect: PendingConnect | null
@@ -116,6 +117,7 @@ export function openRootConnection(
     storeIndex: new Map(),
     streams: new Map(),
     proxyCache: new Map(),
+    snapshotCache: new Map(),
     storeListeners: new Map(),
     pendingCommandRejectors: new Set(),
     pendingConnect: null,
@@ -361,6 +363,7 @@ function acceptEnvelope(
   connection.root = nextRoot
   connection.storeIndex = nextStoreIndex
   connection.streams = nextStreams
+  connection.snapshotCache.clear()
   connection.version = envelope.version
 
   // Drop proxy entries whose store_id no longer exists in the tree. New
@@ -455,6 +458,7 @@ function resetConnectionState(connection: RootConnection): void {
   connection.storeIndex = new Map()
   connection.streams = new Map()
   connection.proxyCache = new Map()
+  connection.snapshotCache = new Map()
 }
 
 function buildStoreIndex(root: unknown): Map<string, unknown> {
