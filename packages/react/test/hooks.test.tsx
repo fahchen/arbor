@@ -41,7 +41,7 @@ describe("ArborProvider + useArborRoot", () => {
     }
 
     render(
-      <ArborProvider proxy={fake.asProxy()}>
+      <ArborProvider store={fake.asProxy()}>
         <Reader />
       </ArborProvider>
     )

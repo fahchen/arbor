@@ -13,7 +13,7 @@ try {
 
   root.render(
     <StrictMode>
-      <ArborProvider proxy={proxy}>
+      <ArborProvider store={proxy}>
         <App />
       </ArborProvider>
     </StrictMode>
