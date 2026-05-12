@@ -8,9 +8,9 @@ declare namespace Arbor {
     | { kind: "exit"; value: unknown }
 
   type AsyncResult<T> =
-    | { status: "loading"; data: T | null; error: null }
-    | { status: "ok"; data: T; error: null }
-    | { status: "failed"; data: T | null; error: AsyncError | unknown }
+    | { __arbor_async__: true; status: "loading"; result: T | null; reason: null }
+    | { __arbor_async__: true; status: "ok"; result: T; reason: null }
+    | { __arbor_async__: true; status: "failed"; result: T | null; reason: AsyncError | unknown }
 
   const Type: unique symbol
 

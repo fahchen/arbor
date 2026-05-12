@@ -13,6 +13,10 @@ defmodule Arbor.AsyncResult do
   | `:ok`      | the value the user fun produced              | `nil`                         |
   | `:failed`  | prior `result` (or `nil`) — stale-while-fail | `{:error, _}` or `{:exit, _}` |
 
+  Wire serialization preserves the three public fields and adds the
+  runtime-only marker key `"__arbor_async__" => true` so clients can
+  distinguish an AsyncResult payload from ordinary maps with similar keys.
+
   ## Compile-time type marker
 
   `Arbor.AsyncResult.of(t)` is also the typespec marker used inside `state do`
@@ -145,6 +149,7 @@ defmodule Arbor.AsyncResult do
     @spec to_wire(Arbor.AsyncResult.t()) :: %{required(String.t()) => term()}
     def to_wire(%Arbor.AsyncResult{status: status, result: result, reason: reason}) do
       %{
+        "__arbor_async__" => true,
         "status" => Atom.to_string(status),
         "result" => Arbor.Wire.to_wire(result),
         "reason" => reason_to_wire(reason)

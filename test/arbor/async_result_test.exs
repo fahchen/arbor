@@ -54,10 +54,15 @@ defmodule Arbor.AsyncResultTest do
 
   describe "wire serialization" do
     test "status atom becomes a string and field keys become string keys" do
-      assert %{"status" => "loading", "result" => nil, "reason" => nil} =
+      assert %{
+               "__arbor_async__" => true,
+               "status" => "loading",
+               "result" => nil,
+               "reason" => nil
+             } =
                Arbor.Wire.to_wire(AsyncResult.loading())
 
-      assert %{"status" => "ok", "result" => 42, "reason" => nil} =
+      assert %{"__arbor_async__" => true, "status" => "ok", "result" => 42, "reason" => nil} =
                Arbor.Wire.to_wire(AsyncResult.ok(nil, 42))
     end
   end
