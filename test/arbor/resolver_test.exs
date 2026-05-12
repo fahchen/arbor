@@ -341,15 +341,15 @@ defmodule Arbor.ResolverTest do
     end
 
     @impl Arbor.Store
-    def update(_new_assigns, socket) do
-      send(socket.assigns.test_pid, :memo_update)
-      {:ok, socket}
-    end
-
-    @impl Arbor.Store
     def render(socket) do
       send(socket.assigns.test_pid, :memo_to_state)
       %{title: socket.assigns.title}
+    end
+
+    @impl Arbor.Store
+    def update(_new_assigns, socket) do
+      send(socket.assigns.test_pid, :memo_update)
+      {:ok, socket}
     end
 
     @impl Arbor.Store
@@ -418,13 +418,13 @@ defmodule Arbor.ResolverTest do
     end
 
     @impl Arbor.Store
-    def update(_new_assigns, _socket) do
-      :bad
+    def render(socket) do
+      %{value: socket.assigns.value}
     end
 
     @impl Arbor.Store
-    def render(socket) do
-      %{value: socket.assigns.value}
+    def update(_new_assigns, _socket) do
+      :bad
     end
 
     @impl Arbor.Store

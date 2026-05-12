@@ -18,6 +18,18 @@ defmodule MyApp.Stores.CartPageStore do
   end
 
   @impl Arbor.Store
+  def mount(socket) do
+    socket =
+      Arbor.Socket.assign(
+        socket,
+        :current_user,
+        normalize_current_user(socket.assigns.current_user)
+      )
+
+    {:ok, socket}
+  end
+
+  @impl Arbor.Store
   def render(socket) do
     %{
       header:
@@ -32,18 +44,6 @@ defmodule MyApp.Stores.CartPageStore do
           current_user: socket.assigns.current_user
         )
     }
-  end
-
-  @impl Arbor.Store
-  def mount(socket) do
-    socket =
-      Arbor.Socket.assign(
-        socket,
-        :current_user,
-        normalize_current_user(socket.assigns.current_user)
-      )
-
-    {:ok, socket}
   end
 
   @impl Arbor.Store

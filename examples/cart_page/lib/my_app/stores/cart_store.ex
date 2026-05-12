@@ -67,6 +67,19 @@ defmodule MyApp.Stores.CartStore do
   end
 
   @impl Arbor.Store
+  def render(socket) do
+    %{
+      lines:
+        for line <- socket.assigns.lines do
+          Arbor.Child.child(CartLineStore, id: line.id, line: line)
+        end,
+      total_units: total_units(socket.assigns.lines),
+      subtotal_cents: subtotal(socket.assigns.lines),
+      status: socket.assigns.status
+    }
+  end
+
+  @impl Arbor.Store
   def handle_command(:add_item, %{"sku" => sku}, socket) do
     case Catalog.fetch(sku) do
       {:ok, product} ->
@@ -94,19 +107,6 @@ defmodule MyApp.Stores.CartStore do
       |> Arbor.Socket.assign(:status, %{type: :checked_out, order_id: order_id})
 
     {:reply, %{"order_id" => order_id}, socket}
-  end
-
-  @impl Arbor.Store
-  def render(socket) do
-    %{
-      lines:
-        for line <- socket.assigns.lines do
-          Arbor.Child.child(CartLineStore, id: line.id, line: line)
-        end,
-      total_units: total_units(socket.assigns.lines),
-      subtotal_cents: subtotal(socket.assigns.lines),
-      status: socket.assigns.status
-    }
   end
 
   # ---------------------------------------------------------------------------

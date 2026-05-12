@@ -2,22 +2,39 @@ defmodule Arbor.Store do
   @moduledoc """
   Compile-time DSL entrypoint and behaviour contract for Arbor store modules.
 
-  Stores `use Arbor.Store` and implement `render/1`, `mount/1`,
-  `handle_command/3`, optionally `update/2`, `handle_info/2`,
-  `handle_async/3`, and `terminate/2`.
+  Stores `use Arbor.Store` and implement `mount/1`, `render/1`,
+  `update/2`, `handle_command/3`, `handle_async/3`, `handle_info/2`,
+  and `terminate/2`.
   `render/1` returns the resolved Elixir-shaped term; wire conversion happens
   separately via `Arbor.Wire.to_wire/1`.
   """
 
+  alias Arbor.Async
+  alias Arbor.Resolver
   alias Arbor.Socket
 
-  @doc """
-  Produces the resolved Elixir-shaped render output for the current store.
+  @type value() ::
+          nil
+          | boolean()
+          | number()
+          | String.t()
+          | atom()
+          | pid()
+          | reference()
+          | port()
+          | tuple()
+          | [value()]
+          | %{optional(value()) => value()}
 
-  The returned term is still in Arbor's Elixir form. The runtime converts it
-  to wire form later with `Arbor.Wire.to_wire/1`.
-  """
-  @callback render(socket :: Socket.t()) :: term()
+  @type assigns() :: %{optional(Socket.assign_key()) => value()}
+  @type async_name() :: Async.name_arg()
+  @type async_result() :: {:ok, value()} | {:exit, value()}
+  @type command_name() :: atom()
+  @type command_payload() :: %{optional(String.t() | atom()) => value()}
+  @type command_reply() :: map()
+  @type message() :: value()
+  @type rendered() :: Resolver.resolved_value()
+  @type terminate_reason() :: :normal | :shutdown | {:shutdown, value()} | value()
 
   @doc """
   Initializes a freshly-mounted store socket.
@@ -25,33 +42,49 @@ defmodule Arbor.Store do
   @callback mount(socket :: Socket.t()) :: {:ok, Socket.t()}
 
   @doc """
-  Handles a declared command for the current store.
+  Produces the resolved Elixir-shaped render output for the current store.
+
+  The returned term is still in Arbor's Elixir form. The runtime converts it
+  to wire form later with `Arbor.Wire.to_wire/1`.
   """
-  @callback handle_command(name :: atom(), payload :: map(), socket :: Socket.t()) ::
-              {:noreply, Socket.t()} | {:reply, map(), Socket.t()}
+  @callback render(socket :: Socket.t()) :: rendered()
 
   @doc """
   Updates a mounted store socket from new parent-supplied assigns.
   """
-  @callback update(params :: map(), socket :: Socket.t()) :: {:ok, Socket.t()}
+  @callback update(assigns :: assigns(), socket :: Socket.t()) :: {:ok, Socket.t()}
 
   @doc """
-  Handles an in-process message routed to the current store.
+  Handles a declared command for the current store.
   """
-  @callback handle_info(message :: term(), socket :: Socket.t()) :: {:noreply, Socket.t()}
+  @callback handle_command(
+              name :: command_name(),
+              payload :: command_payload(),
+              socket :: Socket.t()
+            ) ::
+              {:noreply, Socket.t()} | {:reply, command_reply(), Socket.t()}
 
   @doc """
   Handles an async result routed to the current store.
   """
-  @callback handle_async(name :: atom(), result :: term(), socket :: Socket.t()) ::
+  @callback handle_async(
+              name :: async_name(),
+              async_fun_result :: async_result(),
+              socket :: Socket.t()
+            ) ::
               {:noreply, Socket.t()}
+
+  @doc """
+  Handles an in-process message routed to the current store.
+  """
+  @callback handle_info(message :: message(), socket :: Socket.t()) :: {:noreply, Socket.t()}
 
   @doc """
   Handles store teardown after the page runtime begins terminating.
   """
-  @callback terminate(reason :: term(), socket :: Socket.t()) :: any()
+  @callback terminate(reason :: terminate_reason(), socket :: Socket.t()) :: :ok
 
-  @optional_callbacks update: 2, handle_info: 2, handle_async: 3, terminate: 2
+  @optional_callbacks update: 2, handle_async: 3, handle_info: 2, terminate: 2
 
   @spec __using__(keyword()) :: Macro.t()
   defmacro __using__(_opts) do
@@ -97,7 +130,7 @@ defmodule Arbor.Store do
       def __arbor_kind__, do: :store
 
       @doc false
-      @spec terminate(term(), Arbor.Socket.t()) :: :ok
+      @spec terminate(Arbor.Store.terminate_reason(), Arbor.Socket.t()) :: :ok
       def terminate(_reason, _socket), do: :ok
 
       defoverridable terminate: 2

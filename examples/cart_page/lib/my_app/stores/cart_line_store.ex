@@ -23,9 +23,6 @@ defmodule MyApp.Stores.CartLineStore do
   def mount(socket), do: {:ok, mirror_line(socket, socket.assigns.line)}
 
   @impl Arbor.Store
-  def update(params, socket), do: {:ok, mirror_line(socket, params.line)}
-
-  @impl Arbor.Store
   def render(socket) do
     %{
       id: socket.assigns.id,
@@ -35,6 +32,9 @@ defmodule MyApp.Stores.CartLineStore do
       qty: socket.assigns.qty
     }
   end
+
+  @impl Arbor.Store
+  def update(params, socket), do: {:ok, mirror_line(socket, params.line)}
 
   @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}

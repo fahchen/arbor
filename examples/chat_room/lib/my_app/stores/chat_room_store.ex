@@ -72,6 +72,22 @@ defmodule MyApp.Stores.ChatRoomStore do
     {:ok, socket}
   end
 
+  # ---------------------------------------------------------------------------
+  # Render output
+  # ---------------------------------------------------------------------------
+
+  @impl Arbor.Store
+  def render(socket) do
+    %{
+      # Stream-typed fields are forced to `[]` on the wire by `Arbor.Wire`
+      # (BDR-0014/0018) — content flows via stream_ops.
+      messages: [],
+      current_user: socket.assigns.current_user,
+      online_users: socket.assigns.online_users,
+      last_send_status: socket.assigns.last_send_status
+    }
+  end
+
   @spec new_user_id() :: String.t()
   defp new_user_id do
     "user-" <> Integer.to_string(System.unique_integer([:positive]))
@@ -169,22 +185,6 @@ defmodule MyApp.Stores.ChatRoomStore do
   @impl Arbor.Store
   def handle_info({:presence_changed, users}, socket) when is_list(users) do
     {:noreply, put_online_users(socket, users)}
-  end
-
-  # ---------------------------------------------------------------------------
-  # Render output
-  # ---------------------------------------------------------------------------
-
-  @impl Arbor.Store
-  def render(socket) do
-    %{
-      # Stream-typed fields are forced to `[]` on the wire by `Arbor.Wire`
-      # (BDR-0014/0018) — content flows via stream_ops.
-      messages: [],
-      current_user: socket.assigns.current_user,
-      online_users: socket.assigns.online_users,
-      last_send_status: socket.assigns.last_send_status
-    }
   end
 
   # Cancel any in-flight send when the page goes down so the task does not

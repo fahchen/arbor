@@ -62,8 +62,8 @@ defmodule Arbor.Async do
   @typedoc "Internal name a tracked task is filed under. Atom for `start_async`/`stream_async`; the key list for `assign_async`."
   @type tracking_name() :: atom() | [atom()]
 
-  @typedoc "User-supplied name argument. Atom for `start_async`/`stream_async`; atom or atom list for `assign_async`/`cancel_async`."
-  @type name_arg() :: atom() | [atom()]
+  @typedoc "User-supplied name argument."
+  @type name_arg() :: term()
 
   @typedoc "Async kind discriminator carried in tracking + telemetry metadata."
   @type kind() :: :assign | :start | :stream
