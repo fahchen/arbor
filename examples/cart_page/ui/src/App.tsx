@@ -6,9 +6,27 @@ type Registry = Arbor.Stores
 type RootModule = "MyApp.Stores.CartPageStore"
 
 const PRODUCT_OPTIONS = [
-  { sku: "mug", label: "Coffee Mug" },
-  { sku: "notebook", label: "Notebook" },
-  { sku: "stickers", label: "Sticker Pack" }
+  {
+    sku: "mug",
+    label: "Coffee Mug",
+    detail: "Ceramic desk cup",
+    priceCents: 1_500,
+    tone: "clay"
+  },
+  {
+    sku: "notebook",
+    label: "Notebook",
+    detail: "Dot-grid field book",
+    priceCents: 800,
+    tone: "ink"
+  },
+  {
+    sku: "stickers",
+    label: "Sticker Pack",
+    detail: "Die-cut labels",
+    priceCents: 500,
+    tone: "mint"
+  }
 ] as const
 
 export default function App() {
@@ -24,7 +42,10 @@ export default function App() {
   const [feedback, setFeedback] = useState<string>("")
   const [busy, setBusy] = useState<"add" | "checkout" | "remove" | null>(null)
 
-  const lineCount = page.cart.lines.reduce((sum, line) => sum + line.qty, 0)
+  const selectedProduct = useMemo(
+    () => PRODUCT_OPTIONS.find((option) => option.sku === sku) ?? PRODUCT_OPTIONS[0],
+    [sku]
+  )
 
   const headerLabel = useMemo(() => {
     if (!page.header) {
@@ -44,7 +65,11 @@ export default function App() {
 
     try {
       const reply = (await addItem({ sku })) as Record<string, never> | { error: string }
-      setFeedback("error" in reply ? `Add failed: ${reply.error}` : `Added ${sku} to demo-cart.`)
+      setFeedback(
+        "error" in reply
+          ? `Add failed: ${reply.error}`
+          : `Added ${selectedProduct.label} to demo-cart.`
+      )
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Add failed.")
     } finally {
@@ -87,108 +112,167 @@ export default function App() {
 
   return (
     <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">Arbor Example</p>
-        <div className="hero-row">
-          <div>
-            <h1>Cart page</h1>
-            <p className="hero-copy">
-              Phoenix Channel transport + React hooks over the Arbor store tree.
-            </p>
-          </div>
-          <div className="badge">{lineCount} items</div>
+      <header className="hero">
+        <div className="hero-copy">
+          <p className="eyebrow">Arbor Storefront Runtime</p>
+          <h1>Cart control room</h1>
+          <p>
+            An Arbor store driving a React cart with server-owned state, command replies,
+            persistence, and reconnect recovery.
+          </p>
         </div>
+
+        <div className="hero-metrics" aria-label="Cart quantity summary">
+          <div>
+            <span className="metric-label">Session</span>
+            <strong>{page.header?.signed_in ? "Signed in" : "Guest"}</strong>
+          </div>
+          <div>
+            <span className="metric-label">Product types</span>
+            <strong>{page.cart.lines.length}</strong>
+          </div>
+          <div>
+            <span className="metric-label">Total units</span>
+            <strong>{page.cart.total_units}</strong>
+          </div>
+        </div>
+      </header>
+
+      <section className="session-strip" aria-label="Runtime notes">
+        <p>{headerLabel}</p>
+        <p>
+          Cart id <code>demo-cart</code>
+        </p>
+        <p>Reload after adding lines to exercise the ETS-backed mount reload path.</p>
       </section>
 
-      <section className="grid">
-        <article className="panel">
-          <h2>Session</h2>
-          <p>{headerLabel}</p>
-          <p className="muted">
-            Cart id: <code>demo-cart</code>
-          </p>
-          <p className="muted">
-            Reload the page after adding lines to see the ETS-backed mount reload path.
-          </p>
-        </article>
+      <div className="workspace">
+        <section className="catalog" aria-labelledby="catalog-heading">
+          <div className="section-heading">
+            <p className="eyebrow">Command target: cart</p>
+            <h2 id="catalog-heading">Add product</h2>
+          </div>
 
-        <article className="panel">
-          <h2>Add product</h2>
-          <form className="stack" onSubmit={handleAddItem}>
-            <label className="field">
-              <span>SKU</span>
-              <select value={sku} onChange={(event) => setSku(event.target.value as typeof sku)}>
+          <form className="catalog-form" onSubmit={handleAddItem}>
+            <fieldset>
+              <legend className="sr-only">Choose a product SKU</legend>
+              <div className="product-grid">
                 {PRODUCT_OPTIONS.map((option) => (
-                  <option key={option.sku} value={option.sku}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button type="submit" disabled={busy === "add"}>
-              {busy === "add" ? "Adding…" : "Add item"}
-            </button>
-          </form>
-        </article>
-      </section>
-
-      <section className="panel">
-        <div className="section-header">
-          <h2>Cart lines</h2>
-          <span className="status-pill">status: {page.cart.status.type}</span>
-        </div>
-
-        {page.cart.lines.length === 0 ? (
-          <p className="empty">The cart is empty.</p>
-        ) : (
-          <ul className="lines">
-            {page.cart.lines.map((line) => (
-              <li key={line.__arbor_store_id__.join("/")} className="line">
-                <div>
-                  <strong>{line.name}</strong>
-                  <p className="muted">
-                    {line.sku} · qty {line.qty}
-                  </p>
-                </div>
-                <div className="line-actions">
-                  <span>{formatMoney(line.price_cents * line.qty)}</span>
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => void handleRemoveLine(line.id)}
-                    disabled={busy === "remove"}
+                  <label
+                    key={option.sku}
+                    className="product-card"
+                    data-tone={option.tone}
+                    data-selected={option.sku === sku}
+                    onClick={() => setSku(option.sku)}
                   >
-                    Remove
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+                    <input
+                      type="radio"
+                      name="sku"
+                      value={option.sku}
+                      checked={option.sku === sku}
+                      onChange={() => setSku(option.sku)}
+                    />
+                    <span className="product-art" aria-hidden="true">
+                      <span />
+                    </span>
+                    <span className="product-copy">
+                      <strong>{option.label}</strong>
+                      <span>{option.detail}</span>
+                    </span>
+                    <span className="product-price">{formatMoney(option.priceCents)}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
 
-        <div className="checkout">
-          <div>
-            <p className="muted">Subtotal</p>
-            <strong>{formatMoney(page.cart.subtotal_cents)}</strong>
+            <div className="command-bar">
+              <div>
+                <span className="metric-label">Selected SKU</span>
+                <strong>{selectedProduct.sku}</strong>
+              </div>
+              <button type="submit" disabled={busy === "add"}>
+                {busy === "add" ? "Adding..." : `Add ${selectedProduct.label}`}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="cart-panel" aria-labelledby="cart-heading">
+          <div className="cart-header">
+            <div>
+              <p className="eyebrow">Server snapshot</p>
+              <h2 id="cart-heading">Cart lines</h2>
+            </div>
+            <span className="status-pill" data-status={page.cart.status.type}>
+              {formatStatus(page.cart.status.type)}
+            </span>
           </div>
-          <button
-            type="button"
-            onClick={() => void handleCheckout()}
-            disabled={busy === "checkout" || page.cart.lines.length === 0}
-          >
-            {busy === "checkout" ? "Checking out…" : "Checkout"}
-          </button>
-        </div>
 
-        {page.cart.status.type === "checked_out" ? (
-          <p className="notice">Last order id: {page.cart.status.order_id}</p>
-        ) : null}
+          {page.cart.lines.length === 0 ? (
+            <div className="empty">
+              <strong>No lines yet</strong>
+              <p>Add a product to watch the store tree update through Arbor.</p>
+            </div>
+          ) : (
+            <ul className="lines">
+              {page.cart.lines.map((line) => (
+                <li key={line.__arbor_store_id__.join("/")} className="line">
+                  <div className="line-main">
+                    <strong>{line.name}</strong>
+                    <span>
+                      {line.sku} / qty {line.qty}
+                    </span>
+                  </div>
+                  <div className="line-actions">
+                    <span>{formatMoney(line.price_cents * line.qty)}</span>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => void handleRemoveLine(line.id)}
+                      disabled={busy === "remove"}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
 
-        {feedback ? <p className="notice">{feedback}</p> : null}
-      </section>
+          <div className="checkout">
+            <div>
+              <span className="metric-label">Subtotal</span>
+              <strong>{formatMoney(page.cart.subtotal_cents)}</strong>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleCheckout()}
+              disabled={busy === "checkout" || page.cart.lines.length === 0}
+            >
+              {busy === "checkout" ? "Checking out..." : "Checkout"}
+            </button>
+          </div>
+
+          {page.cart.status.type === "checked_out" ? (
+            <p className="notice">Last order id: {page.cart.status.order_id}</p>
+          ) : null}
+
+          {feedback ? (
+            <p className="notice" role="status" aria-live="polite">
+              {feedback}
+            </p>
+          ) : null}
+        </section>
+      </div>
     </main>
   )
+}
+
+function formatStatus(status: string): string {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
 }
 
 function formatMoney(cents: number): string {
