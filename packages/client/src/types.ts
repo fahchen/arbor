@@ -1,20 +1,12 @@
-// The generated codegen bundle (`priv/codegen/ts/arbor.ts`) is the canonical
-// declaration site for the `Arbor.*` global namespace — it ships the phantom
-// marker types (`StoreId`, `AsyncResult`, `StoreDef`, `StoreField`,
-// `StreamField`, `AsyncField`) plus the `Stores` registry entries.
+// Public types for `@arbor/client`. Consumers thread their generated
+// `<Root>.Stores` type (emitted by `mix compile.arbor_ts` into an ambient
+// `.d.ts` bundle) through `connectStore` and friends as the `Registry`
+// generic — every other helper (`ShapeOf`, `CommandsOf`, `StoreSnapshot`,
+// `StoreProxy`, …) derives from it.
 //
-// This package only seeds an empty `Arbor.Stores` registry so the client
-// compiles in isolation; the registry is augmented (via interface merging)
-// once a consumer imports the generated bundle. The projection helpers below
-// match marker shapes structurally on `__arbor__kind__` so they don't depend
-// on the generated marker type names being in scope.
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Arbor {
-    // eslint-disable-next-line @typescript-eslint/no-empty-interface
-    interface Stores {}
-  }
-}
+// This package does not declare `Arbor.Stores` in the global namespace; the
+// generated bundle owns those declarations and is auto-loaded by tsc as an
+// ambient module.
 
 // ---------------------------------------------------------------------------
 // Public runtime types
@@ -32,30 +24,36 @@ export type AsyncResult<T> =
   | { status: "failed"; data: T | null; error: AsyncError | unknown }
 
 // ---------------------------------------------------------------------------
-// Module / Def / Shape / Commands accessors
+// Registry-driven accessors
 // ---------------------------------------------------------------------------
 
-export type StoreModule = Extract<keyof Arbor.Stores, string>
+export type StoreModule<R> = Extract<keyof R, string>
 
-export type DefOf<M extends StoreModule> = Arbor.Stores[M]
+export type DefOf<R, M extends StoreModule<R>> = R[M & keyof R]
 
-export type ShapeOf<M extends StoreModule> =
-  DefOf<M> extends { readonly __arbor__shape__?: infer Shape }
+export type ShapeOf<R, M extends StoreModule<R>> =
+  DefOf<R, M> extends { readonly __arbor__shape__?: infer Shape }
     ? NonNullable<Shape>
     : never
 
-export type CommandsOf<M extends StoreModule> =
-  DefOf<M> extends { readonly __arbor__commands__?: infer Commands }
+export type CommandsOf<R, M extends StoreModule<R>> =
+  DefOf<R, M> extends { readonly __arbor__commands__?: infer Commands }
     ? NonNullable<Commands>
     : never
 
-export type CommandName<M extends StoreModule> = keyof CommandsOf<M>
+export type CommandName<R, M extends StoreModule<R>> = keyof CommandsOf<R, M>
 
-export type CommandPayload<M extends StoreModule, K extends CommandName<M>> =
-  CommandsOf<M>[K] extends { payload: infer Payload } ? Payload : never
+export type CommandPayload<
+  R,
+  M extends StoreModule<R>,
+  K extends CommandName<R, M>
+> = CommandsOf<R, M>[K] extends { payload: infer Payload } ? Payload : never
 
-export type CommandReply<M extends StoreModule, K extends CommandName<M>> =
-  CommandsOf<M>[K] extends { reply: infer Reply } ? Reply : unknown
+export type CommandReply<
+  R,
+  M extends StoreModule<R>,
+  K extends CommandName<R, M>
+> = CommandsOf<R, M>[K] extends { reply: infer Reply } ? Reply : unknown
 
 // ---------------------------------------------------------------------------
 // Snapshot and proxy projection (structural marker matching)
@@ -72,63 +70,63 @@ type StreamFieldItem<T> =
 type AsyncFieldValue<T> =
   T extends { readonly __arbor__value__?: infer Value } ? NonNullable<Value> : never
 
-type SnapshotAsyncValue<T> =
+type SnapshotAsyncValue<R, T> =
   IsStreamField<T> extends true
-    ? SnapshotValue<StreamFieldItem<T>>[]
-    : SnapshotValue<T>
+    ? SnapshotValue<R, StreamFieldItem<T>>[]
+    : SnapshotValue<R, T>
 
-export type SnapshotValue<T> =
+export type SnapshotValue<R, T> =
   IsStoreField<T> extends true
     ? StoreFieldModule<T> extends infer M
-      ? M extends StoreModule
-        ? StoreSnapshot<M>
+      ? M extends StoreModule<R>
+        ? StoreSnapshot<R, M>
         : never
       : never
     : IsAsyncField<T> extends true
-      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>>>
+      ? AsyncResult<SnapshotAsyncValue<R, AsyncFieldValue<T>>>
       : IsStreamField<T> extends true
-        ? SnapshotValue<StreamFieldItem<T>>[]
+        ? SnapshotValue<R, StreamFieldItem<T>>[]
         : T extends readonly (infer U)[]
-          ? SnapshotValue<U>[]
+          ? SnapshotValue<R, U>[]
           : T extends object
-            ? { [K in keyof T]: SnapshotValue<T[K]> }
+            ? { [K in keyof T]: SnapshotValue<R, T[K]> }
             : T
 
-export type StoreSnapshot<M extends StoreModule> = {
+export type StoreSnapshot<R, M extends StoreModule<R>> = {
   readonly __arbor_store_id__: StoreId
 } & {
-  [K in keyof ShapeOf<M>]: SnapshotValue<ShapeOf<M>[K]>
+  [K in keyof ShapeOf<R, M>]: SnapshotValue<R, ShapeOf<R, M>[K]>
 }
 
-export type ProxyValue<T> =
+export type ProxyValue<R, T> =
   IsStoreField<T> extends true
     ? StoreFieldModule<T> extends infer M
-      ? M extends StoreModule
-        ? StoreProxy<M>
+      ? M extends StoreModule<R>
+        ? StoreProxy<R, M>
         : never
       : never
     : IsAsyncField<T> extends true
-      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>>>
+      ? AsyncResult<SnapshotAsyncValue<R, AsyncFieldValue<T>>>
       : IsStreamField<T> extends true
-        ? SnapshotValue<StreamFieldItem<T>>[]
+        ? SnapshotValue<R, StreamFieldItem<T>>[]
         : T extends readonly (infer U)[]
-          ? SnapshotValue<U>[]
+          ? SnapshotValue<R, U>[]
           : T extends object
-            ? { [K in keyof T]: ProxyValue<T[K]> }
+            ? { [K in keyof T]: ProxyValue<R, T[K]> }
             : T
 
-export interface StoreRuntime<M extends StoreModule> {
+export interface StoreRuntime<R, M extends StoreModule<R>> {
   readonly __arbor_store_id__: StoreId
-  dispatchCommand<K extends CommandName<M>>(
+  dispatchCommand<K extends CommandName<R, M>>(
     name: K,
-    payload: CommandPayload<M, K>
-  ): Promise<CommandReply<M, K>>
+    payload: CommandPayload<R, M, K>
+  ): Promise<CommandReply<R, M, K>>
   subscribe(listener: () => void): () => void
-  snapshot(): StoreSnapshot<M>
+  snapshot(): StoreSnapshot<R, M>
 }
 
-export type StoreProxy<M extends StoreModule> = StoreRuntime<M> & {
-  [K in keyof ShapeOf<M>]: ProxyValue<ShapeOf<M>[K]>
+export type StoreProxy<R, M extends StoreModule<R>> = StoreRuntime<R, M> & {
+  [K in keyof ShapeOf<R, M>]: ProxyValue<R, ShapeOf<R, M>[K]>
 }
 
 // ---------------------------------------------------------------------------

@@ -4,29 +4,31 @@ import type { ReactNode } from "react"
 import type { StoreModule, StoreProxy } from "@arbor/client"
 
 // The provider stores an opaque root proxy; consumers retrieve it via
-// `useArborRoot<M>()` which projects it back to `StoreProxy<M>`.
-type AnyStoreProxy = StoreProxy<StoreModule>
+// `useArborRoot<R, M>()` which projects it back to `StoreProxy<R, M>`.
+type AnyStoreProxy = StoreProxy<unknown, never>
 
 const ArborRootContext = createContext<AnyStoreProxy | null>(null)
 
-export function ArborProvider<M extends StoreModule>({
+export function ArborProvider<R, M extends StoreModule<R>>({
   proxy,
   children
 }: {
-  proxy: StoreProxy<M>
+  proxy: StoreProxy<R, M>
   children: ReactNode
 }) {
   return (
-    <ArborRootContext.Provider value={proxy as AnyStoreProxy}>{children}</ArborRootContext.Provider>
+    <ArborRootContext.Provider value={proxy as unknown as AnyStoreProxy}>
+      {children}
+    </ArborRootContext.Provider>
   )
 }
 
-export function useArborRoot<M extends StoreModule>(): StoreProxy<M> {
+export function useArborRoot<R, M extends StoreModule<R>>(): StoreProxy<R, M> {
   const proxy = useContext(ArborRootContext)
 
   if (!proxy) {
     throw new Error("useArborRoot must be used inside <ArborProvider>")
   }
 
-  return proxy as StoreProxy<M>
+  return proxy as unknown as StoreProxy<R, M>
 }

@@ -2,8 +2,7 @@ import { useMemo, useState } from "react"
 import type { FormEvent } from "react"
 import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
 
-import "./generated/arbor"
-
+type Registry = Arbor.Stores
 type RootModule = "MyApp.Stores.CartPageStore"
 
 const PRODUCT_OPTIONS = [
@@ -13,7 +12,7 @@ const PRODUCT_OPTIONS = [
 ] as const
 
 export default function App() {
-  const root = useArborRoot<RootModule>()
+  const root = useArborRoot<Registry, RootModule>()
   const page = useArborSnapshot(root)
 
   const cartProxy = root.cart

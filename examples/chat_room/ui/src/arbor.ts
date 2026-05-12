@@ -1,7 +1,9 @@
 import { Socket } from "phoenix"
 import { connectStore } from "@arbor/client"
 
-import "./generated/arbor"
+// The generated `arbor.d.ts` is ambient — tsc auto-loads it from
+// `src/generated/arbor.d.ts` via the project's `include` glob, so no
+// side-effect import is required.
 
 export const socket = new Socket("/socket", {})
 
@@ -13,7 +15,7 @@ export const DEFAULT_JOIN_PARAMS = {
 } as const
 
 export function connectRoot() {
-  return connectStore(socket, {
+  return connectStore<Arbor.Stores>(socket, {
     module: ROOT_MODULE,
     id: ROOT_ID,
     params: DEFAULT_JOIN_PARAMS as unknown as Record<string, unknown>

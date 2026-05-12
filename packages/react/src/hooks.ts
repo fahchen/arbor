@@ -17,23 +17,23 @@ const identitySelector = <S>(value: S): S => value
  * fire only when the underlying store node changes (per
  * `proxy.subscribe(...)` semantics).
  */
-export function useArborSnapshot<M extends StoreModule>(
-  proxy: StoreProxy<M>
-): StoreSnapshot<M>
-export function useArborSnapshot<M extends StoreModule, Selected>(
-  proxy: StoreProxy<M>,
-  selector: (snapshot: StoreSnapshot<M>) => Selected,
+export function useArborSnapshot<R, M extends StoreModule<R>>(
+  proxy: StoreProxy<R, M>
+): StoreSnapshot<R, M>
+export function useArborSnapshot<R, M extends StoreModule<R>, Selected>(
+  proxy: StoreProxy<R, M>,
+  selector: (snapshot: StoreSnapshot<R, M>) => Selected,
   equalityFn?: (a: Selected, b: Selected) => boolean
 ): Selected
-export function useArborSnapshot<M extends StoreModule, Selected = StoreSnapshot<M>>(
-  proxy: StoreProxy<M>,
-  selector?: (snapshot: StoreSnapshot<M>) => Selected,
+export function useArborSnapshot<R, M extends StoreModule<R>, Selected = StoreSnapshot<R, M>>(
+  proxy: StoreProxy<R, M>,
+  selector?: (snapshot: StoreSnapshot<R, M>) => Selected,
   equalityFn?: (a: Selected, b: Selected) => boolean
 ): Selected {
   const subscribe = useCallback((onChange: () => void) => proxy.subscribe(onChange), [proxy])
   const getSnapshot = useCallback(() => proxy.snapshot(), [proxy])
   const resolvedSelector =
-    selector ?? (identitySelector as (snapshot: StoreSnapshot<M>) => Selected)
+    selector ?? (identitySelector as (snapshot: StoreSnapshot<R, M>) => Selected)
 
   return useSyncExternalStoreWithSelector(
     subscribe,
@@ -47,12 +47,16 @@ export function useArborSnapshot<M extends StoreModule, Selected = StoreSnapshot
 /**
  * Returns a bound dispatcher for a single command on the supplied proxy.
  */
-export function useArborCommand<M extends StoreModule, K extends CommandName<M>>(
-  proxy: StoreProxy<M>,
+export function useArborCommand<
+  R,
+  M extends StoreModule<R>,
+  K extends CommandName<R, M>
+>(
+  proxy: StoreProxy<R, M>,
   name: K
-): (payload: CommandPayload<M, K>) => Promise<CommandReply<M, K>> {
+): (payload: CommandPayload<R, M, K>) => Promise<CommandReply<R, M, K>> {
   return useCallback(
-    (payload: CommandPayload<M, K>) => proxy.dispatchCommand(name, payload),
+    (payload: CommandPayload<R, M, K>) => proxy.dispatchCommand(name, payload),
     [proxy, name]
   )
 }

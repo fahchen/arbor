@@ -2,13 +2,11 @@ import { useState } from "react"
 import type { FormEvent } from "react"
 import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
 
-import "./generated/arbor"
-
+type Registry = Arbor.Stores
 type RootModule = "MyApp.Stores.ChatRoomStore"
-type OnlineUser = { id: string; name: string }
 
 export default function App() {
-  const root = useArborRoot<RootModule>()
+  const root = useArborRoot<Registry, RootModule>()
   const room = useArborSnapshot(root)
 
   const reload = useArborCommand(root, "reload")
@@ -19,12 +17,8 @@ export default function App() {
   const [feedback, setFeedback] = useState("")
   const [busy, setBusy] = useState<"send" | "reload" | "refresh" | null>(null)
 
-  const onlineUsers = room.online_users as
-    | { status: "loading"; data: OnlineUser[] | null; error: null }
-    | { status: "ok"; data: OnlineUser[]; error: null }
-    | { status: "failed"; data: OnlineUser[] | null; error: unknown }
-
-  const messages = room.messages as Array<{ id: string; body: string; sender: string }>
+  const onlineUsers = room.online_users
+  const messages = room.messages
 
   async function handleSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -39,7 +33,7 @@ export default function App() {
     setBusy("send")
 
     try {
-      const reply = (await sendMessage({ body: nextBody })) as { queued: boolean }
+      const reply = await sendMessage({ body: nextBody })
       setFeedback(reply.queued ? "Message queued for async delivery." : "Send request returned.")
       setBody("")
     } catch (error) {

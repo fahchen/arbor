@@ -7,9 +7,15 @@ defmodule MyApp.Presence do
   task finishes — two render cycles regardless of task speed.
   """
 
+  alias MyApp.OnlineUser
+
   @doc "Returns the canned online-user list for `room_id`."
-  @spec list(String.t()) :: [%{id: String.t(), name: String.t()}]
+  @spec list(String.t()) :: [OnlineUser.t()]
   def list(_room_id) do
-    [%{id: "u1", name: "Ada"}, %{id: "u2", name: "Grace"}, %{id: "u3", name: "Linus"}]
+    [
+      %OnlineUser{id: "u1", name: "Ada"},
+      %OnlineUser{id: "u2", name: "Grace"},
+      %OnlineUser{id: "u3", name: "Linus"}
+    ]
   end
 end

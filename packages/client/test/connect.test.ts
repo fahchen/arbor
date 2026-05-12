@@ -125,34 +125,29 @@ vi.mock("phoenix", () => ({
   Socket: MockSocket
 }))
 
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Arbor {
-    interface Stores {
-      "Test.Store": Arbor.StoreDef<
-        "Test.Store",
-        {
-          title: string
-          child: Arbor.StoreField<"Test.Child">
-          counter: number
-        },
-        {
-          rename: {
-            payload: { title: string }
-            reply: { ok: true }
-          }
-        }
-      >
-
-      "Test.Child": Arbor.StoreDef<
-        "Test.Child",
-        {
-          count: number
-        },
-        {}
-      >
+type TestStores = {
+  "Test.Store": Arbor.StoreDef<
+    "Test.Store",
+    {
+      title: string
+      child: Arbor.StoreField<"Test.Child">
+      counter: number
+    },
+    {
+      rename: {
+        payload: { title: string }
+        reply: { ok: true }
+      }
     }
-  }
+  >
+
+  "Test.Child": Arbor.StoreDef<
+    "Test.Child",
+    {
+      count: number
+    },
+    {}
+  >
 }
 
 describe("connectStore", () => {
@@ -169,7 +164,7 @@ describe("connectStore", () => {
     const socket = new MockSocket()
     let resolved = false
 
-    const proxyPromise = connectStore(socket, {
+    const proxyPromise = connectStore<TestStores>(socket, {
       module: "Test.Store",
       id: "root"
     })
@@ -200,7 +195,7 @@ describe("connectStore", () => {
   test("nested store field returns a stable child proxy", async () => {
     const { connectStore } = await import("../src/connect")
     const socket = new MockSocket()
-    const proxyPromise = connectStore(socket, {
+    const proxyPromise = connectStore<TestStores>(socket, {
       module: "Test.Store",
       id: "root"
     })
@@ -218,7 +213,7 @@ describe("connectStore", () => {
   test("dispatchCommand sends a command and resolves with the reply", async () => {
     const { connectStore } = await import("../src/connect")
     const socket = new MockSocket()
-    const proxyPromise = connectStore(socket, {
+    const proxyPromise = connectStore<TestStores>(socket, {
       module: "Test.Store",
       id: "root"
     })
@@ -245,7 +240,7 @@ describe("connectStore", () => {
   test("subscribe fires when the store node mutates", async () => {
     const { connectStore } = await import("../src/connect")
     const socket = new MockSocket()
-    const proxyPromise = connectStore(socket, {
+    const proxyPromise = connectStore<TestStores>(socket, {
       module: "Test.Store",
       id: "root"
     })
@@ -270,7 +265,7 @@ describe("connectStore", () => {
   test("snapshot returns a plain object tree", async () => {
     const { connectStore } = await import("../src/connect")
     const socket = new MockSocket()
-    const proxyPromise = connectStore(socket, {
+    const proxyPromise = connectStore<TestStores>(socket, {
       module: "Test.Store",
       id: "root"
     })

@@ -55,15 +55,16 @@ defmodule Mix.Tasks.Compile.ArborTsTest do
       assert {:ok, []} = ArborTs.run([])
 
       contents = File.read!(output_path)
-      assert contents =~ "declare global {"
+      assert contents =~ "declare namespace Arbor {"
+      refute contents =~ "declare global"
+      refute contents =~ "export {}"
+      refute contents =~ ~s|import "@arbor/client"|
       assert contents =~ "type AsyncResult<T>"
       assert contents =~ "interface StoreDef<Module extends string, Shape, Commands>"
-      refute contents =~ ~s|import "@arbor/client"|
       assert contents =~ ~s|"Arbor.TestSupport.TypespecProbe": StoreDef<|
       assert contents =~ ~s|"Arbor.TestSupport.TypespecProbeChild": StoreDef<|
       assert contents =~ "Arbor.StreamField<"
       assert contents =~ "Arbor.AsyncField<"
-      assert String.ends_with?(contents, "export {}\n")
     end
 
     test "returns :noop when the bundle already matches", %{output_path: output_path} do

@@ -1,25 +1,34 @@
 defmodule Arbor.Codegen.TypeScript do
   @moduledoc """
   TypeScript codegen for every Arbor `state do` module exposed by the
-  current Mix project. Emits a single type-only `.ts` bundle that erases
-  to empty JS at consumer build time.
+  current Mix project. Emits a single ambient `.d.ts` bundle.
 
   ## Output shape
 
-  One file (`priv/codegen/ts/arbor.ts` by default) containing:
+  One file (`priv/codegen/ts/arbor.d.ts` by default) containing:
 
-    * a `declare global { namespace Arbor { ... } }` block carrying
+    * one top-level `namespace <Root>` block (root namespace configurable
+      via `config :arbor, :ts_codegen_root_namespace, "Arbor"`) carrying
       shared marker types (`StoreId`, `AsyncResult`, `StoreDef`,
-      `StoreField`, `StreamField`, `AsyncField`) and the `Stores`
-      interface populated with one entry per Arbor.Store module
-    * one `namespace <Path>` block per Arbor.State module, nested to
-      mirror the Elixir module tree, each containing an
-      `export interface <Name> { ... }` declaration
-    * a tail `export {}` so the file is treated as a module by TS
+      `StoreField`, `StreamField`, `AsyncField`) and an `interface
+      Stores` populated with one entry per Arbor.Store module
+    * one top-level `namespace <Path>` block per Arbor.State module,
+      nested to mirror the Elixir module tree, each holding an
+      `interface <Name> { ... }` declaration
 
-  Consumer code references generated types as e.g. `Arbor.Stores`,
-  `MyApp.States.LineItemState`, with no runtime dependency on this
-  bundle (everything erases to empty JS).
+  The file is an ambient `.d.ts` (no top-level `import` / `export`),
+  so tsc picks it up automatically when the file falls under the
+  project's `include` glob. Consumers reference generated types as e.g.
+  `<Root>.Stores`, `MyApp.States.LineItemState`, without any side-effect
+  import.
+
+  Consumers thread the generated `<Root>.Stores` type through the
+  `@arbor/client` API as the registry generic:
+
+      const cart = await connectStore<MyApp.Stores>(socket, {
+        module: "MyApp.Stores.CartPageStore",
+        id: "cart:demo"
+      })
 
   ## Type mapping
 
@@ -34,14 +43,16 @@ defmodule Arbor.Codegen.TypeScript do
   | `map()`                         | `Record<string, unknown>`               |
   | `%{key: T}`                     | `{ key: T }` (literal-keyed map)        |
   | `list(T)` / `[T]`               | `T[]`                                   |
-  | `stream(T)`                     | `Arbor.StreamField<T>`                  |
+  | `stream(T)`                     | `<Root>.StreamField<T>`                 |
   | `T \\| U`                       | `T \| U`                                |
   | `Module.t()`                    | full Elixir alias path                  |
-  | `Module.state()`                | `Arbor.StoreField<"Full.Module">`       |
-  | `Arbor.AsyncResult.of(T)`       | `Arbor.AsyncField<T>`                   |
+  | `Module.state()`                | `<Root>.StoreField<"Full.Module">`      |
+  | `Arbor.AsyncResult.of(T)`       | `<Root>.AsyncField<T>`                  |
   """
 
   alias Arbor.Codegen.TypeScript.TypeRenderer
+
+  @default_root "Arbor"
 
   @typedoc """
   An entry produced by `Arbor.Codegen.TypeScript.Manifest.list/0` and
@@ -57,9 +68,16 @@ defmodule Arbor.Codegen.TypeScript do
   `entries`. Returns the rendered source string. Raises `ArgumentError` on
   a duplicate fully-qualified module name (defensive — real modules can't
   collide).
+
+  Options:
+    * `:root_namespace` — root namespace name. Defaults to
+      `Application.get_env(:arbor, :ts_codegen_root_namespace, "Arbor")`.
   """
   @spec render([entry()]) :: String.t()
-  def render(entries) when is_list(entries) do
+  @spec render([entry()], keyword()) :: String.t()
+  def render(entries, opts \\ []) when is_list(entries) do
+    root = Keyword.get(opts, :root_namespace, configured_root_namespace())
+
     entries =
       entries
       |> Enum.uniq_by(fn {module, _data} -> module end)
@@ -72,14 +90,19 @@ defmodule Arbor.Codegen.TypeScript do
 
     iodata = [
       header(),
-      "declare global {\n",
-      arbor_namespace_block(store_entries),
-      state_namespaces_block(state_entries),
-      "}\n",
-      "\nexport {}\n"
+      root_namespace_block(root, store_entries),
+      state_namespaces_block(state_entries, root)
     ]
 
     IO.iodata_to_binary(iodata)
+  end
+
+  @doc """
+  Returns the configured root namespace, falling back to `"Arbor"`.
+  """
+  @spec configured_root_namespace() :: String.t()
+  def configured_root_namespace do
+    Application.get_env(:arbor, :ts_codegen_root_namespace, @default_root)
   end
 
   defp header do
@@ -106,74 +129,76 @@ defmodule Arbor.Codegen.TypeScript do
   end
 
   # ---------------------------------------------------------------------------
-  # Arbor namespace
+  # Root namespace
   # ---------------------------------------------------------------------------
 
-  defp arbor_namespace_block(store_entries) do
+  defp root_namespace_block(root, store_entries) do
     [
-      "  namespace Arbor {\n",
+      "declare namespace ",
+      root,
+      " {\n",
       shared_marker_types(),
       "\n",
-      stores_interface_block(store_entries),
-      "  }\n"
+      stores_interface_block(store_entries, root),
+      "}\n"
     ]
   end
 
   defp shared_marker_types do
     """
-        type StoreId = string[]
+      type StoreId = string[]
 
-        type AsyncError =
-          | { kind: "error"; value: unknown }
-          | { kind: "exit"; value: unknown }
+      type AsyncError =
+        | { kind: "error"; value: unknown }
+        | { kind: "exit"; value: unknown }
 
-        type AsyncResult<T> =
-          | { status: "loading"; data: T | null; error: null }
-          | { status: "ok"; data: T; error: null }
-          | { status: "failed"; data: T | null; error: AsyncError | unknown }
+      type AsyncResult<T> =
+        | { status: "loading"; data: T | null; error: null }
+        | { status: "ok"; data: T; error: null }
+        | { status: "failed"; data: T | null; error: AsyncError | unknown }
 
-        interface StoreDef<Module extends string, Shape, Commands> {
-          readonly __arbor__module__?: Module
-          readonly __arbor__shape__?: Shape
-          readonly __arbor__commands__?: Commands
-        }
+      interface StoreDef<Module extends string, Shape, Commands> {
+        readonly __arbor__module__?: Module
+        readonly __arbor__shape__?: Shape
+        readonly __arbor__commands__?: Commands
+      }
 
-        type StoreField<Module extends string> = {
-          readonly __arbor__kind__?: "store"
-          readonly __arbor__module__?: Module
-        }
+      type StoreField<Module extends string> = {
+        readonly __arbor__kind__?: "store"
+        readonly __arbor__module__?: Module
+      }
 
-        type StreamField<Item> = {
-          readonly __arbor__kind__?: "stream"
-          readonly __arbor__item__?: Item
-        }
+      type StreamField<Item> = {
+        readonly __arbor__kind__?: "stream"
+        readonly __arbor__item__?: Item
+      }
 
-        type AsyncField<Value> = {
-          readonly __arbor__kind__?: "async"
-          readonly __arbor__value__?: Value
-        }
+      type AsyncField<Value> = {
+        readonly __arbor__kind__?: "async"
+        readonly __arbor__value__?: Value
+      }
     """
   end
 
-  defp stores_interface_block([]) do
-    "    interface Stores {}\n"
+  defp stores_interface_block([], _root) do
+    "  interface Stores {}\n"
   end
 
-  defp stores_interface_block(store_entries) do
-    body = Enum.map_join(store_entries, "\n\n", &render_store_def(&1, "      "))
+  defp stores_interface_block(store_entries, root) do
+    body = Enum.map_join(store_entries, "\n\n", &render_store_def(&1, "    ", root))
 
     [
-      "    interface Stores {\n",
+      "  interface Stores {\n",
       body,
       "\n",
-      "    }\n"
+      "  }\n"
     ]
   end
 
-  defp render_store_def({module, %{fields: fields, commands: commands}}, indent) do
+  defp render_store_def({module, %{fields: fields, commands: commands}}, indent, root) do
     module_name = full_module_name(module)
     shape_indent = indent <> "  "
-    field_lines = render_state_fields(fields, shape_indent <> "  ")
+    field_lines = render_state_fields(fields, shape_indent <> "  ", root)
 
     [
       indent,
@@ -188,27 +213,31 @@ defmodule Arbor.Codegen.TypeScript do
       "\n",
       shape_indent,
       "},\n",
-      render_commands_block(commands, shape_indent),
+      render_commands_block(commands, shape_indent, root),
       "\n",
       indent,
       ">"
     ]
   end
 
-  defp render_commands_block([], indent), do: [indent, "{}"]
+  defp render_commands_block([], indent, _root), do: [indent, "{}"]
 
-  defp render_commands_block(commands, indent) do
+  defp render_commands_block(commands, indent, root) do
     inner_indent = indent <> "  "
 
     body =
       Enum.map_join(commands, "\n", fn command ->
-        render_command_entry(command, inner_indent)
+        render_command_entry(command, inner_indent, root)
       end)
 
     [indent, "{\n", body, "\n", indent, "}"]
   end
 
-  defp render_command_entry(%{name: name, payload_fields: payload_fields} = command, indent) do
+  defp render_command_entry(
+         %{name: name, payload_fields: payload_fields} = command,
+         indent,
+         root
+       ) do
     inner_indent = indent <> "  "
     reply_ast = Map.get(command, :reply)
 
@@ -218,26 +247,26 @@ defmodule Arbor.Codegen.TypeScript do
       ": {\n",
       inner_indent,
       "payload: ",
-      render_command_payload(payload_fields),
+      render_command_payload(payload_fields, root),
       "\n",
       inner_indent,
       "reply: ",
-      render_reply(reply_ast),
+      render_reply(reply_ast, root),
       "\n",
       indent,
       "}"
     ]
   end
 
-  defp render_reply(nil), do: "unknown"
-  defp render_reply(ast), do: TypeRenderer.render(ast)
+  defp render_reply(nil, _root), do: "unknown"
+  defp render_reply(ast, root), do: TypeRenderer.render(ast, root_namespace: root)
 
-  defp render_command_payload([]), do: "{}"
+  defp render_command_payload([], _root), do: "{}"
 
-  defp render_command_payload(fields) do
+  defp render_command_payload(fields, root) do
     body =
       Enum.map_join(fields, "; ", fn %{name: name, type: type_ast} ->
-        "#{name}: #{TypeRenderer.render(type_ast)}"
+        "#{name}: #{TypeRenderer.render(type_ast, root_namespace: root)}"
       end)
 
     "{ " <> body <> " }"
@@ -247,11 +276,11 @@ defmodule Arbor.Codegen.TypeScript do
   # State namespaces
   # ---------------------------------------------------------------------------
 
-  defp state_namespaces_block([]), do: []
+  defp state_namespaces_block([], _root), do: []
 
-  defp state_namespaces_block(state_entries) do
+  defp state_namespaces_block(state_entries, root) do
     tree = build_state_tree(state_entries)
-    body = emit_state_tree(tree, 1)
+    body = emit_state_tree(tree, 0, root)
 
     ["\n", body]
   end
@@ -272,35 +301,50 @@ defmodule Arbor.Codegen.TypeScript do
     end)
   end
 
-  defp emit_state_tree(tree, depth) do
+  defp emit_state_tree(tree, depth, root) do
     tree
     |> Enum.sort_by(fn {segment, _entry} -> segment end)
-    |> Enum.map(&emit_state_node(&1, depth))
+    |> Enum.map(&emit_state_node(&1, depth, root))
     |> Enum.intersperse("\n")
   end
 
-  defp emit_state_node({segment, {children, leaf_entry}}, depth) do
+  defp emit_state_node({segment, {children, leaf_entry}}, depth, root) do
     indent = String.duplicate("  ", depth)
-    children_body = emit_state_tree(children, depth + 1)
+    children_body = emit_state_tree(children, depth + 1, root)
 
     leaf_interface =
       case leaf_entry do
         nil -> []
-        {_module, %{fields: fields}} -> render_state_interface(segment, fields, indent)
+        {_module, %{fields: fields}} -> render_state_interface(segment, fields, indent, root)
       end
 
+    namespace_keyword = if depth == 0, do: "declare namespace ", else: "namespace "
+
     cond do
+      leaf_entry && map_size(children) == 0 && depth == 0 ->
+        # Top-level leaf with no children: wrap in `declare namespace` so the
+        # ambient .d.ts file picks it up. Nested leaves stay as bare
+        # `interface` declarations inside their parent namespace.
+        [
+          indent,
+          namespace_keyword,
+          segment,
+          " {\n",
+          render_state_interface(segment, fields_from(leaf_entry), indent <> "  ", root),
+          indent,
+          "}\n"
+        ]
+
       leaf_entry && map_size(children) == 0 ->
         leaf_interface
 
       leaf_entry ->
         [
-          leaf_interface,
-          "\n",
           indent,
-          "namespace ",
+          namespace_keyword,
           segment,
           " {\n",
+          render_state_interface(segment, fields_from(leaf_entry), indent <> "  ", root),
           children_body,
           indent,
           "}\n"
@@ -309,7 +353,7 @@ defmodule Arbor.Codegen.TypeScript do
       true ->
         [
           indent,
-          "namespace ",
+          namespace_keyword,
           segment,
           " {\n",
           children_body,
@@ -319,8 +363,10 @@ defmodule Arbor.Codegen.TypeScript do
     end
   end
 
-  defp render_state_interface(name, fields, indent) do
-    field_lines = render_state_fields(fields, indent <> "  ")
+  defp fields_from({_module, %{fields: fields}}), do: fields
+
+  defp render_state_interface(name, fields, indent, root) do
+    field_lines = render_state_fields(fields, indent <> "  ", root)
 
     [
       indent,
@@ -338,11 +384,11 @@ defmodule Arbor.Codegen.TypeScript do
   # Shared field rendering
   # ---------------------------------------------------------------------------
 
-  defp render_state_fields(fields, indent) do
+  defp render_state_fields(fields, indent, root) do
     fields
     |> filter_renderable_fields()
     |> Enum.map(fn %{name: field_name, type: type_ast} ->
-      "#{indent}#{field_name}: #{TypeRenderer.render(type_ast)}"
+      "#{indent}#{field_name}: #{TypeRenderer.render(type_ast, root_namespace: root)}"
     end)
   end
 

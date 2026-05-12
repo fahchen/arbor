@@ -4,32 +4,27 @@ import { describe, expect, test, vi } from "vitest"
 
 import { ArborProvider, useArborCommand, useArborRoot, useArborSnapshot } from "../src"
 
-void React
-
 import { FakeStoreProxy } from "./setup"
 
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Arbor {
-    interface Stores {
-      "React.Test.Root": Arbor.StoreDef<
-        "React.Test.Root",
-        {
-          title: string
-          counter: number
-        },
-        {
-          rename: { payload: { title: string }; reply: { ok: true } }
-        }
-      >
+void React
+
+type ReactTestStores = {
+  "React.Test.Root": Arbor.StoreDef<
+    "React.Test.Root",
+    {
+      title: string
+      counter: number
+    },
+    {
+      rename: { payload: { title: string }; reply: { ok: true } }
     }
-  }
+  >
 }
 
 type Root = "React.Test.Root"
 
-function buildProxy(title = "Inbox", counter = 0): FakeStoreProxy<Root> {
-  return new FakeStoreProxy<Root>({
+function buildProxy(title = "Inbox", counter = 0): FakeStoreProxy<ReactTestStores, Root> {
+  return new FakeStoreProxy<ReactTestStores, Root>({
     __arbor_store_id__: [],
     title,
     counter
@@ -41,7 +36,7 @@ describe("ArborProvider + useArborRoot", () => {
     const fake = buildProxy()
 
     function Reader() {
-      const root = useArborRoot<Root>()
+      const root = useArborRoot<ReactTestStores, Root>()
       return <span>{root.snapshot().title}</span>
     }
 
@@ -56,7 +51,7 @@ describe("ArborProvider + useArborRoot", () => {
 
   test("useArborRoot throws outside a provider", () => {
     function Reader() {
-      useArborRoot<Root>()
+      useArborRoot<ReactTestStores, Root>()
       return null
     }
 

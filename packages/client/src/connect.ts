@@ -8,16 +8,28 @@ import {
 import type { SocketLike } from "./runtime"
 import type { StoreModule, StoreProxy } from "./types"
 
-export interface ConnectStoreOptions<M extends StoreModule> {
+export interface ConnectStoreOptions<R, M extends StoreModule<R>> {
   module: M
   id: string
   params?: Record<string, unknown>
 }
 
-export async function connectStore<M extends StoreModule>(
+/**
+ * Opens a root store connection over `socket`. The `Registry` generic is the
+ * generated `<Root>.Stores` type emitted by `mix compile.arbor_ts`; the
+ * module string literal is inferred from `options.module` against `Registry`.
+ *
+ * Usage:
+ *
+ *     const cart = await connectStore<MyApp.Stores>(socket, {
+ *       module: "MyApp.Stores.CartPageStore",
+ *       id: "cart:demo"
+ *     })
+ */
+export async function connectStore<R, M extends StoreModule<R> = StoreModule<R>>(
   socket: SocketLike,
-  options: ConnectStoreOptions<M>
-): Promise<StoreProxy<M>> {
+  options: ConnectStoreOptions<R, M>
+): Promise<StoreProxy<R, M>> {
   const { connection, ready } = openRootConnection(socket, {
     module: options.module,
     id: options.id,
@@ -26,10 +38,10 @@ export async function connectStore<M extends StoreModule>(
 
   await ready
 
-  return getRootProxy<M>(connection)
+  return getRootProxy<R, M>(connection)
 }
 
-export function disconnectStore<M extends StoreModule>(
+export function disconnectStore<R, M extends StoreModule<R> = StoreModule<R>>(
   socket: SocketLike,
   options: { module: M; id: string }
 ): void {

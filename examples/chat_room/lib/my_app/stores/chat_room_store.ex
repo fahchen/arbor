@@ -23,13 +23,14 @@ defmodule MyApp.Stores.ChatRoomStore do
 
   alias MyApp.Chat
   alias MyApp.MessageState
+  alias MyApp.OnlineUser
   alias MyApp.Presence
 
   attr(:room_id, String.t(), required: true)
 
   state do
     stream(:messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: -100)
-    field(:online_users, Arbor.AsyncResult.of(list(map())))
+    field(:online_users, Arbor.AsyncResult.of(list(OnlineUser.t())))
 
     field(
       :last_send_status,
@@ -43,6 +44,7 @@ defmodule MyApp.Stores.ChatRoomStore do
 
   command :send_message do
     payload(:body, String.t())
+    reply(%{queued: boolean()})
   end
 
   @impl Arbor.Store

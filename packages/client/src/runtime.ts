@@ -5,12 +5,7 @@ import {
   pruneStreams,
   touchedStoreKeys
 } from "./streams"
-import type {
-  PatchEnvelope,
-  StoreId,
-  StoreModule,
-  StreamEntry
-} from "./types"
+import type { PatchEnvelope, StoreId, StreamEntry } from "./types"
 import { STORE_ID_KEY, storeIdKey } from "./types"
 
 type PushStatus = "ok" | "error" | "timeout"
@@ -45,7 +40,7 @@ export interface ConnectionListener {
 }
 
 export interface RootConnection {
-  readonly module: StoreModule
+  readonly module: string
   readonly id: string
   readonly topic: string
 
@@ -84,16 +79,16 @@ export function getSharedRuntime(socket: SocketLike): SharedRuntime {
   return runtime
 }
 
-export function connectionKey(module: StoreModule, id: string): string {
+export function connectionKey(module: string, id: string): string {
   return `${module}#${id}`
 }
 
-export function buildTopic(module: StoreModule, id: string): string {
+export function buildTopic(module: string, id: string): string {
   return `arbor:${encodeURIComponent(`${module}@${id}`)}`
 }
 
 export interface OpenRootOptions {
-  module: StoreModule
+  module: string
   id: string
   params?: Record<string, unknown>
 }

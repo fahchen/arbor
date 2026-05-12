@@ -18,26 +18,26 @@ import { STORE_ID_KEY, storeIdKey, streamStoreKeyPrefix } from "./types"
 const ROOT_STORE_ID: StoreId = []
 const RESERVED = new Set(["__arbor_store_id__", "dispatchCommand", "subscribe", "snapshot"])
 
-export function getRootProxy<M extends StoreModule>(
+export function getRootProxy<R, M extends StoreModule<R>>(
   connection: RootConnection
-): StoreProxy<M> {
-  return getProxyForStore<M>(connection, ROOT_STORE_ID)
+): StoreProxy<R, M> {
+  return getProxyForStore<R, M>(connection, ROOT_STORE_ID)
 }
 
-function getProxyForStore<M extends StoreModule>(
+function getProxyForStore<R, M extends StoreModule<R>>(
   connection: RootConnection,
   storeId: StoreId
-): StoreProxy<M> {
+): StoreProxy<R, M> {
   const key = storeIdKey(storeId)
   const cached = connection.proxyCache.get(key)
 
   if (cached) {
-    return cached as StoreProxy<M>
+    return cached as StoreProxy<R, M>
   }
 
   const proxy = buildProxy(connection, storeId)
   connection.proxyCache.set(key, proxy)
-  return proxy as StoreProxy<M>
+  return proxy as StoreProxy<R, M>
 }
 
 function buildProxy(connection: RootConnection, storeId: StoreId): object {
@@ -232,15 +232,15 @@ function isWireAsyncResult(value: unknown): value is WireAsyncResult {
 // snapshot()
 // ---------------------------------------------------------------------------
 
-export function snapshotStore<M extends StoreModule>(
+export function snapshotStore<R, M extends StoreModule<R>>(
   connection: RootConnection,
   storeId: StoreId
-): StoreSnapshot<M> {
+): StoreSnapshot<R, M> {
   const key = storeIdKey(storeId)
   const node = connection.storeIndex.get(key) as Record<string, unknown> | undefined
 
   if (!node) {
-    return { __arbor_store_id__: storeId } as StoreSnapshot<M>
+    return { __arbor_store_id__: storeId } as StoreSnapshot<R, M>
   }
 
   const out: Record<string, unknown> = { __arbor_store_id__: storeId }
@@ -250,7 +250,7 @@ export function snapshotStore<M extends StoreModule>(
     out[fieldName] = snapshotField(connection, storeId, fieldName, wireValue)
   }
 
-  return out as StoreSnapshot<M>
+  return out as StoreSnapshot<R, M>
 }
 
 function snapshotField(
