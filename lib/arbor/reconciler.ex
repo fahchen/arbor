@@ -51,6 +51,10 @@ defmodule Arbor.Reconciler do
             next_socket = update_store(entry.socket, assigns)
             {:update, store_id, next_socket, consumed_keys}
 
+          parent_assign_values_changed?(entry.socket, assigns, consumed_keys) ->
+            next_socket = update_store(entry.socket, assigns)
+            {:update, store_id, next_socket, consumed_keys}
+
           # Child has internal mutations queued (from a command handler, an
           # async result write, or a stream insert) since the last render. The
           # parent did not change so `update/2` does not run, but the child
@@ -66,6 +70,17 @@ defmodule Arbor.Reconciler do
         {:mount, store_id, new_child_socket(parent_path, child.module, id, assigns),
          consumed_keys}
     end
+  end
+
+  @spec parent_assign_values_changed?(Socket.t(), map(), [Socket.assign_key()]) :: boolean()
+  defp parent_assign_values_changed?(%Socket{} = socket, assigns, consumed_keys)
+       when is_map(assigns) and is_list(consumed_keys) do
+    Enum.any?(consumed_keys, fn key ->
+      case Map.fetch(socket.assigns, key) do
+        {:ok, current_value} -> current_value !== Map.fetch!(assigns, key)
+        :error -> true
+      end
+    end)
   end
 
   @spec child_store_dirty?(Socket.t()) :: boolean()

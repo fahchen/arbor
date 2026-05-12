@@ -138,6 +138,61 @@ defmodule Arbor.ResolverTest do
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
+  defmodule DerivedLineChildStore do
+    use Arbor.Store
+
+    attr :line, map(), required: true
+
+    state do
+      field :sku, String.t()
+      field :qty, integer()
+    end
+
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, mirror_line(socket, socket.assigns.line)}
+
+    @impl Arbor.Store
+    def render(socket) do
+      %{sku: socket.assigns.sku, qty: socket.assigns.qty}
+    end
+
+    @impl Arbor.Store
+    def update(params, socket), do: {:ok, mirror_line(socket, params.line)}
+
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+
+    defp mirror_line(socket, line) do
+      socket
+      |> Socket.assign(:sku, line.sku)
+      |> Socket.assign(:qty, line.qty)
+    end
+  end
+
+  defmodule DerivedLineRootStore do
+    use Arbor.Store
+
+    state do
+      field :lines, list(DerivedLineChildStore.state())
+    end
+
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+
+    @impl Arbor.Store
+    def render(socket) do
+      %{
+        lines:
+          Enum.map(socket.assigns.lines, fn line ->
+            child(DerivedLineChildStore, id: line.id, line: line)
+          end)
+      }
+    end
+
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+  end
+
   defmodule FilterStoreV1 do
     use Arbor.Store
 
@@ -543,6 +598,21 @@ defmodule Arbor.ResolverTest do
                Resolver.resolve(reordered_socket, registry)
 
       refute_receive {:mount, _id}
+    end
+
+    test "derived child assigns update when their parent source assign changes" do
+      lines = [%{id: "mug", sku: "mug", qty: 1}]
+      socket = root_socket(DerivedLineRootStore, %{lines: lines})
+      registry = registry(socket)
+
+      assert {:ok, %{lines: [%{sku: "mug", qty: 1}]}, socket, registry} =
+               Resolver.resolve(socket, registry)
+
+      next_lines = [%{id: "mug", sku: "mug", qty: 2}]
+      next_socket = Socket.assign(socket, :lines, next_lines)
+
+      assert {:ok, %{lines: [%{sku: "mug", qty: 2}]}, _socket, _registry} =
+               Resolver.resolve(next_socket, registry)
     end
 
     test "Changing a child's module remounts a fresh node" do
