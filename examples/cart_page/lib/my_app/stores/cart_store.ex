@@ -26,10 +26,11 @@ defmodule MyApp.Stores.CartStore do
   alias MyApp.Stores.CartLineStore
 
   attr(:cart_id, String.t(), required: true)
-  attr(:current_user, map() | nil, default: nil)
+  attr(:current_user, %{id: String.t(), name: String.t()} | nil, default: nil)
 
   state do
     field(:lines, list(CartLineStore.state()))
+    field(:total_units, integer())
     field(:subtotal_cents, integer())
 
     field(
@@ -102,6 +103,7 @@ defmodule MyApp.Stores.CartStore do
         for line <- socket.assigns.lines do
           Arbor.Child.child(CartLineStore, id: line.id, line: line)
         end,
+      total_units: total_units(socket.assigns.lines),
       subtotal_cents: subtotal(socket.assigns.lines),
       status: socket.assigns.status
     }
@@ -166,5 +168,9 @@ defmodule MyApp.Stores.CartStore do
 
   defp subtotal(lines) do
     Enum.reduce(lines, 0, fn line, acc -> acc + line.price_cents * line.qty end)
+  end
+
+  defp total_units(lines) do
+    Enum.reduce(lines, 0, fn line, acc -> acc + line.qty end)
   end
 end

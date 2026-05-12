@@ -60,6 +60,7 @@ declare namespace Arbor {
       "MyApp.Stores.CartStore",
       {
         lines: Arbor.StoreField<"MyApp.Stores.CartLineStore">[]
+        total_units: number
         subtotal_cents: number
         status: { type: "open" } | { type: "checking_out" } | { type: "checked_out"; order_id: string }
       },
