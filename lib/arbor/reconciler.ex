@@ -40,7 +40,7 @@ defmodule Arbor.Reconciler do
       )
       when is_list(parent_path) do
     id = validate_id!(child)
-    assigns = normalize_child_assigns(child.module, child.assigns)
+    assigns = normalize_assigns(child.module, child.assigns)
     consumed_keys = Map.keys(assigns)
     store_id = List.insert_at(parent_path, -1, id)
 
@@ -153,8 +153,8 @@ defmodule Arbor.Reconciler do
   end
 
   @doc false
-  @spec normalize_child_assigns(module(), map()) :: map()
-  def normalize_child_assigns(module, assigns) when is_atom(module) and is_map(assigns) do
+  @spec normalize_assigns(module(), map()) :: map()
+  def normalize_assigns(module, assigns) when is_atom(module) and is_map(assigns) do
     attrs =
       if function_exported?(module, :__arbor__, 1) do
         module.__arbor__(:attrs)
@@ -163,9 +163,18 @@ defmodule Arbor.Reconciler do
       end
 
     Enum.reduce(attrs, assigns, fn %{name: name, required: required, default: default}, acc ->
+      string_name = Atom.to_string(name)
+
       cond do
         Map.has_key?(acc, name) ->
           acc
+
+        Map.has_key?(acc, string_name) ->
+          value = Map.fetch!(acc, string_name)
+
+          acc
+          |> Map.delete(string_name)
+          |> Map.put(name, value)
 
         default != Attr.no_default() ->
           Map.put(acc, name, default)

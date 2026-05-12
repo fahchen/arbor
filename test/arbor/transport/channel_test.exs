@@ -50,9 +50,33 @@ defmodule Arbor.Transport.ChannelTest do
       do: {:noreply, Arbor.Socket.assign(socket, :title, title)}
   end
 
+  defmodule ParamStore do
+    @moduledoc false
+
+    use Arbor.Store
+
+    attr :room_id, String.t(), required: true
+
+    state do
+      field :room_id, String.t()
+    end
+
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
+    def render(socket), do: %{room_id: socket.assigns.room_id}
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+  end
+
   defmodule ArborChannel do
     @moduledoc false
-    use Arbor.Transport.Channel, stores: [Arbor.Transport.ChannelTest.RootStore]
+
+    use Arbor.Transport.Channel,
+      stores: [
+        Arbor.Transport.ChannelTest.RootStore,
+        Arbor.Transport.ChannelTest.ParamStore
+      ]
   end
 
   import Phoenix.ChannelTest
@@ -60,6 +84,7 @@ defmodule Arbor.Transport.ChannelTest do
 
   @root_module_str "Arbor.Transport.ChannelTest.RootStore"
   @root_id "home"
+  @param_module_str "Arbor.Transport.ChannelTest.ParamStore"
 
   setup_all do
     start_supervised!({Phoenix.PubSub, name: Arbor.Transport.ChannelTest.PubSub})
@@ -109,6 +134,20 @@ defmodule Arbor.Transport.ChannelTest do
       "version" => 1,
       "ops" => [%{op: "replace", path: "", value: %{"title" => "Inbox"}}],
       "stream_ops" => []
+    })
+
+    shutdown_channel(socket)
+  end
+
+  test "join normalizes string-keyed params for root store attrs" do
+    {:ok, _reply, socket} =
+      join_root(%{
+        "module" => @param_module_str,
+        "params" => %{"room_id" => "general"}
+      })
+
+    assert_push("patch", %{
+      "ops" => [%{op: "replace", path: "", value: %{"room_id" => "general"}}]
     })
 
     shutdown_channel(socket)

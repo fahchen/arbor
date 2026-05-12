@@ -99,6 +99,8 @@ defmodule Arbor.Page.Server do
     transport_pid =
       if is_map(transport_opts), do: Map.get(transport_opts, :transport_pid), else: nil
 
+    root_assigns = Reconciler.normalize_assigns(root_module, params)
+
     root_socket =
       %Socket{
         id: "",
@@ -108,7 +110,7 @@ defmodule Arbor.Page.Server do
         private: %{},
         transport_pid: transport_pid
       }
-      |> Socket.assign(Map.new(params))
+      |> Socket.assign(root_assigns)
       |> attach_default_hooks()
       |> Reconciler.mount_store()
 
@@ -231,7 +233,7 @@ defmodule Arbor.Page.Server do
   end
 
   def handle_info({:EXIT, pid, reason}, %State{} = state) do
-    Logger.error("page server linked process exited: #{inspect(pid)} reason=#{inspect(reason)}")
+    log_linked_process_exit(pid, reason)
     {:stop, reason, state}
   end
 
@@ -258,7 +260,7 @@ defmodule Arbor.Page.Server do
       root_module.terminate(reason, root_socket)
     end
 
-    Logger.error("page server terminating for #{inspect(root_module)} reason=#{inspect(reason)}")
+    log_page_server_terminate(root_module, reason)
     :ok
   end
 
@@ -631,6 +633,29 @@ defmodule Arbor.Page.Server do
   end
 
   defp transport_pid(_state), do: nil
+
+  defp log_linked_process_exit(pid, reason) when is_pid(pid) do
+    message = "page server linked process exited: #{inspect(pid)} reason=#{inspect(reason)}"
+    log_shutdown_message(message, reason)
+  end
+
+  defp log_page_server_terminate(root_module, reason) when is_atom(root_module) do
+    message = "page server terminating for #{inspect(root_module)} reason=#{inspect(reason)}"
+    log_shutdown_message(message, reason)
+  end
+
+  defp log_shutdown_message(message, reason) when is_binary(message) do
+    if expected_shutdown_reason?(reason) do
+      :ok
+    else
+      Logger.error(message)
+    end
+  end
+
+  defp expected_shutdown_reason?(:normal), do: true
+  defp expected_shutdown_reason?(:shutdown), do: true
+  defp expected_shutdown_reason?({:shutdown, _reason}), do: true
+  defp expected_shutdown_reason?(_reason), do: false
 
   @spec envelope_op_count(PatchEnvelope.t() | nil) :: non_neg_integer()
   defp envelope_op_count(nil), do: 0
