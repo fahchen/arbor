@@ -3,6 +3,13 @@ defmodule Arbor.Socket do
 
   use TypedStructor
 
+  # Private key used to expose the params supplied when a root store is mounted.
+  @root_params_private_key :__arbor_root_params__
+  # Private key used to expose Phoenix session data captured when the Arbor socket connects.
+  @session_private_key :__arbor_session__
+  # Private key used to expose Phoenix connect_info captured when the Arbor socket connects.
+  @connect_info_private_key :__arbor_connect_info__
+
   @typedoc "Keys written into the assigns map."
   @type assign_key() :: term()
 
@@ -55,6 +62,15 @@ defmodule Arbor.Socket do
 
   @typedoc "Runtime identity of a store node — array of local ids from root."
   @type store_id() :: [String.t()]
+
+  @typedoc "Client params supplied for the current root store mount."
+  @type root_params() :: map()
+
+  @typedoc "Session data shared by all root stores on one Arbor socket."
+  @type session() :: map()
+
+  @typedoc "Phoenix connect_info data captured when the Arbor socket connects."
+  @type connect_info() :: map()
 
   @doc """
   Returns the runtime identity (`store_id`) of the store node owning this socket.
@@ -234,10 +250,119 @@ defmodule Arbor.Socket do
     Map.get(socket.private, key, default)
   end
 
+  @doc """
+  Stores the current root store mount params in socket private context.
+
+  ## Examples
+
+      iex> socket = Arbor.Socket.put_root_params(%Arbor.Socket{}, %{"poll_id" => "p1"})
+      iex> Arbor.Socket.root_params(socket)
+      %{"poll_id" => "p1"}
+  """
+  @spec put_root_params(t(), root_params()) :: t()
+  def put_root_params(%__MODULE__{} = socket, params) when is_map(params) do
+    put_private(socket, @root_params_private_key, params)
+  end
+
+  @doc """
+  Returns the params supplied when the current root store was mounted.
+
+  ## Examples
+
+      iex> Arbor.Socket.root_params(%Arbor.Socket{})
+      %{}
+  """
+  @spec root_params(t()) :: root_params()
+  def root_params(%__MODULE__{} = socket) do
+    get_private(socket, @root_params_private_key, %{})
+  end
+
+  @doc """
+  Stores session data shared by all root stores on one Arbor socket.
+
+  ## Examples
+
+      iex> socket = Arbor.Socket.put_session(%Arbor.Socket{}, %{"user_id" => "u1"})
+      iex> Arbor.Socket.session(socket)
+      %{"user_id" => "u1"}
+  """
+  @spec put_session(t(), session()) :: t()
+  def put_session(%__MODULE__{} = socket, session) when is_map(session) do
+    put_private(socket, @session_private_key, session)
+  end
+
+  @doc """
+  Returns the session data shared by all root stores on one Arbor socket.
+
+  ## Examples
+
+      iex> Arbor.Socket.session(%Arbor.Socket{})
+      %{}
+  """
+  @spec session(t()) :: session()
+  def session(%__MODULE__{} = socket) do
+    get_private(socket, @session_private_key, %{})
+  end
+
+  @doc """
+  Stores Phoenix connect_info data on the Arbor socket.
+
+  ## Examples
+
+      iex> socket = Arbor.Socket.put_connect_info(%Arbor.Socket{}, %{peer_data: %{address: {127, 0, 0, 1}}})
+      iex> Arbor.Socket.connect_info(socket)
+      %{peer_data: %{address: {127, 0, 0, 1}}}
+  """
+  @spec put_connect_info(t(), connect_info()) :: t()
+  def put_connect_info(%__MODULE__{} = socket, connect_info) when is_map(connect_info) do
+    put_private(socket, @connect_info_private_key, connect_info)
+  end
+
+  @doc """
+  Returns Phoenix connect_info data captured when the Arbor socket connected.
+
+  ## Examples
+
+      iex> Arbor.Socket.connect_info(%Arbor.Socket{})
+      %{}
+  """
+  @spec connect_info(t()) :: connect_info()
+  def connect_info(%__MODULE__{} = socket) do
+    get_private(socket, @connect_info_private_key, %{})
+  end
+
+  @doc """
+  Copies shared Arbor context from one socket to another.
+
+  The copied context includes session and connect_info. Root params are
+  intentionally per-root and are not copied.
+
+  ## Examples
+
+      iex> source = Arbor.Socket.put_session(%Arbor.Socket{}, %{"user_id" => "u1"})
+      iex> target = Arbor.Socket.inherit_context(source, %Arbor.Socket{})
+      iex> Arbor.Socket.session(target)
+      %{"user_id" => "u1"}
+  """
+  @spec inherit_context(t(), t()) :: t()
+  def inherit_context(%__MODULE__{} = source, %__MODULE__{} = target) do
+    Enum.reduce(context_private_keys(), target, fn key, acc ->
+      case Map.fetch(source.private, key) do
+        {:ok, value} -> put_private(acc, key, value)
+        :error -> acc
+      end
+    end)
+  end
+
   @doc false
   @spec put_private(t(), private_key(), term()) :: t()
   def put_private(%__MODULE__{} = socket, key, value) do
     %{socket | private: Map.put(socket.private, key, value)}
+  end
+
+  @spec context_private_keys() :: [private_key()]
+  defp context_private_keys do
+    [@session_private_key, @connect_info_private_key]
   end
 
   @spec ensure_changed(t()) :: map()

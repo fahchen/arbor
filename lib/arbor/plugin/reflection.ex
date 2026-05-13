@@ -24,23 +24,25 @@ defmodule Arbor.Plugin.Reflection do
   defp collect_sections(module) do
     fields = Module.get_attribute(module, :__arbor_fields__) || []
     streams = Arbor.Plugin.StateField.stream_fields(fields)
+    root? = Module.get_attribute(module, :__arbor_root__) || false
 
     commands =
       module |> Module.get_attribute(:__arbor_commands__) |> List.wrap() |> Enum.reverse()
 
     attrs = module |> Module.get_attribute(:__arbor_attrs__) |> List.wrap() |> Enum.reverse()
 
-    %{fields: fields, streams: streams, commands: commands, attrs: attrs}
+    %{fields: fields, streams: streams, commands: commands, attrs: attrs, root?: root?}
   end
 
   defp build_plural_clauses(sections) do
-    %{fields: fields, streams: streams, commands: commands, attrs: attrs} = sections
+    %{fields: fields, streams: streams, commands: commands, attrs: attrs, root?: root?} = sections
 
     [
       quote(do: def(__arbor__(:fields), do: unquote(Macro.escape(fields)))),
       quote(do: def(__arbor__(:commands), do: unquote(Macro.escape(commands)))),
       quote(do: def(__arbor__(:streams), do: unquote(Macro.escape(streams)))),
-      quote(do: def(__arbor__(:attrs), do: unquote(Macro.escape(attrs))))
+      quote(do: def(__arbor__(:attrs), do: unquote(Macro.escape(attrs)))),
+      quote(do: def(__arbor__(:root?), do: unquote(root?)))
     ]
   end
 
