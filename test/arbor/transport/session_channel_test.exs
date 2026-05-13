@@ -117,28 +117,12 @@ defmodule Arbor.Transport.SessionChannelTest do
     end
   end
 
-  defmodule NonRootStore do
-    @moduledoc false
-    use Arbor.Store
-
-    state do
-      field :ok, boolean()
-    end
-
-    @impl Arbor.Store
-    def render(_socket), do: %{ok: true}
-
-    @impl Arbor.Store
-    def handle_command(_name, _payload, socket), do: {:noreply, socket}
-  end
-
   defmodule AppSession do
     @moduledoc false
     use Arbor.Session,
       roots: [
         alpha: Arbor.Transport.SessionChannelTest.AlphaRootStore,
-        beta: Arbor.Transport.SessionChannelTest.BetaRootStore,
-        non_root: Arbor.Transport.SessionChannelTest.NonRootStore
+        beta: Arbor.Transport.SessionChannelTest.BetaRootStore
       ]
 
     @impl Arbor.Session
@@ -308,15 +292,12 @@ defmodule Arbor.Transport.SessionChannelTest do
     assert_push("patch", %{"root_id" => "beta-1", "ops" => [%{path: "/label"}]})
   end
 
-  test "mount rejects undeclared roots and declared non-root stores" do
+  test "mount rejects undeclared roots" do
     {:ok, _reply, socket} = join_session()
     assert_receive {:session_join, _params, _current_user}
 
     unknown_ref = push(socket, "mount", %{"root" => "unknown", "params" => %{}})
     assert_reply(unknown_ref, :error, %{reason: "unknown root"})
-
-    non_root_ref = push(socket, "mount", %{"root" => "non_root", "params" => %{}})
-    assert_reply(non_root_ref, :error, %{reason: "declared store is not a root store"})
   end
 
   test "mount rejects duplicate root ids" do

@@ -70,6 +70,14 @@ defmodule Arbor.Session do
 
       iex> defmodule SessionFetchRootDoc do
       ...>   defmodule Store do
+      ...>     use Arbor.Store, root: true
+      ...>
+      ...>     state do
+      ...>       field :ok, boolean()
+      ...>     end
+      ...>
+      ...>     def render(_socket), do: %{ok: true}
+      ...>     def handle_command(_name, _payload, socket), do: {:noreply, socket}
       ...>   end
       ...>
       ...>   use Arbor.Session, roots: [dashboard: Store]
@@ -120,11 +128,32 @@ defmodule Arbor.Session do
                 "Arbor.Session root #{inspect(name)} must point at a module, got: #{inspect(module_ast)}"
         end
 
+        validate_root_store!(name, module)
         {name, module}
 
       other ->
         raise ArgumentError,
               "Arbor.Session roots must be a keyword list of root_name: StoreModule, got: #{inspect(other)}"
     end)
+  end
+
+  @spec validate_root_store!(root_name(), module()) :: :ok
+  defp validate_root_store!(name, module) when is_atom(name) and is_atom(module) do
+    cond do
+      not Code.ensure_loaded?(module) ->
+        raise ArgumentError,
+              "Arbor.Session root #{inspect(name)} module #{inspect(module)} is not loadable"
+
+      not function_exported?(module, :__arbor__, 1) ->
+        raise ArgumentError,
+              "Arbor.Session root #{inspect(name)} module #{inspect(module)} must use Arbor.Store, root: true"
+
+      module.__arbor__(:root?) ->
+        :ok
+
+      true ->
+        raise ArgumentError,
+              "Arbor.Session root #{inspect(name)} module #{inspect(module)} must use Arbor.Store, root: true"
+    end
   end
 end
