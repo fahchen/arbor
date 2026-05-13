@@ -280,12 +280,6 @@ defmodule Arbor.Transport.SessionChannelTest do
     assert_reply(non_root_ref, :error, %{reason: "declared store is not a root store"})
   end
 
-  test "non-root stores cannot use the default root mount callback" do
-    assert_raise ArgumentError, ~r/is not an Arbor root store/, fn ->
-      NonRootStore.mount(%{}, %Arbor.Socket{})
-    end
-  end
-
   test "mount rejects duplicate root ids" do
     {:ok, _reply, socket} = join_session()
     assert_receive {:session_join, _params, _current_user}

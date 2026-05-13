@@ -299,6 +299,34 @@ defmodule Arbor.CompileTimeDslTest do
              "function handle_command/3 required by behaviour Arbor.Store is not implemented"
   end
 
+  test "non-root stores cannot define mount/2" do
+    source = """
+    defmodule Arbor.TestSupport.NonRootMountCallbackStore do
+      @moduledoc false
+      use Arbor.Store
+
+      state do
+        field :id, String.t()
+      end
+
+      @impl Arbor.Store
+      def mount(_params, socket), do: {:ok, socket}
+
+      @impl Arbor.Store
+      def render(_socket), do: %{id: "ok"}
+
+      @impl Arbor.Store
+      def handle_command(_name, _payload, socket), do: {:noreply, socket}
+    end
+    """
+
+    capture_io(:stderr, fn ->
+      assert_raise CompileError, ~r/mount\/2 is only allowed on root Arbor stores/, fn ->
+        Code.compile_string(source)
+      end
+    end)
+  end
+
   describe "stream declarations inside state do" do
     alias Arbor.TestSupport.AsyncStreamStore
     alias Arbor.TestSupport.StreamOnlyStore

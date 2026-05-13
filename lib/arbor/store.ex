@@ -40,17 +40,17 @@ defmodule Arbor.Store do
   @type terminate_reason() :: :normal | :shutdown | {:shutdown, value()} | value()
 
   @doc """
-  Initializes a freshly-created store socket.
-  """
-  @callback init(socket :: Socket.t()) :: {:ok, Socket.t()}
-
-  @doc """
   Mounts a root store with client-supplied params.
 
   Only modules declared with `use Arbor.Store, root: true` receive this
   callback. Child stores use `init/1`.
   """
   @callback mount(params :: root_params(), socket :: Socket.t()) :: {:ok, Socket.t()}
+
+  @doc """
+  Initializes a freshly-created store socket.
+  """
+  @callback init(socket :: Socket.t()) :: {:ok, Socket.t()}
 
   @doc """
   Initializes a freshly-mounted store socket.
@@ -103,13 +103,30 @@ defmodule Arbor.Store do
   """
   @callback terminate(reason :: terminate_reason(), socket :: Socket.t()) :: :ok
 
-  @optional_callbacks init: 1,
+  @optional_callbacks mount: 2,
+                      init: 1,
                       mount: 1,
-                      mount: 2,
                       update: 2,
                       handle_async: 3,
                       handle_info: 2,
                       terminate: 2
+
+  @doc false
+  @spec __before_compile__(Macro.Env.t()) :: Macro.t()
+  defmacro __before_compile__(env) do
+    root? = Module.get_attribute(env.module, :__arbor_root__) || false
+
+    if not root? and Module.defines?(env.module, {:mount, 2}, :def) do
+      raise CompileError,
+        file: env.file,
+        line: env.line,
+        description:
+          "mount/2 is only allowed on root Arbor stores; " <>
+            "declare `use Arbor.Store, root: true` before defining it"
+    end
+
+    quote(do: :ok)
+  end
 
   @spec __using__(keyword()) :: Macro.t()
   defmacro __using__(opts) do
@@ -157,6 +174,15 @@ defmodule Arbor.Store do
       @spec __arbor_kind__() :: :store
       def __arbor_kind__, do: :store
 
+      if @__arbor_root__ do
+        @impl Arbor.Store
+        @doc false
+        @spec mount(Arbor.Store.root_params(), Arbor.Socket.t()) :: {:ok, Arbor.Socket.t()}
+        def mount(_params, socket) do
+          {:ok, socket}
+        end
+      end
+
       @impl Arbor.Store
       @doc false
       @spec init(Arbor.Socket.t()) :: {:ok, Arbor.Socket.t()}
@@ -168,31 +194,18 @@ defmodule Arbor.Store do
         end
       end
 
-      if @__arbor_root__ do
-        @impl Arbor.Store
-        @doc false
-        @spec mount(Arbor.Store.root_params(), Arbor.Socket.t()) :: {:ok, Arbor.Socket.t()}
-        def mount(_params, socket) do
-          {:ok, socket}
-        end
-      else
-        @impl Arbor.Store
-        @doc false
-        @spec mount(Arbor.Store.root_params(), Arbor.Socket.t()) :: no_return()
-        def mount(_params, _socket) do
-          raise ArgumentError,
-                "#{inspect(__MODULE__)} is not an Arbor root store; " <>
-                  "declare `use Arbor.Store, root: true` before mounting it as a root"
-        end
-      end
-
       @impl Arbor.Store
       @doc false
       @spec terminate(Arbor.Store.terminate_reason(), Arbor.Socket.t()) :: :ok
       def terminate(_reason, _socket), do: :ok
 
-      defoverridable init: 1, mount: 2, terminate: 2
+      if @__arbor_root__ do
+        defoverridable mount: 2, init: 1, terminate: 2
+      else
+        defoverridable init: 1, terminate: 2
+      end
 
+      @before_compile Arbor.Store
       @before_compile Arbor.Plugin.Reflection
     end
   end
