@@ -1,14 +1,14 @@
 # VoteCast
 
 A real-time live polling app built with Arbor. Demonstrates multi-page
-architecture with child store composition, streamed options, async vote
-casting, PubSub-driven cross-user updates, and polling status gating.
+architecture with typed render state, streamed options, async vote casting,
+PubSub-driven cross-user updates, and polling status gating.
 
 ## Pages
 
 | Page | Root Store | Child Stores | Key features |
 | :-- | :-- | :-- | :-- |
-| Dashboard | `MyApp.Stores.DashboardStore` | `DashboardHeaderStore` | Child store composition, streamed poll cards, PubSub refresh |
+| Dashboard | `MyApp.Stores.DashboardStore` | (none — typed header state) | Streamed poll cards, PubSub refresh |
 | Poll Room | `MyApp.Stores.PollRoomStore` | (none — single store) | Streamed options, async vote commands, PubSub live updates |
 
 ## Store trees
@@ -16,13 +16,8 @@ casting, PubSub-driven cross-user updates, and polling status gating.
 ```text
 MyApp.Stores.DashboardStore (root)
   state:
-    header   MyApp.Stores.DashboardHeaderStore — poll counts
+    header   MyApp.DashboardHeader — poll counts
     polls    stream of MyApp.PollSummary
-
-  MyApp.Stores.DashboardHeaderStore ("header")
-    attrs: active_count, closed_count, total_count
-    state:
-      active_count, closed_count, total_count
 
 MyApp.Stores.PollRoomStore (root)
   attrs: poll_id

@@ -36,7 +36,7 @@ export default function App() {
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard page — child store composition (DashboardStore + DashboardHeaderStore)
+// Dashboard page — streamed poll cards with typed dashboard header state
 // ---------------------------------------------------------------------------
 
 function DashboardPage({ onEnterPoll }: { onEnterPoll: (pollId: string) => void }) {

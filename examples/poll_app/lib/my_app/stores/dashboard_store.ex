@@ -1,21 +1,17 @@
 defmodule MyApp.Stores.DashboardStore do
   @moduledoc """
-  Dashboard root store. Composes a header child store and streams poll
-  summaries. Demonstrates child store composition with a stream-driven
-  list page.
-
-  Child stores:
-    * `DashboardHeaderStore` ("header") — poll counts
+  Dashboard root store. Renders poll count state and streams poll summaries.
+  Demonstrates a stream-driven list page backed by PubSub refreshes.
   """
 
   use Arbor.Store
 
+  alias MyApp.DashboardHeader
   alias MyApp.Polls
   alias MyApp.PollSummary
-  alias MyApp.Stores.DashboardHeaderStore
 
   state do
-    field(:header, DashboardHeaderStore.state())
+    field(:header, DashboardHeader.t())
     stream(:polls, PollSummary.t(), item_key: &"poll-#{&1.id}", limit: -20)
   end
 
@@ -33,13 +29,11 @@ defmodule MyApp.Stores.DashboardStore do
     closed = Enum.count(polls, &(&1.status == :closed))
 
     %{
-      header:
-        Arbor.Child.child(DashboardHeaderStore,
-          id: "header",
-          active_count: active,
-          closed_count: closed,
-          total_count: length(polls)
-        ),
+      header: %DashboardHeader{
+        active_count: active,
+        closed_count: closed,
+        total_count: length(polls)
+      },
       # Stream-typed field — content flows via stream_ops (BDR-0014/0018).
       polls: []
     }
