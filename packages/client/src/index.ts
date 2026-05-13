@@ -1,5 +1,5 @@
-export { connectStore, disconnectStore } from "./connect"
-export type { ConnectStoreOptions } from "./connect"
+export { connect, disconnect, mountStore, unmountStore } from "./connect"
+export type { ArborConnection, ConnectOptions, MountStoreOptions } from "./connect"
 export type { ChannelLike, PushLike, SocketLike } from "./runtime"
 
 export { applyPatch, parsePointer } from "./patch"
@@ -12,6 +12,7 @@ export type {
   CommandPayload,
   CommandReply,
   CommandsOf,
+  ConnectionPatchEnvelope,
   DefOf,
   JsonPatchOp,
   PatchEnvelope,

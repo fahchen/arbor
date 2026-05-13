@@ -1,56 +1,105 @@
 import { getRootProxy } from "./proxy"
 import {
-  connectionKey,
-  disconnectRootConnection,
-  getSharedRuntime,
-  openRootConnection
+  disconnectConnectionState,
+  mountConnectionRoot,
+  openConnectionState,
+  unmountConnectionRoot
 } from "./runtime"
-import type { SocketLike } from "./runtime"
+import type { ConnectionState, SocketLike } from "./runtime"
 import type { StoreModule, StoreProxy } from "./types"
 
-export interface ConnectStoreOptions<R, M extends StoreModule<R>> {
+export interface ConnectOptions {
+  topic?: string
+}
+
+export interface MountStoreOptions<
+  R = Record<string, unknown>,
+  M extends StoreModule<R> = StoreModule<R>
+> {
   module: M
   id: string
   params?: Record<string, unknown>
 }
 
+export interface ArborConnection {
+  readonly topic: string
+  mountStore<R, M extends StoreModule<R> = StoreModule<R>>(
+    options: MountStoreOptions<R, M>
+  ): Promise<StoreProxy<R, M>>
+  unmountStore(rootId: string): Promise<void>
+  disconnect(): void
+}
+
 /**
- * Opens a root store connection over `socket`. The `Registry` generic is the
- * generated `<Root>.Stores` type emitted by `mix compile.arbor_ts`; the
- * module string literal is inferred from `options.module` against `Registry`.
+ * Opens one Arbor connection over `socket`.
  *
  * Usage:
  *
- *     const cart = await connectStore<MyApp.Stores>(socket, {
- *       module: "MyApp.Stores.CartPageStore",
- *       id: "cart:demo"
+ *     const connection = await connect(socket)
+ *
+ *     const dashboard = await connection.mountStore<
+ *       MyApp.Stores,
+ *       "MyApp.Stores.DashboardStore"
+ *     >({
+ *       module: "MyApp.Stores.DashboardStore",
+ *       id: "dashboard"
  *     })
  */
-export async function connectStore<R, M extends StoreModule<R> = StoreModule<R>>(
+export async function connect(
   socket: SocketLike,
-  options: ConnectStoreOptions<R, M>
-): Promise<StoreProxy<R, M>> {
-  const { connection, ready } = openRootConnection(socket, {
-    module: options.module,
-    id: options.id,
-    ...(options.params !== undefined ? { params: options.params } : {})
-  })
-
+  options: ConnectOptions = {}
+): Promise<ArborConnection> {
+  const { connection, ready } = openConnectionState(socket, options)
   await ready
 
-  return getRootProxy<R, M>(connection)
+  return buildConnectionApi(connection)
 }
 
-export function disconnectStore<R, M extends StoreModule<R> = StoreModule<R>>(
-  socket: SocketLike,
-  options: { module: M; id: string }
-): void {
-  const runtime = getSharedRuntime(socket)
-  const connection = runtime.connections.get(connectionKey(options.module, options.id))
+export async function mountStore<
+  R,
+  M extends StoreModule<R> = StoreModule<R>
+>(
+  connection: ArborConnection,
+  options: MountStoreOptions<R, M>
+): Promise<StoreProxy<R, M>> {
+  return connection.mountStore<R, M>(options)
+}
 
-  if (!connection) {
-    return
+export async function unmountStore(
+  connection: ArborConnection,
+  rootId: string
+): Promise<void> {
+  await connection.unmountStore(rootId)
+}
+
+export function disconnect(connection: ArborConnection): void {
+  connection.disconnect()
+}
+
+function buildConnectionApi(connectionState: ConnectionState): ArborConnection {
+  return {
+    topic: connectionState.topic,
+
+    async mountStore<R, M extends StoreModule<R> = StoreModule<R>>(
+      options: MountStoreOptions<R, M>
+    ): Promise<StoreProxy<R, M>> {
+      const { connection, ready } = mountConnectionRoot(connectionState, {
+        module: options.module,
+        id: options.id,
+        ...(options.params !== undefined ? { params: options.params } : {})
+      })
+
+      await ready
+
+      return getRootProxy<R, M>(connection)
+    },
+
+    async unmountStore(rootId: string): Promise<void> {
+      await unmountConnectionRoot(connectionState, rootId)
+    },
+
+    disconnect(): void {
+      disconnectConnectionState(connectionState)
+    }
   }
-
-  disconnectRootConnection(socket, connection)
 }

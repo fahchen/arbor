@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react"
 import type { SubmitEvent } from "react"
 import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
+import type { StoreProxy } from "@arbor/react"
+
+import { CART_PAGE_ROOT } from "./arbor"
 
 type Registry = Arbor.Stores
 type RootModule = "MyApp.Stores.CartPageStore"
@@ -30,7 +33,20 @@ const PRODUCT_OPTIONS = [
 ] as const
 
 export default function App() {
-  const root = useArborRoot<Registry, RootModule>()
+  const rootMount = useArborRoot<Registry, RootModule>(CART_PAGE_ROOT)
+
+  if (rootMount.status === "loading") {
+    return <main className="shell">Connecting...</main>
+  }
+
+  if (rootMount.status === "error") {
+    return <main className="shell">{rootMount.error.message}</main>
+  }
+
+  return <CartPage root={rootMount.store} />
+}
+
+function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
   const page = useArborSnapshot(root)
 
   const cartProxy = root.cart
@@ -124,7 +140,7 @@ export default function App() {
 
         <div className="hero-metrics" aria-label="Cart quantity summary">
           <div>
-            <span className="metric-label">Session</span>
+            <span className="metric-label">Connection</span>
             <strong>{page.header?.signed_in ? "Signed in" : "Guest"}</strong>
           </div>
           <div>
@@ -138,7 +154,7 @@ export default function App() {
         </div>
       </header>
 
-      <section className="session-strip" aria-label="Runtime notes">
+      <section className="connection-strip" aria-label="Runtime notes">
         <p>{headerLabel}</p>
         <p>
           Cart id <code>demo-cart</code>

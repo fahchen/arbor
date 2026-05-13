@@ -5,7 +5,7 @@ import {
   pruneStreams,
   touchedStoreKeys
 } from "./streams"
-import type { PatchEnvelope, StoreId, StreamEntry } from "./types"
+import type { ConnectionPatchEnvelope, PatchEnvelope, StoreId, StreamEntry } from "./types"
 import { STORE_ID_KEY, storeIdKey } from "./types"
 
 type PushStatus = "ok" | "error" | "timeout"
@@ -42,7 +42,8 @@ export interface ConnectionListener {
 export interface RootConnection {
   readonly module: string
   readonly id: string
-  readonly topic: string
+  readonly connection: ConnectionState
+  readonly mountParams: Record<string, unknown>
 
   // Mutable runtime state — read by the proxy on every property access.
   channel: ChannelLike | undefined
@@ -58,15 +59,26 @@ export interface RootConnection {
   pendingConnect: PendingConnect | null
   connectPromise: Promise<void> | null
   recovering: boolean
+}
+
+export interface ConnectionState {
+  readonly socket: SocketLike
+  readonly topic: string
+  readonly roots: Map<string, RootConnection>
+
+  channel: ChannelLike | undefined
+  channelGeneration: number
+  connectPromise: Promise<void> | null
   suppressDisconnectEvent: boolean
 }
 
 export interface SharedRuntime {
   readonly socket: SocketLike
-  readonly connections: Map<string, RootConnection>
+  readonly connections: Map<string, ConnectionState>
 }
 
 const RUNTIMES: WeakMap<SocketLike, SharedRuntime> = new WeakMap()
+const DEFAULT_CONNECTION_TOPIC = "arbor:connection"
 
 export function getSharedRuntime(socket: SocketLike): SharedRuntime {
   const existing = RUNTIMES.get(socket)
@@ -80,36 +92,64 @@ export function getSharedRuntime(socket: SocketLike): SharedRuntime {
   return runtime
 }
 
-export function connectionKey(module: string, id: string): string {
-  return `${module}#${id}`
+export interface OpenConnectionOptions {
+  topic?: string
 }
 
-export function buildTopic(module: string, id: string): string {
-  return `arbor:${encodeURIComponent(`${module}@${id}`)}`
-}
-
-export interface OpenRootOptions {
+export interface MountConnectionRootOptions {
   module: string
   id: string
   params?: Record<string, unknown>
 }
 
-export function openRootConnection(
+export function openConnectionState(
   socket: SocketLike,
-  options: OpenRootOptions
-): { connection: RootConnection; ready: Promise<void> } {
+  options: OpenConnectionOptions = {}
+): { connection: ConnectionState; ready: Promise<void> } {
   const runtime = getSharedRuntime(socket)
-  const key = connectionKey(options.module, options.id)
-  const existing = runtime.connections.get(key)
+  const topic = options.topic ?? DEFAULT_CONNECTION_TOPIC
+  const existing = runtime.connections.get(topic)
 
   if (existing) {
-    return { connection: existing, ready: ensureConnected(existing) }
+    return { connection: existing, ready: ensureConnectionReady(existing) }
+  }
+
+  const connection: ConnectionState = {
+    socket,
+    topic,
+    roots: new Map(),
+    channel: undefined,
+    channelGeneration: 0,
+    connectPromise: null,
+    suppressDisconnectEvent: false
+  }
+
+  runtime.connections.set(topic, connection)
+
+  const ready = connectConnectionChannel(connection)
+
+  return { connection, ready }
+}
+
+export function mountConnectionRoot(
+  connectionState: ConnectionState,
+  options: MountConnectionRootOptions
+): { connection: RootConnection; ready: Promise<void> } {
+  const rootId = options.id
+  const existing = connectionState.roots.get(rootId)
+
+  if (existing) {
+    return {
+      connection: existing,
+      ready: Promise.reject(new Error(`Root id is already mounted: ${rootId}`))
+    }
   }
 
   const connection: RootConnection = {
     module: options.module,
     id: options.id,
-    topic: buildTopic(options.module, options.id),
+    connection: connectionState,
+    mountParams: options.params ?? {},
     channel: undefined,
     channelGeneration: 0,
     root: undefined,
@@ -122,34 +162,68 @@ export function openRootConnection(
     pendingCommandRejectors: new Set(),
     pendingConnect: null,
     connectPromise: null,
-    recovering: false,
-    suppressDisconnectEvent: false
+    recovering: false
   }
 
-  runtime.connections.set(key, connection)
+  connectionState.roots.set(rootId, connection)
 
-  const ready = connectFreshChannel(socket, connection, options.params ?? {})
+  const ready = ensureConnectionRootMounted(connection).catch((error) => {
+    if (connection.version === 0) {
+      connectionState.roots.delete(rootId)
+    }
+
+    throw error
+  })
 
   return { connection, ready }
 }
 
-export function disconnectRootConnection(
-  socket: SocketLike,
-  connection: RootConnection
-): void {
-  connection.pendingConnect?.reject(new Error("Disconnected"))
-  connection.pendingConnect = null
-  rejectPendingCommands(connection, new Error("Disconnected"))
-  resetConnectionState(connection)
+export async function unmountConnectionRoot(
+  connectionState: ConnectionState,
+  rootId: string
+): Promise<void> {
+  const connection = connectionState.roots.get(rootId)
 
-  if (connection.channel) {
-    connection.suppressDisconnectEvent = true
-    connection.channel.leave()
-    connection.channel = undefined
+  if (!connection) {
+    return
   }
 
-  const runtime = getSharedRuntime(socket)
-  runtime.connections.delete(connectionKey(connection.module, connection.id))
+  connection.pendingConnect?.reject(new Error("Unmounted"))
+  connection.pendingConnect = null
+  rejectPendingCommands(connection, new Error("Unmounted"))
+  resetConnectionState(connection)
+  connection.channel = undefined
+  connectionState.roots.delete(rootId)
+
+  if (!connectionState.channel) {
+    return
+  }
+
+  await receivePush(
+    connectionState.channel.push("unmount", { root_id: rootId }) as PushLike,
+    "Root unmount"
+  )
+}
+
+export function disconnectConnectionState(connectionState: ConnectionState): void {
+  for (const root of connectionState.roots.values()) {
+    root.pendingConnect?.reject(new Error("Disconnected"))
+    root.pendingConnect = null
+    rejectPendingCommands(root, new Error("Disconnected"))
+    resetConnectionState(root)
+    root.channel = undefined
+  }
+
+  if (connectionState.channel) {
+    connectionState.suppressDisconnectEvent = true
+    connectionState.channel.leave()
+    connectionState.channel = undefined
+  }
+
+  connectionState.roots.clear()
+
+  const runtime = getSharedRuntime(connectionState.socket)
+  runtime.connections.delete(connectionState.topic)
 }
 
 export function subscribeStore(
@@ -183,6 +257,7 @@ export function dispatchConnectionCommand<Reply>(
   }
 
   const push = connection.channel.push("command", {
+    root_id: connection.id,
     store_id: [...storeId],
     name,
     payload
@@ -220,7 +295,75 @@ export function dispatchConnectionCommand<Reply>(
 // Internals
 // ---------------------------------------------------------------------------
 
-function ensureConnected(connection: RootConnection): Promise<void> {
+function ensureConnectionReady(connectionState: ConnectionState): Promise<void> {
+  if (connectionState.channel) {
+    return Promise.resolve()
+  }
+
+  if (connectionState.connectPromise) {
+    return connectionState.connectPromise
+  }
+
+  return connectConnectionChannel(connectionState)
+}
+
+function connectConnectionChannel(connectionState: ConnectionState): Promise<void> {
+  if (connectionState.connectPromise) {
+    return connectionState.connectPromise
+  }
+
+  connectionState.connectPromise = doConnectConnection(connectionState).finally(() => {
+    connectionState.connectPromise = null
+  })
+
+  return connectionState.connectPromise
+}
+
+async function doConnectConnection(connectionState: ConnectionState): Promise<void> {
+  // Phoenix.Socket.connect is idempotent.
+  connectionState.socket.connect()
+
+  const generation = connectionState.channelGeneration + 1
+  connectionState.channelGeneration = generation
+
+  const channel = connectionState.socket.channel(connectionState.topic, {})
+  connectionState.channel = channel
+  connectionState.suppressDisconnectEvent = false
+
+  channel.on("patch", (payload: unknown) => {
+    handleConnectionPatch(connectionState, payload, generation)
+  })
+
+  channel.onClose((reason: unknown) => {
+    if (generation !== connectionState.channelGeneration) {
+      return
+    }
+
+    if (connectionState.suppressDisconnectEvent) {
+      connectionState.suppressDisconnectEvent = false
+      return
+    }
+
+    handleConnectionDisconnect(connectionState, reason)
+  })
+
+  channel.onError((reason: unknown) => {
+    if (generation !== connectionState.channelGeneration) {
+      return
+    }
+
+    handleConnectionDisconnect(connectionState, reason)
+  })
+
+  try {
+    await receivePush(channel.join() as PushLike)
+  } catch (error) {
+    connectionState.channel = undefined
+    throw error
+  }
+}
+
+function ensureConnectionRootMounted(connection: RootConnection): Promise<void> {
   if (connection.version >= 1 && connection.channel) {
     return Promise.resolve()
   }
@@ -229,77 +372,44 @@ function ensureConnected(connection: RootConnection): Promise<void> {
     return connection.connectPromise
   }
 
-  return Promise.reject(new Error("Connection is not in a ready state"))
-}
+  const connectionState = connection.connection
 
-function connectFreshChannel(
-  socket: SocketLike,
-  connection: RootConnection,
-  joinParams: Record<string, unknown>
-): Promise<void> {
-  if (connection.connectPromise) {
-    return connection.connectPromise
-  }
-
-  connection.connectPromise = doConnect(socket, connection, joinParams).finally(() => {
+  connection.connectPromise = doMountConnectionRoot(connectionState, connection).finally(() => {
     connection.connectPromise = null
   })
 
   return connection.connectPromise
 }
 
-async function doConnect(
-  socket: SocketLike,
-  connection: RootConnection,
-  joinParams: Record<string, unknown>
+async function doMountConnectionRoot(
+  connectionState: ConnectionState,
+  connection: RootConnection
 ): Promise<void> {
-  // Phoenix.Socket.connect is idempotent.
-  socket.connect()
+  await ensureConnectionReady(connectionState)
 
-  const generation = connection.channelGeneration + 1
-  connection.channelGeneration = generation
-
-  const joinPayload = {
-    module: connection.module,
-    id: connection.id,
-    params: joinParams
+  if (!connectionState.channel) {
+    throw new Error("Connection is not connected")
   }
 
-  const channel = socket.channel(connection.topic, joinPayload)
-  connection.channel = channel
-  connection.suppressDisconnectEvent = false
-
-  channel.on("patch", (payload: unknown) => {
-    handlePatch(socket, connection, payload as PatchEnvelope, generation, joinParams)
-  })
-
-  channel.onClose((reason: unknown) => {
-    if (generation !== connection.channelGeneration) {
-      return
-    }
-
-    if (connection.suppressDisconnectEvent) {
-      connection.suppressDisconnectEvent = false
-      return
-    }
-
-    handleChannelDisconnect(connection, reason)
-  })
-
-  channel.onError((reason: unknown) => {
-    if (generation !== connection.channelGeneration) {
-      return
-    }
-
-    handleChannelDisconnect(connection, reason)
-  })
+  const generation = connectionState.channelGeneration
+  connection.channel = connectionState.channel
+  connection.channelGeneration = generation
 
   const initialPatch = new Promise<void>((resolve, reject) => {
     connection.pendingConnect = { generation, resolve, reject }
   })
 
   try {
-    await receivePush(channel.join() as PushLike)
+    const reply = await receivePush(
+      connectionState.channel.push("mount", {
+        module: connection.module,
+        id: connection.id,
+        params: connection.mountParams ?? {}
+      }) as PushLike,
+      "Root mount"
+    )
+
+    validateMountReply(connection, reply)
   } catch (error) {
     connection.pendingConnect = null
     connection.channel = undefined
@@ -309,12 +419,22 @@ async function doConnect(
   await initialPatch
 }
 
+function validateMountReply(connection: RootConnection, reply: unknown): void {
+  if (!isRecord(reply)) {
+    return
+  }
+
+  const rootId = reply.root_id
+
+  if (typeof rootId === "string" && rootId !== connection.id) {
+    throw new Error(`Root mount returned unexpected root_id: ${rootId}`)
+  }
+}
+
 function handlePatch(
-  socket: SocketLike,
   connection: RootConnection,
   envelope: PatchEnvelope,
-  generation: number,
-  joinParams: Record<string, unknown>
+  generation: number
 ): void {
   if (generation !== connection.channelGeneration) {
     return
@@ -336,7 +456,7 @@ function handlePatch(
     envelope.base_version !== connection.version ||
     envelope.version !== connection.version + 1
   ) {
-    void recoverFromVersionMismatch(socket, connection, joinParams)
+    void recoverConnectionRootFromVersionMismatch(connection)
     return
   }
 
@@ -382,6 +502,29 @@ function acceptEnvelope(
   }
 }
 
+function handleConnectionPatch(
+  connectionState: ConnectionState,
+  payload: unknown,
+  generation: number
+): void {
+  if (
+    generation !== connectionState.channelGeneration ||
+    !isConnectionPatchEnvelope(payload)
+  ) {
+    return
+  }
+
+  const connection = connectionState.roots.get(payload.root_id)
+
+  if (!connection) {
+    return
+  }
+
+  const { root_id: _rootId, ...envelope } = payload
+
+  handlePatch(connection, envelope, connection.channelGeneration)
+}
+
 function notifySubscribers(
   connection: RootConnection,
   previousStoreIndex: ReadonlyMap<string, unknown>,
@@ -408,11 +551,12 @@ function notifySubscribers(
   }
 }
 
-async function recoverFromVersionMismatch(
-  socket: SocketLike,
-  connection: RootConnection,
-  joinParams: Record<string, unknown>
+async function recoverConnectionRootFromVersionMismatch(
+  connection: RootConnection
 ): Promise<void> {
+  const connectionState = connection.connection
+  const rootId = connection.id
+
   if (connection.recovering) {
     return
   }
@@ -423,25 +567,33 @@ async function recoverFromVersionMismatch(
   rejectPendingCommands(connection, new Error("Version mismatch"))
   resetConnectionState(connection)
 
-  if (connection.channel) {
-    connection.suppressDisconnectEvent = true
-    connection.channel.leave()
-    connection.channel = undefined
-  }
-
   try {
-    await doConnect(socket, connection, joinParams)
+    if (connectionState.channel) {
+      await receivePush(
+        connectionState.channel.push("unmount", { root_id: rootId }) as PushLike,
+        "Root unmount"
+      ).catch(() => undefined)
+    }
+
+    await ensureConnectionRootMounted(connection)
   } finally {
     connection.recovering = false
   }
 }
 
-function handleChannelDisconnect(connection: RootConnection, _reason: unknown): void {
-  connection.pendingConnect?.reject(new Error("Disconnected"))
-  connection.pendingConnect = null
-  rejectPendingCommands(connection, new Error("Disconnected"))
-  resetConnectionState(connection)
-  connection.channel = undefined
+function handleConnectionDisconnect(
+  connectionState: ConnectionState,
+  _reason: unknown
+): void {
+  for (const root of connectionState.roots.values()) {
+    root.pendingConnect?.reject(new Error("Disconnected"))
+    root.pendingConnect = null
+    rejectPendingCommands(root, new Error("Disconnected"))
+    resetConnectionState(root)
+    root.channel = undefined
+  }
+
+  connectionState.channel = undefined
 }
 
 function rejectPendingCommands(connection: RootConnection, reason: Error): void {
@@ -509,19 +661,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
 
+function isConnectionPatchEnvelope(value: unknown): value is ConnectionPatchEnvelope {
+  return (
+    isRecord(value) &&
+    value.type === "patch" &&
+    typeof value.root_id === "string" &&
+    typeof value.base_version === "number" &&
+    typeof value.version === "number" &&
+    Array.isArray(value.ops) &&
+    Array.isArray(value.stream_ops)
+  )
+}
+
 function isStoreIdValue(value: unknown): value is StoreId {
   return Array.isArray(value) && value.every((segment) => typeof segment === "string")
 }
 
-function receivePush(push: PushLike): Promise<unknown> {
+function receivePush(push: PushLike, action = "Channel join"): Promise<unknown> {
   return new Promise((resolve, reject) => {
     push
       .receive("ok", resolve)
       .receive("error", (payload) => {
-        reject(new Error(`Channel join failed: ${JSON.stringify(payload)}`))
+        reject(new Error(`${action} failed: ${JSON.stringify(payload)}`))
       })
       .receive("timeout", () => {
-        reject(new Error("Channel join timed out"))
+        reject(new Error(`${action} timed out`))
       })
   })
 }

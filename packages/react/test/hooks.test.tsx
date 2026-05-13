@@ -2,9 +2,17 @@ import { act, render, screen } from "@testing-library/react"
 import * as React from "react"
 import { describe, expect, test, vi } from "vitest"
 
-import { ArborProvider, useArborCommand, useArborRoot, useArborSnapshot } from "../src"
+import {
+  ArborProvider,
+  useArborCommand,
+  useArborRoot,
+  useArborConnection,
+  useArborSnapshot
+} from "../src"
 
 import { FakeStoreProxy } from "./setup"
+
+import type { ArborConnection, MountStoreOptions, StoreModule, StoreProxy } from "../src"
 
 void React
 
@@ -32,37 +40,124 @@ function buildProxy(title = "Inbox", counter = 0): FakeStoreProxy<ReactTestStore
 }
 
 describe("ArborProvider + useArborRoot", () => {
-  test("exposes the root proxy to descendants", () => {
+  test("exposes the Arbor connection to descendants", () => {
     const fake = buildProxy()
+    const connection = new FakeArborConnection(fake.asProxy())
 
     function Reader() {
-      const root = useArborRoot<ReactTestStores, Root>()
-      return <span>{root.snapshot().title}</span>
+      const arborConnection = useArborConnection()
+      return <span>{arborConnection.topic}</span>
     }
 
     render(
-      <ArborProvider store={fake.asProxy()}>
+      <ArborProvider connection={connection}>
         <Reader />
       </ArborProvider>
     )
 
-    expect(screen.getByText("Inbox")).toBeTruthy()
+    expect(screen.getByText("arbor:connection")).toBeTruthy()
   })
 
-  test("useArborRoot throws outside a provider", () => {
+  test("useArborConnection throws outside a provider", () => {
     function Reader() {
-      useArborRoot<ReactTestStores, Root>()
+      useArborConnection()
       return null
     }
 
     const originalError = console.error
-    console.error = () => {}
+    const preventExpectedError = (event: ErrorEvent) => {
+      if (
+        event.error instanceof Error &&
+        event.error.message === "useArborConnection must be used inside <ArborProvider>"
+      ) {
+        event.preventDefault()
+      }
+    }
 
-    expect(() => render(<Reader />)).toThrow(
-      /useArborRoot must be used inside <ArborProvider>/
+    console.error = () => {}
+    window.addEventListener("error", preventExpectedError)
+
+    try {
+      render(
+        <TestErrorBoundary>
+          <Reader />
+        </TestErrorBoundary>
+      )
+
+      expect(
+        screen.getByText("useArborConnection must be used inside <ArborProvider>")
+      ).toBeTruthy()
+    } finally {
+      window.removeEventListener("error", preventExpectedError)
+      console.error = originalError
+    }
+  })
+
+  test("useArborRoot mounts and unmounts a root store", async () => {
+    const fake = buildProxy()
+    const connection = new FakeArborConnection(fake.asProxy())
+    const params = { filter: "active" }
+
+    function Reader() {
+      const root = useArborRoot<ReactTestStores, Root>({
+        module: "React.Test.Root",
+        id: "dashboard-1",
+        params
+      })
+
+      if (root.status !== "ready") {
+        return <span>{root.status}</span>
+      }
+
+      return <span>{root.store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <ArborProvider connection={connection}>
+        <Reader />
+      </ArborProvider>
     )
 
-    console.error = originalError
+    expect(screen.getByText("loading")).toBeTruthy()
+    expect(await screen.findByText("Inbox")).toBeTruthy()
+    expect(connection.mounts).toEqual([
+      { module: "React.Test.Root", id: "dashboard-1", params: { filter: "active" } }
+    ])
+
+    result.unmount()
+
+    expect(connection.unmounts).toEqual(["dashboard-1"])
+  })
+
+  test("useArborRoot does not unmount another root when mount fails", async () => {
+    const fake = buildProxy()
+    const connection = new FakeArborConnection(fake.asProxy())
+    connection.mountError = new Error("Root id is already mounted: dashboard-1")
+
+    function Reader() {
+      const root = useArborRoot<ReactTestStores, Root>({
+        module: "React.Test.Root",
+        id: "dashboard-1"
+      })
+
+      if (root.status === "error") {
+        return <span>{root.error.message}</span>
+      }
+
+      return <span>{root.status}</span>
+    }
+
+    const result = render(
+      <ArborProvider connection={connection}>
+        <Reader />
+      </ArborProvider>
+    )
+
+    expect(await screen.findByText("Root id is already mounted: dashboard-1")).toBeTruthy()
+
+    result.unmount()
+
+    expect(connection.unmounts).toEqual([])
   })
 })
 
@@ -132,3 +227,52 @@ describe("useArborCommand", () => {
     expect(fake.dispatchCalls).toEqual([{ name: "rename", payload: { title: "Outbox" } }])
   })
 })
+
+class FakeArborConnection implements ArborConnection {
+  readonly topic = "arbor:connection"
+  readonly mounts: MountStoreOptions[] = []
+  readonly unmounts: string[] = []
+  disconnected = false
+  mountError: Error | null = null
+
+  constructor(private readonly store: StoreProxy<unknown, never>) {}
+
+  async mountStore<R, M extends StoreModule<R> = StoreModule<R>>(
+    options: MountStoreOptions
+  ): Promise<StoreProxy<R, M>> {
+    this.mounts.push(options)
+
+    if (this.mountError) {
+      throw this.mountError
+    }
+
+    return this.store as StoreProxy<R, M>
+  }
+
+  async unmountStore(rootId: string): Promise<void> {
+    this.unmounts.push(rootId)
+  }
+
+  disconnect(): void {
+    this.disconnected = true
+  }
+}
+
+class TestErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { message: string | null }
+> {
+  state: { message: string | null } = { message: null }
+
+  static getDerivedStateFromError(error: Error): { message: string } {
+    return { message: error.message }
+  }
+
+  render() {
+    if (this.state.message) {
+      return <span>{this.state.message}</span>
+    }
+
+    return this.props.children
+  }
+}

@@ -1,12 +1,29 @@
 import { useEffect, useState } from "react"
 import type { SubmitEvent } from "react"
 import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
+import type { StoreProxy } from "@arbor/react"
+
+import { CHAT_ROOM_ROOT } from "./arbor"
 
 type Registry = Arbor.Stores
 type RootModule = "MyApp.Stores.ChatRoomStore"
 
 export default function App() {
-  const root = useArborRoot<Registry, RootModule>()
+  const rootMount = useArborRoot<Registry, RootModule>(CHAT_ROOM_ROOT)
+
+  if (rootMount.status === "loading") {
+    return <main className="chat-shell">Connecting...</main>
+  }
+
+  if (rootMount.status === "error") {
+    return <main className="chat-shell">{rootMount.error.message}</main>
+  }
+
+  const root = rootMount.store
+  return <ChatRoom root={root} />
+}
+
+function ChatRoom({ root }: { root: StoreProxy<Registry, RootModule> }) {
   const room = useArborSnapshot(root)
 
   const setName = useArborCommand(root, "set_name")

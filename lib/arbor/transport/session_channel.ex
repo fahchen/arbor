@@ -69,14 +69,14 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     @spec handle_in(String.t(), map(), Phoenix.Socket.t()) ::
             {:reply, {:ok, map()} | {:error, map()}, Phoenix.Socket.t()}
     def handle_in("mount", payload, %Phoenix.Socket{} = socket) when is_map(payload) do
-      with {:ok, root_name} <- fetch_string(payload, "root"),
-           {:ok, root_id} <- fetch_root_id(payload, root_name),
+      with {:ok, module_str} <- fetch_string(payload, "module"),
+           {:ok, root_id} <- fetch_root_id(payload),
            {:ok, params} <- fetch_params(payload),
            :ok <- ensure_root_not_mounted(socket, root_id),
-           {:ok, root_module} <- fetch_declared_root(socket, root_name),
+           {:ok, root_module} <- fetch_declared_root(socket, module_str),
            :ok <- ensure_root_store!(root_module),
            {:ok, page_pid} <- start_root_page(root_module, root_id, params, socket) do
-        root_entry = %{pid: page_pid, module: root_module, name: root_name}
+        root_entry = %{pid: page_pid, module: root_module}
 
         socket = update_mounted_roots(socket, &Map.put(&1, root_id, root_entry))
 
@@ -205,9 +205,9 @@ if Code.ensure_loaded?(Phoenix.Channel) do
       String.starts_with?(key, "__arbor_")
     end
 
-    @spec fetch_root_id(map(), String.t()) :: {:ok, String.t()} | {:error, :missing_root_id}
-    defp fetch_root_id(payload, fallback) when is_map(payload) and is_binary(fallback) do
-      case Map.get(payload, "id") || Map.get(payload, "root_id") || fallback do
+    @spec fetch_root_id(map()) :: {:ok, String.t()} | {:error, :missing_root_id}
+    defp fetch_root_id(payload) when is_map(payload) do
+      case Map.get(payload, "id") do
         value when is_binary(value) and value != "" -> {:ok, value}
         _other -> {:error, :missing_root_id}
       end
@@ -233,10 +233,10 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     @spec fetch_declared_root(Phoenix.Socket.t(), String.t()) ::
             {:ok, module()} | {:error, :unknown_root}
-    defp fetch_declared_root(%Phoenix.Socket{} = socket, root_name) when is_binary(root_name) do
+    defp fetch_declared_root(%Phoenix.Socket{} = socket, module_str) when is_binary(module_str) do
       socket.assigns
       |> Map.fetch!(@session_module_key)
-      |> Session.fetch_root(root_name)
+      |> Session.fetch_root_by_module(module_str)
       |> case do
         {:ok, module} -> {:ok, module}
         :error -> {:error, :unknown_root}
@@ -286,7 +286,7 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     end
 
     @spec fetch_root_entry(Phoenix.Socket.t(), String.t()) ::
-            {:ok, %{pid: pid(), module: module(), name: String.t()}} | {:error, :unknown_root}
+            {:ok, %{pid: pid(), module: module()}} | {:error, :unknown_root}
     defp fetch_root_entry(%Phoenix.Socket{} = socket, root_id) when is_binary(root_id) do
       case Map.fetch(mounted_roots(socket), root_id) do
         {:ok, root_entry} -> {:ok, root_entry}

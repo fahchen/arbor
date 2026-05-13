@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react"
+import { useMemo, useState } from "react"
 import type { SubmitEvent } from "react"
-import { ArborProvider, useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
+import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
+import type { StoreProxy } from "@arbor/react"
 
-import { connectDashboard, connectPollRoom } from "./arbor"
+import { DASHBOARD_ROOT, pollRoomRoot } from "./arbor"
 
 type Registry = Arbor.Stores
 
@@ -40,27 +41,21 @@ export default function App() {
 // ---------------------------------------------------------------------------
 
 function DashboardPage({ onEnterPoll }: { onEnterPoll: (pollId: string) => void }) {
-  const [store, setStore] = useState<Awaited<ReturnType<typeof connectDashboard>> | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const root = useArborRoot<Registry, "MyApp.Stores.DashboardStore">(DASHBOARD_ROOT)
 
-  useEffect(() => {
-    let cancelled = false
-    connectDashboard().then((s) => { if (!cancelled) setStore(s) }).catch((e) => { if (!cancelled) setError(String(e)) })
-    return () => { cancelled = true }
-  }, [])
+  if (root.status === "error") return <ConnectionError error={root.error.message} />
+  if (root.status === "loading") return <LoadingShell />
 
-  if (error) return <ConnectionError error={error} />
-  if (!store) return <LoadingShell />
-
-  return (
-    <ArborProvider store={store}>
-      <DashboardView onEnterPoll={onEnterPoll} />
-    </ArborProvider>
-  )
+  return <DashboardView root={root.store} onEnterPoll={onEnterPoll} />
 }
 
-function DashboardView({ onEnterPoll }: { onEnterPoll: (pollId: string) => void }) {
-  const root = useArborRoot<Registry, "MyApp.Stores.DashboardStore">()
+function DashboardView({
+  root,
+  onEnterPoll
+}: {
+  root: StoreProxy<Registry, "MyApp.Stores.DashboardStore">
+  onEnterPoll: (pollId: string) => void
+}) {
   const page = useArborSnapshot(root)
 
   const header = page.header
@@ -132,27 +127,24 @@ function MetricBadge({ label, value, tone }: { label: string; value: number; ton
 // ---------------------------------------------------------------------------
 
 function PollRoomPage({ pollId, onBack }: { pollId: string; onBack: () => void }) {
-  const [store, setStore] = useState<Awaited<ReturnType<typeof connectPollRoom>> | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const rootOptions = useMemo(() => pollRoomRoot(pollId), [pollId])
+  const root = useArborRoot<Registry, "MyApp.Stores.PollRoomStore">(rootOptions)
 
-  useEffect(() => {
-    let cancelled = false
-    connectPollRoom(pollId).then((s) => { if (!cancelled) setStore(s) }).catch((e) => { if (!cancelled) setError(String(e)) })
-    return () => { cancelled = true }
-  }, [pollId])
+  if (root.status === "error") return <ConnectionError error={root.error.message} />
+  if (root.status === "loading") return <LoadingShell />
 
-  if (error) return <ConnectionError error={error} />
-  if (!store) return <LoadingShell />
-
-  return (
-    <ArborProvider store={store}>
-      <PollRoomView pollId={pollId} onBack={onBack} />
-    </ArborProvider>
-  )
+  return <PollRoomView root={root.store} pollId={pollId} onBack={onBack} />
 }
 
-function PollRoomView({ pollId, onBack }: { pollId: string; onBack: () => void }) {
-  const root = useArborRoot<Registry, "MyApp.Stores.PollRoomStore">()
+function PollRoomView({
+  root,
+  pollId,
+  onBack
+}: {
+  root: StoreProxy<Registry, "MyApp.Stores.PollRoomStore">
+  pollId: string
+  onBack: () => void
+}) {
   const page = useArborSnapshot(root)
 
   const voteCmd = useArborCommand(root, "vote")
@@ -339,7 +331,7 @@ function PollRoomView({ pollId, onBack }: { pollId: string; onBack: () => void }
 
           {userVote?.status === "failed" ? (
             <p className="vote-error">
-              Could not load your vote. {String(userVote.reason ?? "")}
+              Could not load your vote. {String(userVote.error ?? "")}
             </p>
           ) : null}
         </div>

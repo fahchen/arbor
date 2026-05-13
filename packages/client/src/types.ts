@@ -1,6 +1,6 @@
 // Public types for `@arbor/client`. Consumers thread their generated
 // `<Root>.Stores` type (emitted by `mix compile.arbor_ts` into an ambient
-// `.d.ts` bundle) through `connectStore` and friends as the `Registry`
+// `.d.ts` bundle) through `connection.mountStore` and friends as the `Registry`
 // generic — every other helper (`ShapeOf`, `CommandsOf`, `StoreSnapshot`,
 // `StoreProxy`, …) derives from it.
 //
@@ -204,6 +204,10 @@ export type PatchEnvelope = {
   version: number
   ops: JsonPatchOp[]
   stream_ops: StreamOp[]
+}
+
+export type ConnectionPatchEnvelope = PatchEnvelope & {
+  root_id: string
 }
 
 export type WireAsyncError =

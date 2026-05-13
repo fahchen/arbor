@@ -1,15 +1,14 @@
+defmodule MyAppWeb.AppSession do
+  @moduledoc false
+
+  use Arbor.Session,
+    roots: [
+      chat_room: MyApp.Stores.ChatRoomStore
+    ]
+end
+
 defmodule MyAppWeb.UserSocket do
   @moduledoc false
 
-  use Phoenix.Socket
-
-  channel("arbor:*", MyAppWeb.PageChannel)
-
-  @doc false
-  @impl Phoenix.Socket
-  def connect(_params, socket, _connect_info), do: {:ok, socket}
-
-  @doc false
-  @impl Phoenix.Socket
-  def id(_socket), do: nil
+  use Arbor.Transport.Socket, session: MyAppWeb.AppSession
 end

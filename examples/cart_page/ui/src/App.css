@@ -159,7 +159,7 @@ code {
   font-size: 1.35rem;
 }
 
-.session-strip {
+.connection-strip {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(180px, 0.55fr) minmax(0, 1.35fr);
   gap: 1px;
@@ -170,7 +170,7 @@ code {
   background: rgba(27, 33, 31, 0.16);
 }
 
-.session-strip p {
+.connection-strip p {
   min-width: 0;
   margin: 0;
   background: rgba(255, 252, 244, 0.88);
@@ -473,11 +473,11 @@ fieldset {
 @media (max-width: 940px) {
   .hero,
   .workspace,
-  .session-strip {
+  .connection-strip {
     grid-template-columns: 1fr;
   }
 
-  .session-strip {
+  .connection-strip {
     gap: 1px;
   }
 }

@@ -144,6 +144,8 @@ defmodule Arbor.Transport.SessionChannelTest do
   import Phoenix.ChannelTest
 
   @endpoint TestEndpoint
+  @alpha_module_str "Arbor.Transport.SessionChannelTest.AlphaRootStore"
+  @beta_module_str "Arbor.Transport.SessionChannelTest.BetaRootStore"
 
   setup_all do
     start_supervised!({Phoenix.PubSub, name: Arbor.Transport.SessionChannelTest.PubSub})
@@ -163,7 +165,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     mount_ref =
       push(socket, "mount", %{
-        "root" => "alpha",
+        "module" => @alpha_module_str,
         "id" => "alpha-1",
         "params" => %{"room_id" => "general"}
       })
@@ -192,7 +194,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     second_ref =
       push(socket, "mount", %{
-        "root" => "beta",
+        "module" => @beta_module_str,
         "id" => "beta-1",
         "params" => %{"label" => "secondary"}
       })
@@ -222,7 +224,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     mount_ref =
       push(socket, "mount", %{
-        "root" => "alpha",
+        "module" => @alpha_module_str,
         "id" => "alpha-1",
         "params" => %{"room_id" => "general"}
       })
@@ -259,7 +261,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     mount_ref =
       push(socket, "mount", %{
-        "root" => "beta",
+        "module" => @beta_module_str,
         "id" => "beta-1",
         "params" => %{"label" => "secondary"}
       })
@@ -296,8 +298,25 @@ defmodule Arbor.Transport.SessionChannelTest do
     {:ok, _reply, socket} = join_session()
     assert_receive {:session_join, _params, _current_user}
 
-    unknown_ref = push(socket, "mount", %{"root" => "unknown", "params" => %{}})
+    unknown_ref =
+      push(socket, "mount", %{"module" => "Unknown.RootStore", "id" => "unknown", "params" => %{}})
+
     assert_reply(unknown_ref, :error, %{reason: "unknown root"})
+  end
+
+  test "mount requires an id field" do
+    {:ok, _reply, socket} = join_session()
+    assert_receive {:session_join, _params, _current_user}
+
+    legacy_ref =
+      push(socket, "mount", %{
+        "module" => @alpha_module_str,
+        "root_id" => "legacy-root",
+        "params" => %{"room_id" => "general"}
+      })
+
+    assert_reply(legacy_ref, :error, %{reason: "missing root id"})
+    refute_receive {:alpha_mount, _pid, _params, _current_user}
   end
 
   test "mount rejects duplicate root ids" do
@@ -306,7 +325,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     first_ref =
       push(socket, "mount", %{
-        "root" => "alpha",
+        "module" => @alpha_module_str,
         "id" => "shared-root",
         "params" => %{"room_id" => "general"}
       })
@@ -319,7 +338,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     duplicate_ref =
       push(socket, "mount", %{
-        "root" => "beta",
+        "module" => @beta_module_str,
         "id" => "shared-root",
         "params" => %{"label" => "secondary"}
       })
@@ -333,7 +352,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     alpha_ref =
       push(socket, "mount", %{
-        "root" => "alpha",
+        "module" => @alpha_module_str,
         "id" => "alpha-1",
         "params" => %{"room_id" => "general"}
       })
@@ -346,7 +365,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     beta_ref =
       push(socket, "mount", %{
-        "root" => "beta",
+        "module" => @beta_module_str,
         "id" => "beta-1",
         "params" => %{"label" => "secondary"}
       })
@@ -394,7 +413,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     alpha_ref =
       push(socket, "mount", %{
-        "root" => "alpha",
+        "module" => @alpha_module_str,
         "id" => "alpha-1",
         "params" => %{"room_id" => "general"}
       })
@@ -407,7 +426,7 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     beta_ref =
       push(socket, "mount", %{
-        "root" => "beta",
+        "module" => @beta_module_str,
         "id" => "beta-1",
         "params" => %{"label" => "secondary"}
       })
@@ -433,6 +452,6 @@ defmodule Arbor.Transport.SessionChannelTest do
     ArborSocket
     |> socket("user_id", %{current_user: "connect-user"})
     |> Arbor.Transport.Socket.assign_connect_context(%{}, connect_info)
-    |> subscribe_and_join(Arbor.Transport.SessionChannel, "arbor:session", %{"scope" => "main"})
+    |> subscribe_and_join(Arbor.Transport.SessionChannel, "arbor:connection", %{"scope" => "main"})
   end
 end

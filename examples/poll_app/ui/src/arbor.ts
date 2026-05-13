@@ -1,5 +1,6 @@
 import { Socket } from "phoenix"
-import { connectStore } from "@arbor/client"
+import { connect } from "@arbor/client"
+import type { MountStoreOptions } from "@arbor/client"
 
 // The generated `arbor.d.ts` is ambient — tsc auto-loads it from
 // `src/generated/arbor.d.ts` via the project's `include` glob.
@@ -13,18 +14,22 @@ const SOCKET_URL = import.meta.env.DEV
 
 export const socket = new Socket(SOCKET_URL, {})
 
-export function connectDashboard() {
-  return connectStore<Arbor.Stores>(socket, {
-    module: "MyApp.Stores.DashboardStore",
-    id: "dashboard",
-    params: {}
-  })
-}
+export const DASHBOARD_ROOT = {
+  module: "MyApp.Stores.DashboardStore",
+  id: "dashboard",
+  params: {}
+} as const
 
-export function connectPollRoom(pollId: string) {
-  return connectStore<Arbor.Stores>(socket, {
+export function pollRoomRoot(
+  pollId: string
+): MountStoreOptions<Arbor.Stores, "MyApp.Stores.PollRoomStore"> {
+  return {
     module: "MyApp.Stores.PollRoomStore",
     id: pollId,
     params: { poll_id: pollId }
-  })
+  }
+}
+
+export function connectArbor() {
+  return connect(socket)
 }

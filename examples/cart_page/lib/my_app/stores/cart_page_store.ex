@@ -4,7 +4,7 @@ defmodule MyApp.Stores.CartPageStore do
   business state of its own — every cart mutation routes to `["cart"]`.
   """
 
-  use Arbor.Store
+  use Arbor.Store, root: true
 
   alias MyApp.Persistence
   alias MyApp.Stores.CartStore
@@ -19,13 +19,17 @@ defmodule MyApp.Stores.CartPageStore do
   end
 
   @impl Arbor.Store
-  def mount(socket) do
-    :ok = Persistence.subscribe_cart(socket.assigns.cart_id)
+  def mount(params, socket) do
+    cart_id = Map.fetch!(params, "cart_id")
+    current_user = Map.get(params, "current_user")
+
+    :ok = Persistence.subscribe_cart(cart_id)
 
     socket =
       socket
-      |> Arbor.Socket.assign(:cart_lines, Persistence.load_cart(socket.assigns.cart_id))
-      |> Arbor.Socket.assign(:current_user, normalize_current_user(socket.assigns.current_user))
+      |> Arbor.Socket.assign(:cart_id, cart_id)
+      |> Arbor.Socket.assign(:cart_lines, Persistence.load_cart(cart_id))
+      |> Arbor.Socket.assign(:current_user, normalize_current_user(current_user))
 
     {:ok, socket}
   end

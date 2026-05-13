@@ -61,14 +61,14 @@ defmodule Arbor.Session do
   end
 
   @doc """
-  Fetches a declared root store module by atom or client string name.
+  Fetches a declared root store module by its client module string.
 
-  The client string is compared against already-declared root names; Arbor does
-  not convert arbitrary strings into atoms.
+  The string is compared against modules already declared in the session;
+  Arbor does not convert arbitrary strings into atoms.
 
   ## Examples
 
-      iex> defmodule SessionFetchRootDoc do
+      iex> defmodule SessionFetchRootByModuleDoc do
       ...>   defmodule Store do
       ...>     use Arbor.Store, root: true
       ...>
@@ -82,17 +82,17 @@ defmodule Arbor.Session do
       ...>
       ...>   use Arbor.Session, roots: [dashboard: Store]
       ...> end
-      iex> Arbor.Session.fetch_root(SessionFetchRootDoc, "dashboard")
-      {:ok, SessionFetchRootDoc.Store}
-      iex> Arbor.Session.fetch_root(SessionFetchRootDoc, "missing")
+      iex> Arbor.Session.fetch_root_by_module(SessionFetchRootByModuleDoc, "SessionFetchRootByModuleDoc.Store")
+      {:ok, SessionFetchRootByModuleDoc.Store}
+      iex> Arbor.Session.fetch_root_by_module(SessionFetchRootByModuleDoc, "Missing.Store")
       :error
   """
-  @spec fetch_root(module(), root_name() | String.t()) :: {:ok, module()} | :error
-  def fetch_root(session_module, root_name)
-      when is_atom(session_module) and (is_atom(root_name) or is_binary(root_name)) do
+  @spec fetch_root_by_module(module(), String.t()) :: {:ok, module()} | :error
+  def fetch_root_by_module(session_module, module_str)
+      when is_atom(session_module) and is_binary(module_str) do
     session_module
     |> session_roots()
-    |> Enum.find(fn {declared_name, _module} -> root_matches?(declared_name, root_name) end)
+    |> Enum.find(fn {_declared_name, module} -> module_matches?(module, module_str) end)
     |> case do
       {_declared_name, module} -> {:ok, module}
       nil -> :error
@@ -108,13 +108,9 @@ defmodule Arbor.Session do
     end
   end
 
-  @spec root_matches?(root_name(), root_name() | String.t()) :: boolean()
-  defp root_matches?(declared_name, requested_name) when is_atom(requested_name) do
-    declared_name == requested_name
-  end
-
-  defp root_matches?(declared_name, requested_name) when is_binary(requested_name) do
-    Atom.to_string(declared_name) == requested_name
+  @spec module_matches?(module(), String.t()) :: boolean()
+  defp module_matches?(module, module_str) when is_atom(module) and is_binary(module_str) do
+    module |> Module.split() |> Enum.join(".") == module_str
   end
 
   @spec normalize_roots!(list(), Macro.Env.t()) :: roots()
