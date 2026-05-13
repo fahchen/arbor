@@ -22,16 +22,19 @@ defmodule Arbor.Codegen.TypeScript.TypeRenderer do
   | `map()`                         | `Record<string, unknown>`               |
   | `%{key: T}`                     | `{ key: T }` (literal-keyed map)        |
   | `list(T)` / `[T]`               | `T[]`                                   |
-  | `stream(T)`                     | `T[]` (server forgets values)           |
+  | `stream(T)`                     | `Arbor.StreamField<T>`                  |
   | `T \\| U`                       | `T \| U`                                |
-  | `Module.t()` / `Module.state()` | full Elixir alias path                  |
-  | `Arbor.AsyncResult.of(T)`       | `AsyncResult<T>`                        |
+  | `Module.t()`                    | full Elixir alias path                  |
+  | `Module.state()`                | `Arbor.StoreField<"Full.Module">`       |
+  | `Arbor.AsyncResult.of(T)`       | `Arbor.AsyncField<T>`                   |
   """
-
-  @async_result_alias "AsyncResult"
 
   @doc """
   Renders a single Arbor field-type AST node as TypeScript.
+
+  Options:
+    * `:root_namespace` — namespace prefix used for marker types
+      (`StoreField`, `StreamField`, `AsyncField`). Defaults to `"Arbor"`.
 
   ## Examples
 
@@ -40,67 +43,79 @@ defmodule Arbor.Codegen.TypeScript.TypeRenderer do
       iex> Arbor.Codegen.TypeScript.TypeRenderer.render(quote(do: list(String.t())))
       "string[]"
       iex> Arbor.Codegen.TypeScript.TypeRenderer.render(quote(do: stream(String.t())))
-      "string[]"
+      "Arbor.StreamField<string>"
       iex> Arbor.Codegen.TypeScript.TypeRenderer.render(quote(do: String.t() | nil))
       "string | null"
   """
   @spec render(Macro.t()) :: String.t()
-  def render(type_ast), do: do_render(type_ast)
-
-  defp do_render({:|, _meta, [left, right]}) do
-    do_render(left) <> " | " <> do_render(right)
+  @spec render(Macro.t(), keyword()) :: String.t()
+  def render(type_ast, opts \\ []) do
+    root = Keyword.get(opts, :root_namespace, "Arbor")
+    do_render(type_ast, root)
   end
 
-  defp do_render({:list, _meta, [inner]}), do: wrap_array(do_render(inner))
-  defp do_render({:stream, _meta, [inner]}), do: wrap_array(do_render(inner))
+  defp do_render({:|, _meta, [left, right]}, root) do
+    do_render(left, root) <> " | " <> do_render(right, root)
+  end
 
-  defp do_render({:map, _meta, []}), do: "Record<string, unknown>"
+  defp do_render({:list, _meta, [inner]}, root), do: wrap_array(do_render(inner, root))
 
-  defp do_render({:string, _meta, []}), do: "string"
-  defp do_render({:binary, _meta, []}), do: "string"
-  defp do_render({:integer, _meta, []}), do: "number"
-  defp do_render({:float, _meta, []}), do: "number"
-  defp do_render({:boolean, _meta, []}), do: "boolean"
-  defp do_render({:atom, _meta, []}), do: "string"
+  defp do_render({:stream, _meta, [inner]}, root),
+    do: "#{root}.StreamField<#{do_render(inner, root)}>"
+
+  defp do_render({:map, _meta, []}, _root), do: "Record<string, unknown>"
+
+  defp do_render({:string, _meta, []}, _root), do: "string"
+  defp do_render({:binary, _meta, []}, _root), do: "string"
+  defp do_render({:integer, _meta, []}, _root), do: "number"
+  defp do_render({:float, _meta, []}, _root), do: "number"
+  defp do_render({:boolean, _meta, []}, _root), do: "boolean"
+  defp do_render({:atom, _meta, []}, _root), do: "string"
 
   # `String.t()` shortcut — must precede the generic literal-map clause whose
   # 3-tuple shape would otherwise capture this AST with `pairs=[]`.
-  defp do_render({{:., _dot, [{:__aliases__, _meta, [:String]}, :t]}, _call, []}), do: "string"
+  defp do_render({{:., _dot, [{:__aliases__, _meta, [:String]}, :t]}, _call, []}, _root),
+    do: "string"
 
   # `Arbor.AsyncResult.of(T)` — resolves the inner T recursively.
-  defp do_render({{:., _dot, [aliased, :of]}, _call, [inner]}) do
+  defp do_render({{:., _dot, [aliased, :of]}, _call, [inner]}, root) do
     if async_result_alias?(aliased) do
-      "#{@async_result_alias}<#{do_render(inner)}>"
+      "#{root}.AsyncField<#{do_render(inner, root)}>"
     else
       "unknown"
     end
   end
 
-  # `Module.t()` / `Module.state()` — emit the full Elixir alias path. TS
-  # namespace lookup resolves it from inside the call site's namespace.
-  defp do_render({{:., _dot, [aliased, kind]}, _call, []}) when kind in [:t, :state] do
+  # `Module.state()` — mounted child store marker.
+  defp do_render({{:., _dot, [aliased, :state]}, _call, []}, root) do
+    "#{root}.StoreField<#{inspect(full_alias_path(aliased))}>"
+  end
+
+  # `Module.t()` — bare alias path. TS namespace lookup resolves it from the
+  # call site's namespace.
+  defp do_render({{:., _dot, [aliased, :t]}, _call, []}, _root) do
     full_alias_path(aliased)
   end
 
-  defp do_render({:%{}, _meta, pairs}) when is_list(pairs) do
+  defp do_render({:%{}, _meta, pairs}, root) when is_list(pairs) do
     body =
       Enum.map_join(pairs, "; ", fn {key, value} ->
-        "#{render_key(key)}: #{do_render(value)}"
+        "#{render_key(key)}: #{do_render(value, root)}"
       end)
 
     "{ " <> body <> " }"
   end
 
-  defp do_render(nil), do: "null"
-  defp do_render(true), do: "true"
-  defp do_render(false), do: "false"
+  defp do_render(nil, _root), do: "null"
+  defp do_render(true, _root), do: "true"
+  defp do_render(false, _root), do: "false"
 
-  defp do_render(literal) when is_atom(literal), do: inspect(Atom.to_string(literal))
-  defp do_render(literal) when is_binary(literal), do: inspect(literal)
-  defp do_render(literal) when is_integer(literal), do: Integer.to_string(literal)
-  defp do_render(literal) when is_float(literal), do: Float.to_string(literal)
+  defp do_render(literal, _root) when is_atom(literal), do: inspect(Atom.to_string(literal))
+  defp do_render(literal, _root) when is_binary(literal), do: inspect(literal)
+  defp do_render(literal, _root) when is_integer(literal), do: Integer.to_string(literal)
+  defp do_render(literal, _root) when is_float(literal), do: Float.to_string(literal)
 
-  defp do_render(_other), do: "unknown"
+  defp do_render(_other, _root), do: "unknown"
 
   defp wrap_array(rendered) do
     if String.contains?(rendered, " | ") or String.contains?(rendered, " & ") do

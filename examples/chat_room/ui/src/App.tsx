@@ -1,47 +1,54 @@
-import { useState } from "react"
-import type { FormEvent } from "react"
-import { useAsyncResult, useCommand, useStore, useStream } from "@arbor/react"
+import { useEffect, useState } from "react"
+import type { SubmitEvent } from "react"
+import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
 
-import "./generated/arbor"
-import type * as ArborTypes from "./generated/arbor"
-
-const ROOT_STORE_ID = [] as const
-type OnlineUser = { id: string; name: string }
+type Registry = Arbor.Stores
+type RootModule = "MyApp.Stores.ChatRoomStore"
 
 export default function App() {
-  const room = useStore<"MyApp.Stores.ChatRoomStore">(ROOT_STORE_ID)
-  const messages = useStream<"MyApp.Stores.ChatRoomStore", ArborTypes.MyApp.MessageState>(
-    ROOT_STORE_ID,
-    "messages"
-  )
-  // Codegen currently reflects `list(map())` here, so keep the item shape explicit at the hook.
-  const onlineUsers = useAsyncResult<OnlineUser[]>(ROOT_STORE_ID, "online_users")
-  const reload = useCommand<"MyApp.Stores.ChatRoomStore", "reload", Record<string, never>>(
-    ROOT_STORE_ID,
-    "reload"
-  )
-  const refresh = useCommand<"MyApp.Stores.ChatRoomStore", "refresh", Record<string, never>>(
-    ROOT_STORE_ID,
-    "refresh"
-  )
-  const sendMessage = useCommand<"MyApp.Stores.ChatRoomStore", "send_message", { queued: boolean }>(
-    ROOT_STORE_ID,
-    "send_message"
-  )
+  const root = useArborRoot<Registry, RootModule>()
+  const room = useArborSnapshot(root)
 
+  const setName = useArborCommand(root, "set_name")
+  const sendMessage = useArborCommand(root, "send_message")
+
+  const [nameDraft, setNameDraft] = useState("")
   const [body, setBody] = useState("")
   const [feedback, setFeedback] = useState("")
-  const [busy, setBusy] = useState<"send" | "reload" | "refresh" | null>(null)
+  const [busy, setBusy] = useState<"name" | "send" | null>(null)
 
-  if (!room) {
-    return (
-      <main className="shell">
-        <section className="panel loading">Waiting for the chat room bootstrap patch…</section>
-      </main>
-    )
+  const currentUser = room.current_user
+  const onlineUsers = room.online_users
+  const messages = room.messages
+  const onlineCount = onlineUsers.status === "ok" ? onlineUsers.data.length : 0
+
+  useEffect(() => {
+    setNameDraft(currentUser.name)
+  }, [currentUser.name])
+
+  async function handleSetName(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const nextName = nameDraft.trim()
+
+    if (!nextName) {
+      setFeedback("Name cannot be empty.")
+      return
+    }
+
+    setBusy("name")
+
+    try {
+      const reply = await setName({ name: nextName })
+      setFeedback(`Name updated to ${reply.name}.`)
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Name update failed.")
+    } finally {
+      setBusy(null)
+    }
   }
 
-  async function handleSend(event: FormEvent<HTMLFormElement>) {
+  async function handleSend(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
 
     const nextBody = body.trim()
@@ -64,125 +71,159 @@ export default function App() {
     }
   }
 
-  async function runAction(
-    action: "reload" | "refresh",
-    command: (payload: Record<string, never>) => Promise<Record<string, never>>
-  ) {
-    setBusy(action)
-
-    try {
-      await command({})
-      setFeedback(action === "reload" ? "Silent stream reload sent." : "Refresh command sent.")
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : `${action} failed.`)
-    } finally {
-      setBusy(null)
-    }
-  }
-
   return (
-    <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">Arbor Example</p>
-        <div className="hero-row">
+    <main className="chat-shell">
+      <aside className="sidebar" aria-label="Chat room details">
+        <div className="room-card">
+          <div className="room-mark">#</div>
           <div>
-            <h1>Chat room</h1>
-            <p className="hero-copy">
-              Stream updates, async assigns, and async command replies over the same channel.
-            </p>
+            <p className="eyebrow">Room</p>
+            <h1>general</h1>
           </div>
-          <div className="badge">{messages.length} streamed messages</div>
         </div>
-      </section>
 
-      <section className="grid">
-        <article className="panel">
-          <div className="section-header">
-            <h2>Online users</h2>
-            <span className={`status-pill status-${onlineUsers?.status ?? "loading"}`}>
-              {onlineUsers?.status ?? "loading"}
-            </span>
+        <section className="identity-card" aria-label="Your profile">
+          <div className="avatar self-avatar">{initials(currentUser.name)}</div>
+          <div className="identity-copy">
+            <span>Posting as</span>
+            <strong>{currentUser.name}</strong>
           </div>
+        </section>
 
-          {onlineUsers?.status === "ok" ? (
-            <ul className="users">
-              {onlineUsers.result.map((user) => (
-                <li key={user.id}>
-                  <strong>{user.name}</strong>
-                  <span className="muted">{user.id}</span>
-                </li>
-              ))}
-            </ul>
-          ) : onlineUsers?.status === "loading" || !onlineUsers ? (
-            <p className="muted">Loading online users…</p>
-          ) : (
-            <p className="muted">
-              Presence fetch failed.
-            </p>
-          )}
-        </article>
-
-        <article className="panel">
-          <h2>Controls</h2>
-          <div className="actions">
-            <button type="button" onClick={() => void runAction("reload", reload)} disabled={busy !== null}>
-              {busy === "reload" ? "Reloading…" : "Reload stream"}
-            </button>
-            <button type="button" className="ghost" onClick={() => void runAction("refresh", refresh)} disabled={busy !== null}>
-              {busy === "refresh" ? "Refreshing…" : "Refresh with async"}
-            </button>
-          </div>
-          <p className="muted">Room id: <code>general</code></p>
-          <p className="muted">Last send status: <strong>{renderSendStatus(room.last_send_status)}</strong></p>
-        </article>
-      </section>
-
-      <section className="panel">
-        <h2>Send message</h2>
-        <form className="composer" onSubmit={handleSend}>
+        <form className="name-form" onSubmit={handleSetName}>
+          <label className="sr-only" htmlFor="display-name">
+            Display name
+          </label>
           <input
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            placeholder="Type a message"
+            id="display-name"
+            value={nameDraft}
+            onChange={(event) => setNameDraft(event.target.value)}
+            placeholder="Display name"
           />
-          <button type="submit" disabled={busy === "send"}>
-            {busy === "send" ? "Sending…" : "Send"}
+          <button type="submit" disabled={busy === "name"}>
+            {busy === "name" ? "Saving" : "Rename"}
           </button>
         </form>
 
-        {feedback ? <p className="notice">{feedback}</p> : null}
-      </section>
+        <section className="presence-panel" aria-label="Online users">
+          <div className="section-heading">
+            <h2>Online</h2>
+            <span className={`status-dot status-${onlineUsers.status}`} />
+          </div>
 
-      <section className="panel">
-        <h2>Message stream</h2>
+          {onlineUsers.status === "ok" ? (
+            <ul className="users">
+              {onlineUsers.data.map((user) => (
+                <li key={user.id}>
+                  <span className="avatar">{initials(user.name)}</span>
+                  <span className="user-meta">
+                    <strong>{user.name}</strong>
+                    <small>{user.id}</small>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : onlineUsers.status === "loading" ? (
+            <p className="side-note">Loading presence</p>
+          ) : (
+            <p className="side-note">Presence unavailable</p>
+          )}
+        </section>
+      </aside>
 
-        {messages.length === 0 ? (
-          <p className="empty">No messages have been materialized yet.</p>
-        ) : (
-          <ul className="messages">
-            {messages.map((entry) => (
-              <li key={entry.itemKey} className="message">
-                <header>
-                  <strong>{entry.item.sender}</strong>
-                  <span className="muted">{entry.item.id}</span>
-                </header>
-                <p>{entry.item.body}</p>
-              </li>
-            ))}
-          </ul>
-        )}
+      <section className="chatbox" aria-label="Chat messages">
+        <header className="chat-header">
+          <div>
+            <p className="eyebrow">Live chat</p>
+            <h2>Chat room</h2>
+          </div>
+          <div className="chat-stats" aria-label="Room activity">
+            <span>{onlineCount} online</span>
+            <span>{messages.length} messages</span>
+          </div>
+        </header>
+
+        <div className="messages-viewport">
+          {messages.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-mark">+</div>
+              <p>No messages yet.</p>
+            </div>
+          ) : (
+            <ol className="messages">
+              {messages.map((message) => {
+                const fromSelf = message.sender === currentUser.name
+
+                return (
+                  <li
+                    key={message.id}
+                    className={fromSelf ? "message message-self" : "message"}
+                  >
+                    <span className="avatar">{initials(message.sender)}</span>
+                    <article className="bubble">
+                      <header>
+                        <strong>{message.sender}</strong>
+                        <small>{shortMessageId(message.id)}</small>
+                      </header>
+                      <p>{message.body}</p>
+                    </article>
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+        </div>
+
+        <footer className="composer-dock">
+          <div className="send-state" aria-live="polite">
+            {feedback || renderSendStatus(room.last_send_status)}
+          </div>
+          <form className="message-form" onSubmit={handleSend}>
+            <label className="sr-only" htmlFor="message-body">
+              Message
+            </label>
+            <input
+              id="message-body"
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder="Write a message"
+            />
+            <button type="submit" disabled={busy === "send"}>
+              {busy === "send" ? "Sending" : "Send"}
+            </button>
+          </form>
+        </footer>
       </section>
     </main>
   )
 }
 
-function renderSendStatus(status: ArborTypes.MyApp.Stores.ChatRoomStore["last_send_status"]): string {
+function renderSendStatus(status: {
+  type: "idle" | "ok" | "failed"
+  id?: string
+  reason?: string
+}): string {
   switch (status.type) {
     case "idle":
       return "idle"
     case "ok":
-      return `ok (${status.id})`
+      return `ok (${status.id ?? ""})`
     case "failed":
-      return `failed (${status.reason})`
+      return `failed (${status.reason ?? ""})`
   }
+}
+
+function initials(name: string): string {
+  const letters = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("")
+
+  return letters || "?"
+}
+
+function shortMessageId(id: string): string {
+  return id.length > 10 ? id.slice(-10) : id
 }

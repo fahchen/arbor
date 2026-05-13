@@ -142,17 +142,17 @@ defmodule Arbor.Page.ServerTest do
     end
 
     @impl Arbor.Store
-    def handle_info(:bump, socket) do
-      {:noreply, Arbor.Socket.update_assign(socket, :counter, &(&1 + 1))}
-    end
-
-    @impl Arbor.Store
     def render(socket) do
       %{counter: socket.assigns.counter}
     end
 
     @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
+
+    @impl Arbor.Store
+    def handle_info(:bump, socket) do
+      {:noreply, Arbor.Socket.update_assign(socket, :counter, &(&1 + 1))}
+    end
   end
 
   test "catch-all handle_info dispatches to root store and emits [:arbor, :pubsub, :receive]" do
@@ -202,13 +202,13 @@ defmodule Arbor.Page.ServerTest do
     end
 
     @impl Arbor.Store
-    def handle_command(:do_thing, _payload, socket) do
-      {:noreply, socket}
+    def render(socket) do
+      %{status: socket.assigns.status}
     end
 
     @impl Arbor.Store
-    def render(socket) do
-      %{status: socket.assigns.status}
+    def handle_command(:do_thing, _payload, socket) do
+      {:noreply, socket}
     end
   end
 

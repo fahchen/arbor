@@ -21,12 +21,13 @@ defmodule Arbor.DSL.Command do
     validate_command_name!(name)
 
     quote bind_quoted: [name: name] do
-      @__arbor_commands__ %{name: name, payload_fields: [], opts: []}
+      @__arbor_commands__ %{name: name, payload_fields: [], reply: nil, opts: []}
     end
   end
 
   @doc """
-  Declares a command whose payload is described inside the block.
+  Declares a command whose payload (and optionally reply) is described inside
+  the block.
 
   ## Examples
 
@@ -35,6 +36,7 @@ defmodule Arbor.DSL.Command do
 
         command :rename do
           payload :title, String.t()
+          reply %{ok: boolean()}
         end
       end
   """
@@ -44,9 +46,10 @@ defmodule Arbor.DSL.Command do
 
     quote do
       Module.delete_attribute(__MODULE__, :__arbor_command_payload_fields__)
+      Module.delete_attribute(__MODULE__, :__arbor_command_reply__)
 
       try do
-        import Arbor.DSL.Command, only: [payload: 2, payload: 3]
+        import Arbor.DSL.Command, only: [payload: 2, payload: 3, reply: 1]
         unquote(block)
       after
         :ok
@@ -59,9 +62,17 @@ defmodule Arbor.DSL.Command do
         |> Enum.reverse()
         |> Normalize.fields()
 
-      Module.delete_attribute(__MODULE__, :__arbor_command_payload_fields__)
+      reply_ast = Module.get_attribute(__MODULE__, :__arbor_command_reply__)
 
-      @__arbor_commands__ %{name: unquote(name), payload_fields: payload_fields, opts: []}
+      Module.delete_attribute(__MODULE__, :__arbor_command_payload_fields__)
+      Module.delete_attribute(__MODULE__, :__arbor_command_reply__)
+
+      @__arbor_commands__ %{
+        name: unquote(name),
+        payload_fields: payload_fields,
+        reply: reply_ast,
+        opts: []
+      }
     end
   end
 
@@ -83,6 +94,43 @@ defmodule Arbor.DSL.Command do
   defmacro payload(name, type, opts \\ []) when is_atom(name) and is_list(opts) do
     quote bind_quoted: [name: name, type: Macro.escape(type), opts: opts] do
       @__arbor_command_payload_fields__ Keyword.merge(opts, name: name, type: type)
+    end
+  end
+
+  @doc """
+  Declares the reply type for a command inside a `command do ... end` block.
+
+  The argument is a single Arbor type AST (the same shapes accepted by
+  `field/2`), validated at compile time via `Arbor.Type.valid_type?/1`.
+  Only one `reply` declaration per command is allowed; a later call raises.
+
+  ## Examples
+
+      defmodule ExampleStore do
+        use Arbor.Store
+
+        command :checkout do
+          payload :coupon, String.t() | nil
+          reply %{order_id: String.t()} | %{ok: false, reason: String.t()}
+        end
+      end
+  """
+  @spec reply(Macro.t()) :: Macro.t()
+  defmacro reply(type_ast) do
+    quote bind_quoted: [type_ast: Macro.escape(type_ast)] do
+      unless Arbor.Type.valid_type?(type_ast) do
+        raise CompileError,
+          description:
+            "Arbor #{inspect(__MODULE__)}: unsupported command reply type " <>
+              Macro.to_string(type_ast) <> ". See `Arbor.Type` for the supported AST shapes."
+      end
+
+      if Module.get_attribute(__MODULE__, :__arbor_command_reply__) do
+        raise CompileError,
+          description: "Arbor #{inspect(__MODULE__)}: duplicate `reply` declaration in command"
+      end
+
+      Module.put_attribute(__MODULE__, :__arbor_command_reply__, type_ast)
     end
   end
 

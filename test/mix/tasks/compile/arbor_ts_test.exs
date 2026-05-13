@@ -55,9 +55,16 @@ defmodule Mix.Tasks.Compile.ArborTsTest do
       assert {:ok, []} = ArborTs.run([])
 
       contents = File.read!(output_path)
-      assert contents =~ "export type AsyncResult<T>"
-      assert contents =~ "export type TypespecProbe = {"
-      assert contents =~ "export type TypespecProbeChild = {"
+      assert contents =~ "declare namespace Arbor {"
+      refute contents =~ "declare global"
+      refute contents =~ "export {}"
+      refute contents =~ ~s|import "@arbor/client"|
+      assert contents =~ "type AsyncResult<T>"
+      assert contents =~ "interface StoreDef<Module extends string, Shape, Commands>"
+      assert contents =~ ~s|"Arbor.TestSupport.TypespecProbe": StoreDef<|
+      assert contents =~ ~s|"Arbor.TestSupport.TypespecProbeChild": StoreDef<|
+      assert contents =~ "Arbor.StreamField<"
+      assert contents =~ "Arbor.AsyncField<"
     end
 
     test "returns :noop when the bundle already matches", %{output_path: output_path} do
@@ -69,7 +76,9 @@ defmodule Mix.Tasks.Compile.ArborTsTest do
     test "rewrites a stale bundle", %{output_path: output_path} do
       File.write!(output_path, "// stale\n")
       assert {:ok, []} = ArborTs.run([])
-      assert File.read!(output_path) =~ "export type TypespecProbe = {"
+
+      assert File.read!(output_path) =~
+               ~s|"Arbor.TestSupport.TypespecProbe": StoreDef<|
     end
 
     test "--check returns drift diagnostic on mismatch and does not write",

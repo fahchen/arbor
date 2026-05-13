@@ -1,54 +1,54 @@
 if Code.ensure_loaded?(Phoenix.Channel) do
   defmodule Arbor.Transport.Channel do
     @moduledoc """
-    Reference Phoenix Channel adapter that binds an `Arbor.Page.Server` 1:1 to
-    a connected channel session.
+    Generic Phoenix Channel adapter that mounts any Arbor root store named in
+    the channel module's allowlist.
+
+    The public client API connects to a root by `{module, id}` (see
+    `docs/client-contract.md`). `topic` is an internal transport detail:
+    the client builds an opaque topic of the form `"arbor:<opaque_ref>"` and
+    carries the requested `module`, `id`, and optional `params` in the channel
+    join payload.
 
     ## Mounting in a Phoenix endpoint
 
-    Wire the channel inside a Phoenix.Socket and route the incoming `"command"`
-    events through `Arbor.Page.Server.command/4`. Patch envelopes pushed by
-    the runtime arrive as `{:patch, %Arbor.Page.PatchEnvelope{}}` messages and
-    are forwarded to the client as `"patch"` events.
-
-        defmodule MyAppWeb.PageChannel do
-          use Arbor.Transport.Channel, root: MyApp.RootStore
+        defmodule MyAppWeb.ArborChannel do
+          use Arbor.Transport.Channel,
+            stores: [
+              MyApp.Stores.CartPageStore,
+              MyApp.Stores.InboxStore
+            ]
         end
 
         defmodule MyAppWeb.UserSocket do
           use Phoenix.Socket
 
-          channel "page:*", MyAppWeb.PageChannel
+          channel "arbor:*", MyAppWeb.ArborChannel
 
           def connect(_params, socket, _connect_info), do: {:ok, socket}
           def id(_socket), do: nil
         end
 
-    Then attach the socket to the endpoint:
+    ## Join payload
 
-        defmodule MyAppWeb.Endpoint do
-          use Phoenix.Endpoint, otp_app: :my_app
+    Incoming join payload:
 
-          socket "/socket", MyAppWeb.UserSocket,
-            websocket: true,
-            longpoll: false
-        end
+        %{
+          "module" => "MyApp.Stores.CartPageStore",
+          "id" => "cart:current-user",
+          "params" => %{...optional...}
+        }
+
+    The channel rejects joins whose `module` is not in the configured allowlist.
 
     ## Lifecycle
 
-    On `join/3` the adapter starts a fresh `Arbor.Page.Server` and links it
-    to the channel pid. The page server's `transport_pid` is set to the
-    channel pid so patch envelopes flow back as `{:patch, envelope}` messages
-    that the adapter forwards to the client as `"patch"` events.
-
-    On channel `terminate/2` the adapter unlinks the page server and calls
-    `GenServer.stop/3` with the channel's terminate reason — so the page
-    server's own `terminate/2` (and the root store's `terminate/2`) run
-    with the actual context (`:normal`, `:shutdown`, `{:shutdown, :left}`,
-    etc) instead of a linked-exit signal. Reconnect is recovery (BDR-0015):
-    each new join builds a fresh page server with `version: 1` and an
-    initial `replace ""` envelope. There is no in-memory state preserved
-    across disconnects.
+    On `join/3` the adapter starts a fresh `Arbor.Page.Server` for the resolved
+    root module + params and links it to the channel pid. On channel
+    `terminate/2` the adapter unlinks the page server and stops it with the
+    channel's terminate reason. Reconnect is recovery (BDR-0015): each new
+    join builds a fresh page server with `version: 1` and an initial
+    `replace ""` envelope.
 
     ## Wire shape
 
@@ -56,14 +56,8 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
         %{"store_id" => ["filters"], "name" => "change_query", "payload" => %{...}}
 
-    `store_id` is an array of local id strings — the runtime identity of the
-    addressed store node. The client echoes the server-rendered
-    `__arbor_store_id__` field verbatim and never constructs ids itself; the
-    root store is `[]`.
-
-    The Phoenix Channel `ref` is managed by the channel transport itself —
-    Phoenix associates the reply with the originating push automatically, so
-    the page server is never given the ref.
+    `store_id` is the in-tree path-shaped locator for the addressed store node.
+    Root is `[]`.
 
     Outgoing `"patch"` payload — `Arbor.Page.PatchEnvelope.to_wire/1`:
 
@@ -77,16 +71,10 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     ## Telemetry
 
-    The adapter emits two adapter-scoped events:
-
       * `[:arbor, :channel, :join]` — `%{system_time: integer}`. Metadata:
-        `module`, `topic`, `page_pid`.
+        `module`, `id`, `topic`, `page_pid`.
       * `[:arbor, :channel, :terminate]` — `%{system_time: integer}`.
-        Metadata: `module`, `topic`, `reason`, `page_pid`.
-
-    Runtime-scoped events (`[:arbor, :command, …]`, `[:arbor, :patch, :stop]`,
-    etc.) keep emitting from the page server and are catalogued in
-    `Arbor.Telemetry.events/0`.
+        Metadata: `module`, `id`, `topic`, `reason`, `page_pid`.
     """
 
     alias Arbor.Page.PatchEnvelope
@@ -95,15 +83,20 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     @doc false
     defmacro __using__(opts) do
-      root_module = Keyword.fetch!(opts, :root)
+      stores = Keyword.get(opts, :stores, [])
 
-      quote do
+      quote bind_quoted: [stores: stores] do
         use Phoenix.Channel
+
+        @__arbor_stores__ stores
+
+        @doc false
+        def __arbor_stores__, do: @__arbor_stores__
 
         @doc false
         @impl Phoenix.Channel
         def join(topic, params, socket) do
-          Arbor.Transport.Channel.__join__(unquote(root_module), topic, params, socket)
+          Arbor.Transport.Channel.__join__(__MODULE__, topic, params, socket)
         end
 
         @doc false
@@ -121,7 +114,7 @@ if Code.ensure_loaded?(Phoenix.Channel) do
         @doc false
         @impl Phoenix.Channel
         def terminate(reason, socket) do
-          Arbor.Transport.Channel.__terminate__(unquote(root_module), reason, socket)
+          Arbor.Transport.Channel.__terminate__(reason, socket)
         end
 
         defoverridable join: 3, handle_in: 3, handle_info: 2, terminate: 2
@@ -130,25 +123,35 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     @doc false
     @spec __join__(module(), String.t(), map(), Phoenix.Socket.t()) ::
-            {:ok, Phoenix.Socket.t()}
-    def __join__(root_module, topic, params, %Phoenix.Socket{} = socket)
-        when is_atom(root_module) and is_binary(topic) do
-      {:ok, page_pid} =
-        Server.start_link({root_module, params, %{transport_pid: self()}})
+            {:ok, Phoenix.Socket.t()} | {:error, map()}
+    def __join__(channel_module, topic, payload, %Phoenix.Socket{} = socket)
+        when is_atom(channel_module) and is_binary(topic) and is_map(payload) do
+      with {:ok, module_str} <- fetch_string(payload, "module"),
+           {:ok, id} <- fetch_string(payload, "id"),
+           {:ok, root_module} <- resolve_root(channel_module, module_str) do
+        params = Map.get(payload, "params") || %{}
+        join_params = Map.merge(params, %{"__arbor_root_id__" => id})
 
-      Process.link(page_pid)
+        {:ok, page_pid} =
+          Server.start_link({root_module, join_params, %{transport_pid: self()}})
 
-      Telemetry.emit(
-        [:arbor, :channel, :join],
-        %{system_time: System.system_time()},
-        %{module: root_module, topic: topic, page_pid: page_pid}
-      )
+        Process.link(page_pid)
 
-      {:ok,
-       socket
-       |> Phoenix.Socket.assign(:__arbor_page__, page_pid)
-       |> Phoenix.Socket.assign(:__arbor_root__, root_module)
-       |> Phoenix.Socket.assign(:__arbor_topic__, topic)}
+        Telemetry.emit(
+          [:arbor, :channel, :join],
+          %{system_time: System.system_time()},
+          %{module: root_module, id: id, topic: topic, page_pid: page_pid}
+        )
+
+        {:ok,
+         socket
+         |> Phoenix.Socket.assign(:__arbor_page__, page_pid)
+         |> Phoenix.Socket.assign(:__arbor_root__, root_module)
+         |> Phoenix.Socket.assign(:__arbor_root_id__, id)
+         |> Phoenix.Socket.assign(:__arbor_topic__, topic)}
+      else
+        {:error, reason} -> {:error, %{reason: reason}}
+      end
     end
 
     @doc false
@@ -176,27 +179,52 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     end
 
     @doc false
-    @spec __terminate__(module(), term(), Phoenix.Socket.t()) :: :ok
-    def __terminate__(root_module, reason, %Phoenix.Socket{} = socket) do
+    @spec __terminate__(term(), Phoenix.Socket.t()) :: :ok
+    def __terminate__(reason, %Phoenix.Socket{} = socket) do
       page_pid = Map.get(socket.assigns, :__arbor_page__)
       topic = Map.get(socket.assigns, :__arbor_topic__)
+      root_module = Map.get(socket.assigns, :__arbor_root__)
+      id = Map.get(socket.assigns, :__arbor_root_id__)
 
       Telemetry.emit(
         [:arbor, :channel, :terminate],
         %{system_time: System.system_time()},
-        %{module: root_module, topic: topic, reason: reason, page_pid: page_pid}
+        %{module: root_module, id: id, topic: topic, reason: reason, page_pid: page_pid}
       )
 
-      # Unlink-then-stop so the page server's `terminate/2` runs with the
-      # actual channel reason (`:normal`, `:shutdown`, `{:shutdown, :left}`,
-      # etc) rather than the linked-exit signal Phoenix would otherwise send
-      # alongside the channel pid's exit.
       if is_pid(page_pid) and Process.alive?(page_pid) do
         Process.unlink(page_pid)
         GenServer.stop(page_pid, reason, 1_000)
       end
 
       :ok
+    end
+
+    defp fetch_string(payload, key) do
+      case Map.get(payload, key) do
+        value when is_binary(value) and value != "" -> {:ok, value}
+        _other -> {:error, "missing #{key}"}
+      end
+    end
+
+    defp resolve_root(channel_module, module_str) do
+      allowlist = channel_module.__arbor_stores__()
+
+      matched =
+        Enum.find(allowlist, fn store ->
+          store |> Module.split() |> Enum.join(".") == module_str
+        end)
+
+      cond do
+        matched == nil ->
+          {:error, "module #{inspect(module_str)} is not in the channel allowlist"}
+
+        not Code.ensure_loaded?(matched) ->
+          {:error, "module #{inspect(module_str)} is not loadable"}
+
+        true ->
+          {:ok, matched}
+      end
     end
   end
 end

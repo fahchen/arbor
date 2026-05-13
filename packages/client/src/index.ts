@@ -1,61 +1,32 @@
-export { createArborClient } from "./client"
-export type { ArborClient, ArborClientOptions } from "./client"
-export type { ClientEventMap } from "./events"
+export { connectStore, disconnectStore } from "./connect"
+export type { ConnectStoreOptions } from "./connect"
+export type { ChannelLike, PushLike, SocketLike } from "./runtime"
+
 export { applyPatch, parsePointer } from "./patch"
 export { applyStreamOps, getStream, pruneStreams } from "./streams"
+
 export type {
-  ArborStoreCommands,
-  ArborStoreMap,
-  ArborStoreModule,
-  ArborStoreState,
-  ArborAsyncFailure,
+  AsyncError,
   AsyncResult,
+  CommandName,
+  CommandPayload,
+  CommandReply,
+  CommandsOf,
+  DefOf,
   JsonPatchOp,
   PatchEnvelope,
+  ProxyValue,
+  ShapeOf,
+  SnapshotValue,
   StoreId,
+  StoreModule,
+  StoreProxy,
+  StoreRuntime,
+  StoreSnapshot,
   StreamEntry,
-  StreamOp
+  StreamOp,
+  WireAsyncError,
+  WireAsyncResult
 } from "./types"
 
-import type { ArborClient } from "./client"
-import type { ArborStoreCommands, ArborStoreModule, ArborStoreState, StoreId } from "./types"
-
-export interface BoundStore<
-  TState,
-  TCommands extends Record<string, Record<string, unknown>> = {}
-> {
-  readonly storeId: StoreId
-  getState(): TState | undefined
-  subscribe(listener: () => void): () => void
-  command<K extends keyof TCommands, Reply = unknown>(
-    name: K,
-    payload: TCommands[K]
-  ): Promise<Reply>
-}
-
-export function bindStore<M extends ArborStoreModule>(
-  client: ArborClient,
-  storeId: StoreId
-): BoundStore<
-  ArborStoreState<M>,
-  ArborStoreCommands<M> extends Record<string, Record<string, unknown>>
-    ? ArborStoreCommands<M>
-    : {}
->
-export function bindStore<
-  TState,
-  TCommands extends Record<string, Record<string, unknown>> = {}
->(client: ArborClient, storeId: StoreId): BoundStore<TState, TCommands> {
-  return {
-    storeId,
-    getState() {
-      return client.getState<TState>(storeId)
-    },
-    subscribe(listener) {
-      return client.subscribe(storeId, listener)
-    },
-    command(name, payload) {
-      return client.command(storeId, String(name), payload)
-    }
-  }
-}
+export { STORE_ID_KEY, storeIdKey } from "./types"

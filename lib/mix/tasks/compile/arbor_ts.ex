@@ -54,7 +54,7 @@ defmodule Mix.Tasks.Compile.ArborTs do
   alias Arbor.Codegen.TypeScript.Manifest
 
   @compiler_name "arbor_ts"
-  @default_output_path "priv/codegen/ts/arbor.ts"
+  @default_output_path "priv/codegen/ts/arbor.d.ts"
 
   @impl Mix.Task.Compiler
   @spec run([String.t()]) ::

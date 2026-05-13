@@ -40,7 +40,7 @@ defmodule Arbor.Reconciler do
       )
       when is_list(parent_path) do
     id = validate_id!(child)
-    assigns = normalize_child_assigns(child.module, child.assigns)
+    assigns = normalize_assigns(child.module, child.assigns)
     consumed_keys = Map.keys(assigns)
     store_id = List.insert_at(parent_path, -1, id)
 
@@ -48,6 +48,10 @@ defmodule Arbor.Reconciler do
       %Entry{module: existing_module} = entry when existing_module == child.module ->
         cond do
           Socket.consumed_keys_changed?(parent_socket, consumed_keys) ->
+            next_socket = update_store(entry.socket, assigns)
+            {:update, store_id, next_socket, consumed_keys}
+
+          parent_assign_values_changed?(entry.socket, assigns, consumed_keys) ->
             next_socket = update_store(entry.socket, assigns)
             {:update, store_id, next_socket, consumed_keys}
 
@@ -66,6 +70,17 @@ defmodule Arbor.Reconciler do
         {:mount, store_id, new_child_socket(parent_path, child.module, id, assigns),
          consumed_keys}
     end
+  end
+
+  @spec parent_assign_values_changed?(Socket.t(), map(), [Socket.assign_key()]) :: boolean()
+  defp parent_assign_values_changed?(%Socket{} = socket, assigns, consumed_keys)
+       when is_map(assigns) and is_list(consumed_keys) do
+    Enum.any?(consumed_keys, fn key ->
+      case Map.fetch(socket.assigns, key) do
+        {:ok, current_value} -> current_value !== Map.fetch!(assigns, key)
+        :error -> true
+      end
+    end)
   end
 
   @spec child_store_dirty?(Socket.t()) :: boolean()
@@ -153,8 +168,8 @@ defmodule Arbor.Reconciler do
   end
 
   @doc false
-  @spec normalize_child_assigns(module(), map()) :: map()
-  def normalize_child_assigns(module, assigns) when is_atom(module) and is_map(assigns) do
+  @spec normalize_assigns(module(), map()) :: map()
+  def normalize_assigns(module, assigns) when is_atom(module) and is_map(assigns) do
     attrs =
       if function_exported?(module, :__arbor__, 1) do
         module.__arbor__(:attrs)
@@ -163,9 +178,18 @@ defmodule Arbor.Reconciler do
       end
 
     Enum.reduce(attrs, assigns, fn %{name: name, required: required, default: default}, acc ->
+      string_name = Atom.to_string(name)
+
       cond do
         Map.has_key?(acc, name) ->
           acc
+
+        Map.has_key?(acc, string_name) ->
+          value = Map.fetch!(acc, string_name)
+
+          acc
+          |> Map.delete(string_name)
+          |> Map.put(name, value)
 
         default != Attr.no_default() ->
           Map.put(acc, name, default)

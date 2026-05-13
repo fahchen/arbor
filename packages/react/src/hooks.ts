@@ -2,47 +2,38 @@ import { useCallback } from "react"
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector"
 
 import type {
-  ArborStoreCommands,
-  ArborStoreModule,
-  ArborStoreState,
-  AsyncResult,
-  StoreId,
-  StreamEntry
+  CommandName,
+  CommandPayload,
+  CommandReply,
+  StoreModule,
+  StoreProxy,
+  StoreSnapshot
 } from "@arbor/client"
 
-import { useArborClient } from "./provider"
+const identitySelector = <S>(value: S): S => value
 
-const identitySelector = <S, T = S>(value: S): T => value as unknown as T
-
-export function useStore<M extends ArborStoreModule>(
-  storeId: StoreId
-): ArborStoreState<M> | undefined;
-export function useStore<M extends ArborStoreModule, Selected>(
-  storeId: StoreId,
-  selector: (state: ArborStoreState<M> | undefined) => Selected,
+/**
+ * Subscribes to a store proxy and returns its current snapshot. Re-renders
+ * fire only when the underlying store node changes (per
+ * `proxy.subscribe(...)` semantics).
+ */
+export function useArborSnapshot<R, M extends StoreModule<R>>(
+  proxy: StoreProxy<R, M>
+): StoreSnapshot<R, M>
+export function useArborSnapshot<R, M extends StoreModule<R>, Selected>(
+  proxy: StoreProxy<R, M>,
+  selector: (snapshot: StoreSnapshot<R, M>) => Selected,
   equalityFn?: (a: Selected, b: Selected) => boolean
-): Selected;
-export function useStore<TState>(storeId: StoreId): TState | undefined;
-export function useStore<TState, Selected>(
-  storeId: StoreId,
-  selector: (state: TState | undefined) => Selected,
-  equalityFn?: (a: Selected, b: Selected) => boolean
-): Selected;
-export function useStore<TState, Selected = TState | undefined>(
-  storeId: StoreId,
-  selector?: (state: TState | undefined) => Selected,
+): Selected
+export function useArborSnapshot<R, M extends StoreModule<R>, Selected = StoreSnapshot<R, M>>(
+  proxy: StoreProxy<R, M>,
+  selector?: (snapshot: StoreSnapshot<R, M>) => Selected,
   equalityFn?: (a: Selected, b: Selected) => boolean
 ): Selected {
-  const client = useArborClient()
-  const storeIdKey = JSON.stringify(storeId)
-
-  const subscribe = useCallback(
-    (onChange: () => void) => client.subscribe(storeId, onChange),
-    [client, storeIdKey]
-  )
-  const getSnapshot = useCallback(() => client.getState<TState>(storeId), [client, storeIdKey])
+  const subscribe = useCallback((onChange: () => void) => proxy.subscribe(onChange), [proxy])
+  const getSnapshot = useCallback(() => proxy.snapshot(), [proxy])
   const resolvedSelector =
-    selector ?? (identitySelector as (state: TState | undefined) => Selected)
+    selector ?? (identitySelector as (snapshot: StoreSnapshot<R, M>) => Selected)
 
   return useSyncExternalStoreWithSelector(
     subscribe,
@@ -53,55 +44,19 @@ export function useStore<TState, Selected = TState | undefined>(
   )
 }
 
-export function useCommand<
-  M extends ArborStoreModule,
-  K extends keyof ArborStoreCommands<M> & string,
-  Reply = unknown
->(storeId: StoreId, name: K): (payload: ArborStoreCommands<M>[K]) => Promise<Reply>;
-export function useCommand<
-  TCommands extends Record<string, Record<string, unknown>>,
-  K extends keyof TCommands & string,
-  Reply = unknown
->(storeId: StoreId, name: K): (payload: TCommands[K]) => Promise<Reply> {
-  const client = useArborClient()
-  const storeIdKey = JSON.stringify(storeId)
-
+/**
+ * Returns a bound dispatcher for a single command on the supplied proxy.
+ */
+export function useArborCommand<
+  R,
+  M extends StoreModule<R>,
+  K extends CommandName<R, M>
+>(
+  proxy: StoreProxy<R, M>,
+  name: K
+): (payload: CommandPayload<R, M, K>) => Promise<CommandReply<R, M, K>> {
   return useCallback(
-    (payload: TCommands[K]) => client.command<Reply>(storeId, name, payload),
-    [client, storeIdKey, name]
-  )
-}
-
-export function useAsyncResult<T>(storeId: StoreId, key: string): AsyncResult<T> | undefined {
-  const select = useCallback(
-    (state: Record<string, AsyncResult<T> | undefined> | undefined) => state?.[key],
-    [key]
-  )
-
-  return useStore<Record<string, AsyncResult<T> | undefined>, AsyncResult<T> | undefined>(
-    storeId,
-    select
-  )
-}
-
-export function useStream<M extends ArborStoreModule, T>(
-  storeId: StoreId,
-  name: string
-): readonly StreamEntry<T>[];
-export function useStream<T>(storeId: StoreId, name: string): readonly StreamEntry<T>[] {
-  const client = useArborClient()
-  const storeIdKey = JSON.stringify(storeId)
-
-  const subscribe = useCallback(
-    (onChange: () => void) => client.subscribe(storeId, onChange),
-    [client, storeIdKey]
-  )
-  const getSnapshot = useCallback(() => client.getStream<T>(storeId, name), [client, storeIdKey, name])
-
-  return useSyncExternalStoreWithSelector(
-    subscribe,
-    getSnapshot,
-    getSnapshot,
-    identitySelector
+    (payload: CommandPayload<R, M, K>) => proxy.dispatchCommand(name, payload),
+    [proxy, name]
   )
 }

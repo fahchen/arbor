@@ -1,14 +1,17 @@
-export { ArborProvider, useArborClient } from "./provider"
+export { ArborProvider, useArborRoot } from "./provider"
 export { shallowEqual } from "./shallow"
-export { useStore, useCommand, useAsyncResult, useStream } from "./hooks"
+export { useArborSnapshot, useArborCommand } from "./hooks"
+
 export type {
-  ArborClient,
   AsyncResult,
-  BoundStore,
-  ClientEventMap,
-  JsonPatchOp,
+  CommandName,
+  CommandPayload,
+  CommandReply,
   PatchEnvelope,
   StoreId,
+  StoreModule,
+  StoreProxy,
+  StoreSnapshot,
   StreamEntry,
   StreamOp
 } from "@arbor/client"

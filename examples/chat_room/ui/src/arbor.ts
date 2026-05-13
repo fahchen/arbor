@@ -1,9 +1,23 @@
 import { Socket } from "phoenix"
-import { bindStore, createArborClient } from "@arbor/client"
+import { connectStore } from "@arbor/client"
 
-import "./generated/arbor"
+// The generated `arbor.d.ts` is ambient — tsc auto-loads it from
+// `src/generated/arbor.d.ts` via the project's `include` glob, so no
+// side-effect import is required.
 
-const socket = new Socket("/socket", {})
+export const socket = new Socket("/socket", {})
 
-export const client = createArborClient({ socket, topic: "page:home" })
-export const rootStore = bindStore<"MyApp.Stores.ChatRoomStore">(client, [])
+export const ROOT_MODULE = "MyApp.Stores.ChatRoomStore" as const
+export const ROOT_ID = "general" as const
+
+export const DEFAULT_JOIN_PARAMS = {
+  room_id: "general"
+} as const
+
+export function connectRoot() {
+  return connectStore<Arbor.Stores>(socket, {
+    module: ROOT_MODULE,
+    id: ROOT_ID,
+    params: DEFAULT_JOIN_PARAMS
+  })
+}
