@@ -2,9 +2,11 @@ defmodule Arbor.Store do
   @moduledoc """
   Compile-time DSL entrypoint and behaviour contract for Arbor store modules.
 
-  Stores `use Arbor.Store` and implement `mount/1`, `render/1`,
+  Stores `use Arbor.Store` and implement `init/1`, `render/1`,
   `update/2`, `handle_command/3`, `handle_async/3`, `handle_info/2`,
-  and `terminate/2`.
+  and `terminate/2`. Root stores opt in with `use Arbor.Store, root: true`
+  and may also implement `mount/2` to receive client mount params before
+  `init/1` runs.
   `render/1` returns the resolved Elixir-shaped term; wire conversion happens
   separately via `Arbor.Wire.to_wire/1`.
   """
@@ -34,10 +36,27 @@ defmodule Arbor.Store do
   @type command_reply() :: map()
   @type message() :: value()
   @type rendered() :: Resolver.resolved_value()
+  @type root_params() :: %{optional(String.t()) => value()}
   @type terminate_reason() :: :normal | :shutdown | {:shutdown, value()} | value()
 
   @doc """
+  Initializes a freshly-created store socket.
+  """
+  @callback init(socket :: Socket.t()) :: {:ok, Socket.t()}
+
+  @doc """
+  Mounts a root store with client-supplied params.
+
+  Only modules declared with `use Arbor.Store, root: true` receive this
+  callback. Child stores use `init/1`.
+  """
+  @callback mount(params :: root_params(), socket :: Socket.t()) :: {:ok, Socket.t()}
+
+  @doc """
   Initializes a freshly-mounted store socket.
+
+  This callback is kept for compatibility with pre-session stores. Prefer
+  `init/1` for child stores and `mount/2` for root-only client params.
   """
   @callback mount(socket :: Socket.t()) :: {:ok, Socket.t()}
 
@@ -84,11 +103,19 @@ defmodule Arbor.Store do
   """
   @callback terminate(reason :: terminate_reason(), socket :: Socket.t()) :: :ok
 
-  @optional_callbacks update: 2, handle_async: 3, handle_info: 2, terminate: 2
+  @optional_callbacks init: 1,
+                      mount: 1,
+                      mount: 2,
+                      update: 2,
+                      handle_async: 3,
+                      handle_info: 2,
+                      terminate: 2
 
   @spec __using__(keyword()) :: Macro.t()
-  defmacro __using__(_opts) do
-    quote do
+  defmacro __using__(opts) do
+    root? = Keyword.get(opts, :root, false)
+
+    quote bind_quoted: [root?: root?] do
       use TypedStructor
       @behaviour Arbor.Store
 
@@ -118,6 +145,7 @@ defmodule Arbor.Store do
       Module.register_attribute(__MODULE__, :__arbor_command_reply__, accumulate: false)
       Module.register_attribute(__MODULE__, :__arbor_attrs__, accumulate: true)
       Module.put_attribute(__MODULE__, :__arbor_kind__, :store)
+      Module.put_attribute(__MODULE__, :__arbor_root__, root?)
 
       @after_verify {Arbor.Type, :verify_module!}
 
@@ -130,10 +158,24 @@ defmodule Arbor.Store do
       def __arbor_kind__, do: :store
 
       @doc false
+      @spec init(Arbor.Socket.t()) :: {:ok, Arbor.Socket.t()}
+      def init(socket) do
+        if function_exported?(__MODULE__, :mount, 1) do
+          apply(__MODULE__, :mount, [socket])
+        else
+          {:ok, socket}
+        end
+      end
+
+      @doc false
+      @spec mount(Arbor.Store.root_params(), Arbor.Socket.t()) :: {:ok, Arbor.Socket.t()}
+      def mount(_params, socket), do: {:ok, socket}
+
+      @doc false
       @spec terminate(Arbor.Store.terminate_reason(), Arbor.Socket.t()) :: :ok
       def terminate(_reason, _socket), do: :ok
 
-      defoverridable terminate: 2
+      defoverridable init: 1, mount: 2, terminate: 2
 
       @before_compile Arbor.Plugin.Reflection
     end

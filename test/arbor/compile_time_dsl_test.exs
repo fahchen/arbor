@@ -293,7 +293,6 @@ defmodule Arbor.CompileTimeDslTest do
         Code.compile_string(source)
       end)
 
-    assert stderr =~ "function mount/1 required by behaviour Arbor.Store is not implemented"
     assert stderr =~ "function render/1 required by behaviour Arbor.Store is not implemented"
 
     assert stderr =~
