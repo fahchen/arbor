@@ -269,6 +269,45 @@ defmodule Arbor.Transport.SessionChannelTest do
     assert %{op: "replace", path: "/room_id", value: "random"} in ops
   end
 
+  test "malformed command payload replies with an error without stopping mounted roots" do
+    {:ok, _reply, socket} = join_session()
+    assert_receive {:session_join, _params, _current_user}
+
+    mount_ref =
+      push(socket, "mount", %{
+        "root" => "beta",
+        "id" => "beta-1",
+        "params" => %{"label" => "secondary"}
+      })
+
+    assert_reply(mount_ref, :ok, %{"root_id" => "beta-1"})
+    assert_receive {:beta_mount, beta_pid, _params, _current_user}
+    assert_push("patch", %{"root_id" => "beta-1"})
+
+    beta_down = Process.monitor(beta_pid)
+
+    missing_name_ref =
+      push(socket, "command", %{
+        "root_id" => "beta-1",
+        "store_id" => [],
+        "payload" => %{"label" => "bad"}
+      })
+
+    assert_reply(missing_name_ref, :error, %{reason: "missing required field"})
+    refute_receive {:DOWN, ^beta_down, :process, ^beta_pid, _reason}
+
+    command_ref =
+      push(socket, "command", %{
+        "root_id" => "beta-1",
+        "store_id" => [],
+        "name" => "rename",
+        "payload" => %{"label" => "still-mounted"}
+      })
+
+    assert_reply(command_ref, :ok, %{})
+    assert_push("patch", %{"root_id" => "beta-1", "ops" => [%{path: "/label"}]})
+  end
+
   test "mount rejects undeclared roots and declared non-root stores" do
     {:ok, _reply, socket} = join_session()
     assert_receive {:session_join, _params, _current_user}

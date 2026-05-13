@@ -7,6 +7,17 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     servers. `join/3` runs `Arbor.Session.join/3` once. Each client `"mount"`
     message starts one root store page server using the shared session socket
     assigns and private session context.
+
+    ## Telemetry
+
+      * `[:arbor, :channel, :join]` — `%{system_time: integer}`. Metadata:
+        `module`, `id`, `topic`, `page_pid`. For this adapter `module` is the
+        Arbor session module, and `id`/`page_pid` are `nil` because roots mount
+        later inside the joined session.
+      * `[:arbor, :channel, :terminate]` — `%{system_time: integer}`.
+        Metadata: `module`, `id`, `topic`, `reason`, `page_pid`, `root_count`.
+        `root_count` is the number of mounted root page servers the session is
+        stopping.
     """
 
     use Phoenix.Channel
@@ -65,8 +76,6 @@ if Code.ensure_loaded?(Phoenix.Channel) do
            {:ok, root_module} <- fetch_declared_root(socket, root_name),
            :ok <- ensure_root_store!(root_module),
            {:ok, page_pid} <- start_root_page(root_module, root_id, params, socket) do
-        Process.link(page_pid)
-
         root_entry = %{pid: page_pid, module: root_module, name: root_name}
 
         socket = update_mounted_roots(socket, &Map.put(&1, root_id, root_entry))
@@ -77,9 +86,9 @@ if Code.ensure_loaded?(Phoenix.Channel) do
       end
     end
 
-    def handle_in("command", %{"name" => name} = payload, %Phoenix.Socket{} = socket)
-        when is_binary(name) do
-      with {:ok, root_id} <- fetch_string(payload, "root_id"),
+    def handle_in("command", payload, %Phoenix.Socket{} = socket) when is_map(payload) do
+      with {:ok, name} <- fetch_string(payload, "name"),
+           {:ok, root_id} <- fetch_string(payload, "root_id"),
            {:ok, page_pid} <- fetch_root_pid(socket, root_id) do
         store_id = Map.get(payload, "store_id", [])
         command_payload = Map.get(payload, "payload", %{})
@@ -297,6 +306,8 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     @spec stop_root(pid(), term()) :: :ok
     defp stop_root(pid, reason) when is_pid(pid) do
+      # Page servers are started with `start_link/1`; unlink before controlled
+      # stops so unmounting one root does not terminate the session channel.
       Process.unlink(pid)
 
       if Process.alive?(pid) do
