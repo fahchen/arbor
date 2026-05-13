@@ -222,9 +222,16 @@ if Code.ensure_loaded?(Phoenix.Channel) do
         not Code.ensure_loaded?(matched) ->
           {:error, "module #{inspect(module_str)} is not loadable"}
 
+        not root_store?(matched) ->
+          {:error, "module #{inspect(module_str)} is not an Arbor root store"}
+
         true ->
           {:ok, matched}
       end
+    end
+
+    defp root_store?(module) when is_atom(module) do
+      function_exported?(module, :__arbor__, 1) and module.__arbor__(:root?)
     end
   end
 end

@@ -13,3 +13,8 @@ config :arbor, Arbor.Transport.ChannelTest.TestEndpoint,
   pubsub_server: Arbor.Transport.ChannelTest.PubSub,
   secret_key_base: String.duplicate("a", 64),
   server: false
+
+config :arbor, Arbor.Transport.SessionChannelTest.TestEndpoint,
+  pubsub_server: Arbor.Transport.SessionChannelTest.PubSub,
+  secret_key_base: String.duplicate("a", 64),
+  server: false
