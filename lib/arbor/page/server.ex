@@ -166,13 +166,18 @@ defmodule Arbor.Page.Server do
   defp mount_root_store(%Socket{module: module} = socket, params)
        when is_atom(module) and is_map(params) do
     result =
-      if function_exported?(module, :mount, 2) do
+      if root_store?(module) do
         module.mount(params, socket)
       else
         {:ok, socket}
       end
 
     validate_mount_result!(result, module, :mount, 2)
+  end
+
+  @spec root_store?(module()) :: boolean()
+  defp root_store?(module) when is_atom(module) do
+    function_exported?(module, :__arbor__, 1) and module.__arbor__(:root?)
   end
 
   @spec normalize_root_assigns(Socket.t()) :: Socket.t()

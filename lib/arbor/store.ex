@@ -157,6 +157,7 @@ defmodule Arbor.Store do
       @spec __arbor_kind__() :: :store
       def __arbor_kind__, do: :store
 
+      @impl Arbor.Store
       @doc false
       @spec init(Arbor.Socket.t()) :: {:ok, Arbor.Socket.t()}
       def init(socket) do
@@ -167,10 +168,25 @@ defmodule Arbor.Store do
         end
       end
 
-      @doc false
-      @spec mount(Arbor.Store.root_params(), Arbor.Socket.t()) :: {:ok, Arbor.Socket.t()}
-      def mount(_params, socket), do: {:ok, socket}
+      if @__arbor_root__ do
+        @impl Arbor.Store
+        @doc false
+        @spec mount(Arbor.Store.root_params(), Arbor.Socket.t()) :: {:ok, Arbor.Socket.t()}
+        def mount(_params, socket) do
+          {:ok, socket}
+        end
+      else
+        @impl Arbor.Store
+        @doc false
+        @spec mount(Arbor.Store.root_params(), Arbor.Socket.t()) :: no_return()
+        def mount(_params, _socket) do
+          raise ArgumentError,
+                "#{inspect(__MODULE__)} is not an Arbor root store; " <>
+                  "declare `use Arbor.Store, root: true` before mounting it as a root"
+        end
+      end
 
+      @impl Arbor.Store
       @doc false
       @spec terminate(Arbor.Store.terminate_reason(), Arbor.Socket.t()) :: :ok
       def terminate(_reason, _socket), do: :ok
