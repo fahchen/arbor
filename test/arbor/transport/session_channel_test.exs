@@ -280,6 +280,33 @@ defmodule Arbor.Transport.SessionChannelTest do
     assert_reply(non_root_ref, :error, %{reason: "declared store is not a root store"})
   end
 
+  test "mount rejects duplicate root ids" do
+    {:ok, _reply, socket} = join_session()
+    assert_receive {:session_join, _params, _current_user}
+
+    first_ref =
+      push(socket, "mount", %{
+        "root" => "alpha",
+        "id" => "shared-root",
+        "params" => %{"room_id" => "general"}
+      })
+
+    assert_reply(first_ref, :ok, %{"root_id" => "shared-root"})
+    assert_receive {:alpha_mount, _pid, _params, _current_user}
+    assert_receive {:alpha_init, "general"}
+    assert_receive {:child_init, _session, _connect_info}
+    assert_push("patch", %{"root_id" => "shared-root"})
+
+    duplicate_ref =
+      push(socket, "mount", %{
+        "root" => "beta",
+        "id" => "shared-root",
+        "params" => %{"label" => "secondary"}
+      })
+
+    assert_reply(duplicate_ref, :error, %{reason: "root already mounted"})
+  end
+
   test "unmount stops only the addressed root store" do
     {:ok, _reply, socket} = join_session()
     assert_receive {:session_join, _params, _current_user}
@@ -326,6 +353,57 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     assert_reply(command_ref, :ok, %{})
     assert_push("patch", %{"root_id" => "beta-1", "ops" => [%{path: "/label"}]})
+
+    removed_command_ref =
+      push(socket, "command", %{
+        "root_id" => "alpha-1",
+        "store_id" => [],
+        "name" => "rename",
+        "payload" => %{"room_id" => "gone"}
+      })
+
+    assert_reply(removed_command_ref, :error, %{reason: "unknown root"})
+
+    second_unmount_ref = push(socket, "unmount", %{"root_id" => "alpha-1"})
+    assert_reply(second_unmount_ref, :error, %{reason: "unknown root"})
+  end
+
+  test "leaving the session channel stops all mounted root stores" do
+    {:ok, _reply, socket} = join_session()
+    assert_receive {:session_join, _params, _current_user}
+
+    alpha_ref =
+      push(socket, "mount", %{
+        "root" => "alpha",
+        "id" => "alpha-1",
+        "params" => %{"room_id" => "general"}
+      })
+
+    assert_reply(alpha_ref, :ok, %{"root_id" => "alpha-1"})
+    assert_receive {:alpha_mount, alpha_pid, _params, _current_user}
+    assert_receive {:alpha_init, "general"}
+    assert_receive {:child_init, _session, _connect_info}
+    assert_push("patch", %{"root_id" => "alpha-1"})
+
+    beta_ref =
+      push(socket, "mount", %{
+        "root" => "beta",
+        "id" => "beta-1",
+        "params" => %{"label" => "secondary"}
+      })
+
+    assert_reply(beta_ref, :ok, %{"root_id" => "beta-1"})
+    assert_receive {:beta_mount, beta_pid, _params, _current_user}
+    assert_push("patch", %{"root_id" => "beta-1"})
+
+    alpha_down = Process.monitor(alpha_pid)
+    beta_down = Process.monitor(beta_pid)
+
+    leave_ref = leave(socket)
+    assert_reply(leave_ref, :ok)
+
+    assert_receive {:DOWN, ^alpha_down, :process, ^alpha_pid, _reason}
+    assert_receive {:DOWN, ^beta_down, :process, ^beta_pid, _reason}
   end
 
   defp join_session do
