@@ -74,7 +74,7 @@ if Code.ensure_loaded?(Phoenix.Channel) do
            {:ok, params} <- fetch_params(payload),
            :ok <- ensure_root_not_mounted(socket, root_id),
            {:ok, root_module} <- fetch_declared_root(socket, module_str),
-           :ok <- ensure_root_store!(root_module),
+           :ok <- ensure_root_store(root_module),
            {:ok, page_pid} <- start_root_page(root_module, root_id, params, socket) do
         root_entry = %{pid: page_pid, module: root_module}
 
@@ -243,8 +243,8 @@ if Code.ensure_loaded?(Phoenix.Channel) do
       end
     end
 
-    @spec ensure_root_store!(module()) :: :ok | {:error, :not_root_store}
-    defp ensure_root_store!(module) when is_atom(module) do
+    @spec ensure_root_store(module()) :: :ok | {:error, :not_root_store}
+    defp ensure_root_store(module) when is_atom(module) do
       with true <- Code.ensure_loaded?(module),
            true <- function_exported?(module, :__arbor__, 1),
            true <- module.__arbor__(:root?) do
