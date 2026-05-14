@@ -173,6 +173,10 @@ export type StreamEntry<T> = {
   item: T
 }
 
+export type WireStreamMarker = {
+  __arbor_stream__: string
+}
+
 export type JsonPatchOp =
   | { op: "add"; path: string; value: unknown }
   | { op: "remove"; path: string }
@@ -224,6 +228,7 @@ export type WireAsyncResult<T = unknown> =
 // ---------------------------------------------------------------------------
 
 export const STORE_ID_KEY = "__arbor_store_id__" as const
+export const STREAM_MARKER_KEY = "__arbor_stream__" as const
 
 export function storeIdKey(storeId: StoreId): string {
   return JSON.stringify(storeId)
