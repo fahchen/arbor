@@ -194,13 +194,13 @@ state do
     end
   end
 
-  stream :messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: -100
+  stream :users, UserState.t(), item_key: &"user-#{&1.id}", limit: -100
 end
 ```
 
 Operations are socket-pipe helpers: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`. This mirrors `Phoenix.LiveView` except Arbor uses item keys, not DOM ids, so LV's `stream_delete_by_dom_id/3` becomes `stream_delete_by_item_key/3`. The full LV option set is otherwise supported: `:at`, `:limit`, `:reset`, `:item_key`, `:update_only`. After flush the runtime retains only the item_key index; item values are dropped.
 
-Stream-typed fields appear in `state do` via `stream :name, item_type, opts` and are opaque to JSON Patch. Store render output places them explicitly with `stream(:name)`, which serializes as `%{"__arbor_stream__" => "<name>"}` in the wire tree; stream content flows through `stream_ops` only. Cycles with non-empty `stream_ops` always emit an envelope, even when JSON Patch ops are empty (BDR-0018).
+Stream-typed fields appear in `state do` via `stream :name, item_type, opts` and are opaque to JSON Patch. Store render output places them explicitly with `stream(:name)`, which serializes as `%{"__arbor_stream__" => "<name>"}` in the wire tree; stream content flows through `stream_ops` only. Cycles with non-empty `stream_ops` always emit an envelope, even when JSON Patch ops are empty (BDR-0018). See [Streams](streams.md) for the complete stream contract.
 
 There is no dedicated reload mechanism. To refresh a stream the application calls `stream(socket, name, fresh_items, reset: true)` directly (the runtime emits a `reset` op followed by per-item inserts in the same envelope). When the refresh involves an async fetch, use `stream_async(socket, name, fun, reset: true)` — see below for the loading-flash variant (BDR-0022).
 
