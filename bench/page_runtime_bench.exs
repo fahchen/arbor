@@ -34,7 +34,7 @@ defmodule Bench.RuntimeStore do
 
   @impl Arbor.Store
   def handle_command(:bump, _payload, socket) do
-    {:noreply, Arbor.Socket.update_assign(socket, :counter, &(&1 + 1))}
+    {:noreply, Arbor.Socket.update(socket, :counter, &(&1 + 1))}
   end
 
   @impl Arbor.Store

@@ -43,15 +43,38 @@ defmodule Arbor.SocketTest do
       assert socket.assigns.__changed__ == %{title: true, unread_count: true}
     end
 
-    test "update_assign/3 is chainable" do
+    test "update/3 is chainable" do
       socket =
         %Socket{}
         |> Socket.assign(:count, 1)
-        |> Socket.update_assign(:count, &(&1 + 1))
-        |> Socket.update_assign(:count, &(&1 + 1))
+        |> Socket.update(:count, &(&1 + 1))
+        |> Socket.update(:count, &(&1 + 1))
 
       assert socket.assigns.count == 3
       assert socket.assigns.__changed__ == %{count: true}
+    end
+
+    test "assign_new/3 sets the value only when the key is absent" do
+      socket = Socket.assign_new(%Socket{}, :count, fn -> 0 end)
+      assert socket.assigns.count == 0
+      assert socket.assigns.__changed__ == %{count: true}
+
+      socket = Socket.reset_changed(socket)
+      socket = Socket.assign_new(socket, :count, fn -> 99 end)
+
+      assert socket.assigns.count == 0
+      refute Socket.changed?(socket, :count)
+    end
+
+    test "assign_new/3 does not overwrite a falsy value already present" do
+      socket = Socket.assign(%Socket{}, :flag, false)
+      assert socket.assigns.flag == false
+
+      socket = Socket.reset_changed(socket)
+      socket = Socket.assign_new(socket, :flag, fn -> true end)
+
+      assert socket.assigns.flag == false
+      refute Socket.changed?(socket, :flag)
     end
 
     test "reset_changed/1 clears tracked changes" do

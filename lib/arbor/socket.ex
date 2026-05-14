@@ -276,17 +276,42 @@ defmodule Arbor.Socket do
   end
 
   @doc """
+  Assigns a value to `key` only if `key` is not already present in the socket's
+  assigns. `fun` is invoked lazily and receives no arguments.
+
+  Useful for setting defaults that should not overwrite parent-supplied values.
+  When `key` is already present the socket is returned unchanged and the
+  `__changed__` map is not touched.
+
+  ## Examples
+
+      iex> socket = Arbor.Socket.assign_new(%Arbor.Socket{}, :count, fn -> 0 end)
+      iex> socket.assigns.count
+      0
+      iex> socket = Arbor.Socket.assign_new(socket, :count, fn -> 99 end)
+      iex> socket.assigns.count
+      0
+  """
+  @spec assign_new(t(), assign_key(), (-> term())) :: t()
+  def assign_new(%__MODULE__{} = socket, key, fun) when is_function(fun, 0) do
+    case socket.assigns do
+      %{^key => _value} -> socket
+      _other -> assign(socket, key, fun.())
+    end
+  end
+
+  @doc """
   Updates one assign by applying `fun` to the current value.
 
   ## Examples
 
       iex> socket = Arbor.Socket.assign(%Arbor.Socket{}, :count, 1)
-      iex> socket = Arbor.Socket.update_assign(socket, :count, &(&1 + 1))
+      iex> socket = Arbor.Socket.update(socket, :count, &(&1 + 1))
       iex> socket.assigns.count
       2
   """
-  @spec update_assign(t(), assign_key(), (term() -> term())) :: t()
-  def update_assign(%__MODULE__{} = socket, key, fun) when is_function(fun, 1) do
+  @spec update(t(), assign_key(), (term() -> term())) :: t()
+  def update(%__MODULE__{} = socket, key, fun) when is_function(fun, 1) do
     assign(socket, key, fun.(Map.get(socket.assigns, key)))
   end
 
