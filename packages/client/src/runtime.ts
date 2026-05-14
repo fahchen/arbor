@@ -138,11 +138,13 @@ export function mountConnectionRoot(
   const rootId = options.id
   const existing = connectionState.roots.get(rootId)
 
+  // Don't pre-reject duplicates locally — the server is the source of truth
+  // for "already mounted" and will reply with an `:already_mounted` error
+  // when appropriate. Reusing the existing entry lets concurrent mount
+  // attempts (e.g. React StrictMode effect replay, HMR remounts) attach
+  // to the in-flight mount instead of crashing on a stale local view.
   if (existing) {
-    return {
-      connection: existing,
-      ready: Promise.reject(new Error(`Root id is already mounted: ${rootId}`))
-    }
+    return { connection: existing, ready: ensureConnectionRootMounted(existing) }
   }
 
   const connection: RootConnection = {
