@@ -41,7 +41,7 @@ defmodule Arbor.Store do
           | String.t()
           | atom()
           | [rendered()]
-          | %{optional(value()) => rendered()}
+          | %{optional(String.t() | atom()) => rendered()}
   @type root_params() :: %{optional(String.t()) => value()}
   @type terminate_reason() :: :normal | :shutdown | {:shutdown, value()} | value()
 

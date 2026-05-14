@@ -102,7 +102,7 @@ Use these scopes consistently:
 | connect params | `new Socket("/socket", params: ...)` | Phoenix socket | auth tokens and transport credentials |
 | connect info | Phoenix endpoint `connect_info` | Phoenix socket | session, peer data, headers configured by the endpoint |
 | session | `connect_info[:session]` | Arbor socket | browser session data shared by mounted roots |
-| join params | `connect(socket, topic: ...)` channel join payload | Arbor connection | connection-wide scopes |
+| join params | `connect(socket, { topic: ... })` channel join payload | Arbor connection | connection-wide scopes |
 | mount params | `connection.mountStore({ module, id, params })` | one root store | business identity such as `poll_id` or `cart_id` |
 
 Child stores do not receive `mount/2`. They run `init/1` and can still read
