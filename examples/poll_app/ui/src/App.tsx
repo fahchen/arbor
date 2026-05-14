@@ -41,7 +41,7 @@ export default function App() {
 // ---------------------------------------------------------------------------
 
 function DashboardPage({ onEnterPoll }: { onEnterPoll: (pollId: string) => void }) {
-  const root = useArborRoot<Registry, "MyApp.Stores.DashboardStore">(DASHBOARD_ROOT)
+  const root = useArborRoot<Registry, "PollApp.Stores.DashboardStore">(DASHBOARD_ROOT)
 
   if (root.status === "error") return <ConnectionError error={root.error.message} />
   if (root.status === "loading") return <LoadingShell />
@@ -53,7 +53,7 @@ function DashboardView({
   root,
   onEnterPoll
 }: {
-  root: StoreProxy<Registry, "MyApp.Stores.DashboardStore">
+  root: StoreProxy<Registry, "PollApp.Stores.DashboardStore">
   onEnterPoll: (pollId: string) => void
 }) {
   const page = useArborSnapshot(root)
@@ -128,7 +128,7 @@ function MetricBadge({ label, value, tone }: { label: string; value: number; ton
 
 function PollRoomPage({ pollId, onBack }: { pollId: string; onBack: () => void }) {
   const rootOptions = useMemo(() => pollRoomRoot(pollId), [pollId])
-  const root = useArborRoot<Registry, "MyApp.Stores.PollRoomStore">(rootOptions)
+  const root = useArborRoot<Registry, "PollApp.Stores.PollRoomStore">(rootOptions)
 
   if (root.status === "error") return <ConnectionError error={root.error.message} />
   if (root.status === "loading") return <LoadingShell />
@@ -141,7 +141,7 @@ function PollRoomView({
   pollId,
   onBack
 }: {
-  root: StoreProxy<Registry, "MyApp.Stores.PollRoomStore">
+  root: StoreProxy<Registry, "PollApp.Stores.PollRoomStore">
   pollId: string
   onBack: () => void
 }) {

@@ -6,7 +6,7 @@ import type { StoreProxy } from "@arbor/react"
 import { CHAT_ROOM_ROOT } from "./arbor"
 
 type Registry = Arbor.Stores
-type RootModule = "MyApp.Stores.ChatRoomStore"
+type RootModule = "ChatRoom.Stores.ChatRoomStore"
 
 export default function App() {
   const rootMount = useArborRoot<Registry, RootModule>(CHAT_ROOM_ROOT)

@@ -12,7 +12,6 @@ defmodule Arbor.Store do
   """
 
   alias Arbor.Async
-  alias Arbor.Resolver
   alias Arbor.Socket
 
   @type value() ::
@@ -35,7 +34,14 @@ defmodule Arbor.Store do
   @type command_payload() :: %{optional(String.t() | atom()) => value()}
   @type command_reply() :: map()
   @type message() :: value()
-  @type rendered() :: Resolver.resolved_value()
+  @type rendered() ::
+          nil
+          | boolean()
+          | number()
+          | String.t()
+          | atom()
+          | [rendered()]
+          | %{optional(String.t() | atom()) => rendered()}
   @type root_params() :: %{optional(String.t()) => value()}
   @type terminate_reason() :: :normal | :shutdown | {:shutdown, value()} | value()
 

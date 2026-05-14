@@ -9,12 +9,12 @@ latest 100 messages.
 ## Store tree
 
 ```text
-MyApp.Stores.ChatRoomStore (root)
+ChatRoom.Stores.ChatRoomStore (root)
   attrs: room_id
   state:
-    messages          stream of MyApp.MessageState
-    current_user      MyApp.OnlineUser
-    online_users      AsyncResult<list(MyApp.OnlineUser)>
+    messages          stream of ChatRoom.MessageState
+    current_user      ChatRoom.OnlineUser
+    online_users      AsyncResult<list(ChatRoom.OnlineUser)>
     last_send_status  idle | ok | failed
 ```
 

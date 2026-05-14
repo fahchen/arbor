@@ -35,8 +35,8 @@ declare namespace Arbor {
   }
 
   interface Stores {
-    "MyApp.Stores.CartLineStore": StoreDef<
-      "MyApp.Stores.CartLineStore",
+    "CartPage.Stores.CartLineStore": StoreDef<
+      "CartPage.Stores.CartLineStore",
       {
         id: string
         sku: string
@@ -47,19 +47,19 @@ declare namespace Arbor {
       {}
     >
 
-    "MyApp.Stores.CartPageStore": StoreDef<
-      "MyApp.Stores.CartPageStore",
+    "CartPage.Stores.CartPageStore": StoreDef<
+      "CartPage.Stores.CartPageStore",
       {
-        header: Arbor.StoreField<"MyApp.Stores.HeaderStore">
-        cart: Arbor.StoreField<"MyApp.Stores.CartStore">
+        header: Arbor.StoreField<"CartPage.Stores.HeaderStore">
+        cart: Arbor.StoreField<"CartPage.Stores.CartStore">
       },
       {}
     >
 
-    "MyApp.Stores.CartStore": StoreDef<
-      "MyApp.Stores.CartStore",
+    "CartPage.Stores.CartStore": StoreDef<
+      "CartPage.Stores.CartStore",
       {
-        lines: Arbor.StoreField<"MyApp.Stores.CartLineStore">[]
+        lines: Arbor.StoreField<"CartPage.Stores.CartLineStore">[]
         total_units: number
         subtotal_cents: number
         status: { type: "open" } | { type: "checking_out" } | { type: "checked_out"; order_id: string }
@@ -80,8 +80,8 @@ declare namespace Arbor {
       }
     >
 
-    "MyApp.Stores.HeaderStore": StoreDef<
-      "MyApp.Stores.HeaderStore",
+    "CartPage.Stores.HeaderStore": StoreDef<
+      "CartPage.Stores.HeaderStore",
       {
         signed_in: boolean
         user_name: string | null

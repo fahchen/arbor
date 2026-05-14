@@ -35,12 +35,12 @@ declare namespace Arbor {
   }
 
   interface Stores {
-    "MyApp.Stores.ChatRoomStore": StoreDef<
-      "MyApp.Stores.ChatRoomStore",
+    "ChatRoom.Stores.ChatRoomStore": StoreDef<
+      "ChatRoom.Stores.ChatRoomStore",
       {
-        messages: Arbor.StreamField<MyApp.MessageState>
-        current_user: MyApp.OnlineUser
-        online_users: Arbor.AsyncField<MyApp.OnlineUser[]>
+        messages: Arbor.StreamField<ChatRoom.MessageState>
+        current_user: ChatRoom.OnlineUser
+        online_users: Arbor.AsyncField<ChatRoom.OnlineUser[]>
         last_send_status: { type: "idle" } | { type: "ok"; id: string } | { type: "failed"; reason: string }
       },
       {
@@ -57,7 +57,7 @@ declare namespace Arbor {
   }
 }
 
-declare namespace MyApp {
+declare namespace ChatRoom {
   interface MessageState {
     id: string
     body: string

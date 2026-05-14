@@ -15,16 +15,16 @@ const SOCKET_URL = import.meta.env.DEV
 export const socket = new Socket(SOCKET_URL, {})
 
 export const DASHBOARD_ROOT = {
-  module: "MyApp.Stores.DashboardStore",
+  module: "PollApp.Stores.DashboardStore",
   id: "dashboard",
   params: {}
 } as const
 
 export function pollRoomRoot(
   pollId: string
-): MountStoreOptions<Arbor.Stores, "MyApp.Stores.PollRoomStore"> {
+): MountStoreOptions<Arbor.Stores, "PollApp.Stores.PollRoomStore"> {
   return {
-    module: "MyApp.Stores.PollRoomStore",
+    module: "PollApp.Stores.PollRoomStore",
     id: pollId,
     params: { poll_id: pollId }
   }

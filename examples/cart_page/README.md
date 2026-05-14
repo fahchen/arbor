@@ -8,26 +8,26 @@ and reconnect recovery through the application persistence layer.
 ## Store tree
 
 ```text
-MyApp.Stores.CartPageStore (root)
+CartPage.Stores.CartPageStore (root)
   attrs: cart_id, current_user
   state:
-    header  MyApp.Stores.HeaderStore
-    cart    MyApp.Stores.CartStore
+    header  CartPage.Stores.HeaderStore
+    cart    CartPage.Stores.CartStore
 
-  MyApp.Stores.HeaderStore ("header")
+  CartPage.Stores.HeaderStore ("header")
     attrs: current_user
     state:
       signed_in  boolean
       user_name  string | nil
 
-  MyApp.Stores.CartStore ("cart")
+  CartPage.Stores.CartStore ("cart")
     attrs: cart_id, current_user
     state:
-      lines           list(MyApp.Stores.CartLineStore)
+      lines           list(CartPage.Stores.CartLineStore)
       subtotal_cents  integer
       status          open | checking_out | checked_out
 
-    MyApp.Stores.CartLineStore ("<line id>")
+    CartPage.Stores.CartLineStore ("<line id>")
       attrs: line
       state:
         id, sku, name, price_cents, qty

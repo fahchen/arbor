@@ -8,22 +8,22 @@ PubSub-driven cross-user updates, and polling status gating.
 
 | Page | Root Store | Child Stores | Key features |
 | :-- | :-- | :-- | :-- |
-| Dashboard | `MyApp.Stores.DashboardStore` | (none — typed header state) | Streamed poll cards, PubSub refresh |
-| Poll Room | `MyApp.Stores.PollRoomStore` | (none — single store) | Streamed options, async vote commands, PubSub live updates |
+| Dashboard | `PollApp.Stores.DashboardStore` | (none — typed header state) | Streamed poll cards, PubSub refresh |
+| Poll Room | `PollApp.Stores.PollRoomStore` | (none — single store) | Streamed options, async vote commands, PubSub live updates |
 
 ## Store trees
 
 ```text
-MyApp.Stores.DashboardStore (root)
+PollApp.Stores.DashboardStore (root)
   state:
-    header   MyApp.DashboardHeader — poll counts
-    polls    stream of MyApp.PollSummary
+    header   PollApp.DashboardHeader — poll counts
+    polls    stream of PollApp.PollSummary
 
-MyApp.Stores.PollRoomStore (root)
+PollApp.Stores.PollRoomStore (root)
   attrs: poll_id
   state:
-    poll       MyApp.PollDetail
-    options    stream of MyApp.PollOption
+    poll       PollApp.PollDetail
+    options    stream of PollApp.PollOption
     user_vote  AsyncResult<string | nil>
 ```
 
