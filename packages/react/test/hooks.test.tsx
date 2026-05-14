@@ -126,6 +126,57 @@ describe("ArborProvider + useArborRoot", () => {
 
     result.unmount()
 
+    await act(async () => {
+      await flushTimers()
+    })
+
+    expect(connection.unmounts).toEqual(["dashboard-1"])
+  })
+
+  test("useArborRoot reuses a pending mount during StrictMode effect replay", async () => {
+    const fake = buildProxy()
+    const connection = new FakeArborConnection(fake.asProxy())
+    const mount = deferred<StoreProxy<unknown, never>>()
+    connection.mountResult = mount.promise
+
+    function Reader() {
+      const root = useArborRoot<ReactTestStores, Root>({
+        module: "React.Test.Root",
+        id: "dashboard-1"
+      })
+
+      if (root.status !== "ready") {
+        return <span>{root.status}</span>
+      }
+
+      return <span>{root.store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <React.StrictMode>
+        <ArborProvider connection={connection}>
+          <Reader />
+        </ArborProvider>
+      </React.StrictMode>
+    )
+
+    expect(screen.getByText("loading")).toBeTruthy()
+    expect(connection.mounts).toEqual([{ module: "React.Test.Root", id: "dashboard-1" }])
+
+    await act(async () => {
+      mount.resolve(fake.asProxy())
+      await mount.promise
+    })
+
+    expect(await screen.findByText("Inbox")).toBeTruthy()
+    expect(connection.unmounts).toEqual([])
+
+    result.unmount()
+
+    await act(async () => {
+      await flushTimers()
+    })
+
     expect(connection.unmounts).toEqual(["dashboard-1"])
   })
 
@@ -234,6 +285,7 @@ class FakeArborConnection implements ArborConnection {
   readonly unmounts: string[] = []
   disconnected = false
   mountError: Error | null = null
+  mountResult: Promise<StoreProxy<unknown, never>> | null = null
 
   constructor(private readonly store: StoreProxy<unknown, never>) {}
 
@@ -246,6 +298,10 @@ class FakeArborConnection implements ArborConnection {
       throw this.mountError
     }
 
+    if (this.mountResult) {
+      return (await this.mountResult) as StoreProxy<R, M>
+    }
+
     return this.store as StoreProxy<R, M>
   }
 
@@ -256,6 +312,27 @@ class FakeArborConnection implements ArborConnection {
   disconnect(): void {
     this.disconnected = true
   }
+}
+
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (reason?: unknown) => void
+} {
+  let resolve: (value: T) => void = () => {}
+  let reject: (reason?: unknown) => void = () => {}
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+
+  return { promise, resolve, reject }
+}
+
+function flushTimers(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0)
+  })
 }
 
 class TestErrorBoundary extends React.Component<
