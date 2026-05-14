@@ -6,6 +6,7 @@ defmodule Arbor.ResolverTest do
 
   require Logger
 
+  alias Arbor.AsyncResult
   alias Arbor.Lifecycle
   alias Arbor.Page.StoreRegistry
   alias Arbor.Page.StoreRegistry.Entry
@@ -110,6 +111,27 @@ defmodule Arbor.ResolverTest do
     @impl Arbor.Store
     def render(_socket) do
       %{feed: %{messages: stream(:messages)}, users: stream(:users)}
+    end
+
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+  end
+
+  defmodule AsyncStreamRootStore do
+    use Arbor.Store
+
+    state do
+      stream_async :messages, %{id: String.t(), body: String.t()}
+    end
+
+    @impl Arbor.Store
+    def mount(socket),
+      do: {:ok, Arbor.Socket.assign(socket, :messages, Arbor.AsyncResult.loading())}
+
+    @impl Arbor.Store
+    def render(socket) do
+      async = Map.get(socket.assigns, :messages, Arbor.AsyncResult.loading())
+      %{messages: stream(:messages, async: async)}
     end
 
     @impl Arbor.Store
@@ -699,6 +721,33 @@ defmodule Arbor.ResolverTest do
       assert %Entry{wire_state: wire_state} = StoreRegistry.get(resolved_registry, [])
       assert %{"feed" => %{"messages" => %{"__arbor_stream__" => "messages"}}} = wire_state
       assert %{"users" => %{"__arbor_stream__" => "users"}} = wire_state
+    end
+
+    test "async stream placeholders render markers inside AsyncResult.result" do
+      socket = root_socket(AsyncStreamRootStore)
+      registry = registry(socket)
+
+      assert {:ok, resolved_root, _socket, resolved_registry} = Resolver.resolve(socket, registry)
+
+      assert %{
+               messages: %AsyncResult{
+                 status: :loading,
+                 result: %{__arbor_stream__: "messages"},
+                 reason: nil
+               },
+               __arbor_store_id__: []
+             } = resolved_root
+
+      assert %Entry{wire_state: wire_state} = StoreRegistry.get(resolved_registry, [])
+
+      assert %{
+               "messages" => %{
+                 "__arbor_async__" => true,
+                 "status" => "loading",
+                 "result" => %{"__arbor_stream__" => "messages"},
+                 "reason" => nil
+               }
+             } = wire_state
     end
 
     test "declared streams must be rendered with stream/1" do

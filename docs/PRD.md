@@ -224,7 +224,7 @@ A child store that disappears does not actively cancel its async tasks; results 
 
 ### `stream_async/4`
 
-LiveView-parity `stream_async/4` (available in Phoenix.LiveView 1.1+) with Arbor's item-key terminology. User fun returns `{:ok, enumerable}`, `{:ok, enumerable, stream_opts}`, or `{:error, reason}`. On success, runtime atomically writes `AsyncResult.ok(prior, true)` to the assign and seeds the stream with the returned items. The state field type is composite: `stream :messages, AsyncResult.of(MessageState.t()), item_key: ...`.
+LiveView-parity `stream_async/4` (available in Phoenix.LiveView 1.1+) with Arbor's item-key terminology. User fun returns `{:ok, enumerable}`, `{:ok, enumerable, stream_opts}`, or `{:error, reason}`. On success, runtime atomically writes `AsyncResult.ok(prior, true)` to the assign and seeds the stream with the returned items. The state field type is composite: `stream_async :messages, MessageState.t(), item_key: ...`, which reflects as `AsyncResult.of(stream(MessageState.t()))`.
 
 Refresh paths (BDR-0022): silent refresh uses `stream(reset: true)` with items already in hand; loading-flash refresh uses `stream_async(reset: true)` to re-run an async fetch and re-emit the AsyncResult `:loading` state until the new result arrives.
 
@@ -500,7 +500,7 @@ defmodule MyApp.Stores.MessagesStore do
   attr :room_id, :string, required: true
 
   state do
-    stream :messages, AsyncResult.of(MessageState.t()), item_key: &"msg-#{&1.id}", limit: -100
+    stream_async :messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: -100
   end
 
   command :reload
@@ -520,7 +520,7 @@ defmodule MyApp.Stores.MessagesStore do
   end
 
   def render(socket) do
-    %{messages: stream(:messages)}
+    %{messages: stream(:messages, async: socket.assigns.messages)}
   end
 end
 ```

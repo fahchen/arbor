@@ -13,13 +13,17 @@ defmodule Arbor.StreamAsyncTest do
     use Arbor.Store
 
     state do
-      stream :messages, %{id: String.t(), body: String.t()}
+      stream_async :messages, %{id: String.t(), body: String.t()}
     end
 
     @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
     @impl Arbor.Store
-    def render(_socket), do: %{messages: stream(:messages)}
+    def render(socket) do
+      async = Map.get(socket.assigns, :messages, Arbor.AsyncResult.loading())
+      %{messages: stream(:messages, async: async)}
+    end
+
     @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end

@@ -248,7 +248,9 @@ Normalization rules:
 - `result` becomes `data`
 - `reason` becomes `error`
 - `AsyncResult.of(T)` projects to `AsyncResult<T>`
-- `AsyncResult.of(stream(T))` projects to `AsyncResult<T[]>`
+- `AsyncResult.of(stream(T))` projects to `AsyncResult<T[]>`; on the wire the
+  async `result` is the stream marker, and item content still arrives through
+  `stream_ops`
 
 ## Generated TypeScript
 

@@ -44,6 +44,11 @@ defmodule Arbor.Plugin.StateField do
   """
   @spec stream_item_type(Macro.t()) :: {:ok, Macro.t()} | :error
   def stream_item_type({:stream, _meta, [item_type]}), do: {:ok, item_type}
+
+  def stream_item_type({{:., _dot, [aliased, :of]}, _call, [{:stream, _meta, [item_type]}]}) do
+    if async_result_alias?(aliased), do: {:ok, item_type}, else: :error
+  end
+
   def stream_item_type(_other), do: :error
 
   @doc """
@@ -116,7 +121,8 @@ defmodule Arbor.Plugin.StateField do
 
     case stream_item_type(type) do
       {:ok, item_type} ->
-        [build_stream_definition(name, item_type, opts, path)]
+        stream_path = if async_stream_type?(type), do: ["result" | path], else: path
+        [build_stream_definition(name, item_type, opts, stream_path)]
 
       :error ->
         nested_stream_fields(type, path)
@@ -135,6 +141,18 @@ defmodule Arbor.Plugin.StateField do
   end
 
   defp nested_stream_fields(_type, _path), do: []
+
+  @spec async_stream_type?(Macro.t()) :: boolean()
+  defp async_stream_type?({{:., _dot, [aliased, :of]}, _call, [{:stream, _meta, [_item_type]}]}) do
+    async_result_alias?(aliased)
+  end
+
+  defp async_stream_type?(_type), do: false
+
+  @spec async_result_alias?(Macro.t()) :: boolean()
+  defp async_result_alias?({:__aliases__, _meta, [:Arbor, :AsyncResult]}), do: true
+  defp async_result_alias?(Arbor.AsyncResult), do: true
+  defp async_result_alias?(_other), do: false
 
   @spec build_stream_definition(atom(), Macro.t(), keyword(), [String.t()]) :: stream_definition()
   defp build_stream_definition(name, item_type, opts, path) do

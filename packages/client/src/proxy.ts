@@ -10,11 +10,10 @@ import type {
   StoreModule,
   StoreProxy,
   StoreSnapshot,
-  StreamEntry,
   WireAsyncResult,
   WireStreamMarker
 } from "./types"
-import { STORE_ID_KEY, STREAM_MARKER_KEY, storeIdKey, streamStoreKeyPrefix } from "./types"
+import { STORE_ID_KEY, STREAM_MARKER_KEY, storeIdKey } from "./types"
 
 const ROOT_STORE_ID: StoreId = []
 const RESERVED = new Set(["__arbor_store_id__", "dispatchCommand", "subscribe", "snapshot"])
@@ -142,14 +141,13 @@ function resolveField(
   fieldName: string
 ): unknown {
   const wireValue = node[fieldName]
-  return resolveValue(connection, storeId, wireValue, fieldName)
+  return resolveValue(connection, storeId, wireValue)
 }
 
 function resolveValue(
   connection: RootConnection,
   storeId: StoreId,
-  wireValue: unknown,
-  fieldName?: string
+  wireValue: unknown
 ): unknown {
   // Rule 2: nested mounted store node.
   if (isStoreNode(wireValue)) {
@@ -162,12 +160,9 @@ function resolveValue(
   }
 
   if (isWireAsyncResult(wireValue)) {
-    const materialized = fieldName
-      ? getMaterializedStreamItemsIfPresent(connection, storeId, fieldName)
-      : undefined
-
-    // Rule 3: async stream field, or async wire shape only.
-    return normalizeAsync(wireValue, materialized ?? wireValue.result)
+    // Rule 3: async wire shape. The result may itself be a stream marker,
+    // nested store node, array, or plain object, so resolve it recursively.
+    return normalizeAsync(wireValue, resolveAsyncResult(connection, storeId, wireValue.result))
   }
 
   if (Array.isArray(wireValue)) {
@@ -178,7 +173,7 @@ function resolveValue(
     return Object.fromEntries(
       Object.entries(wireValue).map(([key, value]) => [
         key,
-        resolveValue(connection, storeId, value, key)
+        resolveValue(connection, storeId, value)
       ])
     )
   }
@@ -196,30 +191,6 @@ function getMaterializedStreamItems(
   return entries.map((entry) => entry.item)
 }
 
-function getMaterializedStreamItemsIfPresent(
-  connection: RootConnection,
-  storeId: StoreId,
-  streamName: string
-): unknown[] | undefined {
-  const prefix = streamStoreKeyPrefix(storeId)
-  let hit: readonly StreamEntry<unknown>[] | undefined
-
-  for (const key of connection.streams.keys()) {
-    if (!key.startsWith(prefix)) continue
-
-    if (key.slice(prefix.length) === streamName) {
-      hit = connection.streams.get(key)
-      break
-    }
-  }
-
-  if (hit === undefined) {
-    return undefined
-  }
-
-  return hit.map((entry) => entry.item)
-}
-
 function normalizeAsync<T>(wire: WireAsyncResult, data: T | null): AsyncResult<T> {
   switch (wire.status) {
     case "loading":
@@ -229,6 +200,14 @@ function normalizeAsync<T>(wire: WireAsyncResult, data: T | null): AsyncResult<T
     case "failed":
       return { status: "failed", data, error: wire.reason }
   }
+}
+
+function resolveAsyncResult(
+  connection: RootConnection,
+  storeId: StoreId,
+  result: unknown
+): unknown {
+  return result === null ? null : resolveValue(connection, storeId, result)
 }
 
 function isStoreNode(value: unknown): value is { __arbor_store_id__: StoreId } {
@@ -248,6 +227,7 @@ function isWireAsyncResult(value: unknown): value is WireAsyncResult {
   const record = value as Record<string, unknown>
   const status = record.status
   return (
+    record.__arbor_async__ === true &&
     (status === "loading" || status === "ok" || status === "failed") &&
     "result" in record &&
     "reason" in record
@@ -293,7 +273,7 @@ export function snapshotStore<R, M extends StoreModule<R>>(
 
   for (const [fieldName, wireValue] of Object.entries(node)) {
     if (fieldName === STORE_ID_KEY) continue
-    out[fieldName] = snapshotField(connection, storeId, fieldName, wireValue)
+    out[fieldName] = snapshotField(connection, storeId, wireValue)
   }
 
   const snapshot = out as StoreSnapshot<R, M>
@@ -304,17 +284,15 @@ export function snapshotStore<R, M extends StoreModule<R>>(
 function snapshotField(
   connection: RootConnection,
   storeId: StoreId,
-  fieldName: string,
   wireValue: unknown
 ): unknown {
-  return snapshotValue(connection, storeId, wireValue, fieldName)
+  return snapshotValue(connection, storeId, wireValue)
 }
 
 function snapshotValue(
   connection: RootConnection,
   storeId: StoreId,
-  wireValue: unknown,
-  fieldName?: string
+  wireValue: unknown
 ): unknown {
   if (isStoreNode(wireValue)) {
     const childId = (wireValue as { __arbor_store_id__: StoreId }).__arbor_store_id__
@@ -326,11 +304,7 @@ function snapshotValue(
   }
 
   if (isWireAsyncResult(wireValue)) {
-    const materialized = fieldName
-      ? getMaterializedStreamItemsIfPresent(connection, storeId, fieldName)
-      : undefined
-
-    return normalizeAsync(wireValue, materialized ?? wireValue.result)
+    return normalizeAsync(wireValue, snapshotAsyncResult(connection, storeId, wireValue.result))
   }
 
   if (Array.isArray(wireValue)) {
@@ -341,10 +315,18 @@ function snapshotValue(
     return Object.fromEntries(
       Object.entries(wireValue).map(([key, value]) => [
         key,
-        snapshotValue(connection, storeId, value, key)
+        snapshotValue(connection, storeId, value)
       ])
     )
   }
 
   return wireValue
+}
+
+function snapshotAsyncResult(
+  connection: RootConnection,
+  storeId: StoreId,
+  result: unknown
+): unknown {
+  return result === null ? null : snapshotValue(connection, storeId, result)
 }

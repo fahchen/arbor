@@ -94,6 +94,40 @@ defmodule Arbor.TypeTest do
       refute Type.valid?(["a"], quote(do: stream(String.t())))
     end
 
+    test "async stream fields validate an AsyncResult whose result is a stream marker" do
+      type = quote(do: Arbor.AsyncResult.of(stream(String.t())))
+
+      assert Type.valid?(
+               %{
+                 "__arbor_async__" => true,
+                 "status" => "loading",
+                 "result" => %{"__arbor_stream__" => "messages"},
+                 "reason" => nil
+               },
+               type
+             )
+
+      assert Type.valid?(
+               %{
+                 "__arbor_async__" => true,
+                 "status" => "failed",
+                 "result" => %{"__arbor_stream__" => "messages"},
+                 "reason" => %{"kind" => "error", "value" => "rate_limited"}
+               },
+               type
+             )
+
+      refute Type.valid?(
+               %{
+                 "__arbor_async__" => true,
+                 "status" => "ok",
+                 "result" => [],
+                 "reason" => nil
+               },
+               type
+             )
+    end
+
     test "Module.t() resolves through host_module namespace" do
       assert Type.valid?(
                %{"title" => "Inbox"},

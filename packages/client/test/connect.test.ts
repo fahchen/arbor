@@ -135,6 +135,7 @@ type TestStores = {
       feed: {
         messages: Arbor.StreamField<{ body: string }>
       }
+      async_messages: Arbor.AsyncField<Arbor.StreamField<{ id: string; body: string }>>
       metadata: {
         messages: string
       }
@@ -385,6 +386,7 @@ describe("connect", () => {
       title: "Inbox",
       counter: 1,
       feed: { messages: [] },
+      async_messages: { status: "loading", data: [], error: null },
       metadata: { messages: "literal" },
       users: [],
       child: { __arbor_store_id__: ["child"], count: 1 }
@@ -425,6 +427,16 @@ describe("connect", () => {
           },
           {
             op: "insert",
+            stream: "async_messages",
+            ref: "3",
+            store_id: [],
+            item_key: "async_messages-1",
+            at: -1,
+            item: { id: "a1", body: "loaded" },
+            limit: null
+          },
+          {
+            op: "insert",
             stream: "users",
             ref: "2",
             store_id: [],
@@ -440,9 +452,19 @@ describe("connect", () => {
     const proxy = await proxyPromise
 
     expect(proxy.feed.messages).toEqual([{ body: "hello" }])
+    expect(proxy.async_messages).toEqual({
+      status: "loading",
+      data: [{ id: "a1", body: "loaded" }],
+      error: null
+    })
     expect(proxy.metadata.messages).toBe("literal")
     expect(proxy.users).toEqual([{ id: "u1", name: "Ada" }])
     expect(proxy.snapshot().feed.messages).toEqual([{ body: "hello" }])
+    expect(proxy.snapshot().async_messages).toEqual({
+      status: "loading",
+      data: [{ id: "a1", body: "loaded" }],
+      error: null
+    })
     expect(proxy.snapshot().metadata.messages).toBe("literal")
   })
 
@@ -550,6 +572,12 @@ function rootState(title = "Inbox"): Record<string, unknown> {
     },
     feed: {
       messages: { __arbor_stream__: "messages" }
+    },
+    async_messages: {
+      __arbor_async__: true,
+      status: "loading",
+      result: { __arbor_stream__: "async_messages" },
+      reason: null
     },
     metadata: {
       messages: "literal"

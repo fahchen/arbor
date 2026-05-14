@@ -19,6 +19,7 @@ state do
   end
 
   stream :users, UserState.t(), item_key: &"user-#{&1.id}"
+  stream_async :older_messages, MessageState.t(), item_key: &"msg-#{&1.id}"
   field :title, String.t()
 end
 ```
@@ -42,6 +43,21 @@ def render(socket) do
 end
 ```
 
+For async streams, place the stream inside the `AsyncResult.result` field by
+passing the current async assign to `stream/2`:
+
+```elixir
+def render(socket) do
+  %{
+    older_messages:
+      stream(
+        :older_messages,
+        async: Map.get(socket.assigns, :older_messages, Arbor.AsyncResult.loading())
+      )
+  }
+end
+```
+
 The old placeholder shape, such as `messages: []`, is invalid. Arbor also
 rejects hand-written stream marker maps, undeclared streams, missing stream
 placements, duplicate placements, and placements at the wrong state path.
@@ -58,6 +74,19 @@ The state tree carries only a marker at the stream path:
   },
   "users": { "__arbor_stream__": "users" },
   "__arbor_store_id__": []
+}
+```
+
+For async streams, the marker is nested under `result`:
+
+```json
+{
+  "older_messages": {
+    "__arbor_async__": true,
+    "status": "loading",
+    "result": { "__arbor_stream__": "older_messages" },
+    "reason": null
+  }
 }
 ```
 
@@ -116,7 +145,10 @@ already has fresh items. The runtime emits a reset followed by insert ops in
 one envelope.
 
 Use `stream_async(socket, name, fun, reset: true)` when the refresh requires a
-background fetch and the UI should observe the async loading state.
+background fetch and the UI should observe the async loading state. The runtime
+writes `socket.assigns.<name>` as an `AsyncResult`, but the render helper keeps
+the wire `result` as the stream marker so the client can expose
+`AsyncResult<Item[]>`.
 
 ## Client Surface
 
@@ -127,6 +159,7 @@ type inference. At runtime, the client recursively resolves
 ```ts
 root.feed.messages // Array<{ id: string; body: string }>
 root.users         // Array<UserState>
+root.older_messages.data // Array<MessageState>
 ```
 
 Application code should not read or construct stream markers directly.

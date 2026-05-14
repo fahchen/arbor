@@ -24,7 +24,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       field :user, Arbor.AsyncResult.of(String.t())
       field :org, Arbor.AsyncResult.of(String.t())
       field :cache_status, String.t()
-      stream :messages, %{id: String.t(), body: String.t()}
+      stream_async :messages, %{id: String.t(), body: String.t()}
     end
 
     command :load_profile do
@@ -98,6 +98,7 @@ defmodule Arbor.Page.ServerAsyncTest do
         |> Arbor.Socket.assign(:user, AsyncResult.ok(nil, "cached-user"))
         |> Arbor.Socket.assign(:org, AsyncResult.ok(nil, "cached-org"))
         |> Arbor.Socket.assign(:cache_status, "cold")
+        |> Arbor.Socket.assign(:messages, AsyncResult.loading())
 
       {:ok, socket}
     end
@@ -109,7 +110,7 @@ defmodule Arbor.Page.ServerAsyncTest do
         user: socket.assigns.user,
         org: socket.assigns.org,
         cache_status: socket.assigns.cache_status,
-        messages: stream(:messages)
+        messages: stream(:messages, async: socket.assigns.messages)
       }
     end
 

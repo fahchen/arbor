@@ -27,6 +27,7 @@ defmodule Arbor.DSL.State do
 
         import TypedStructor, except: [field: 2, field: 3]
         import Arbor.DSL.Field, only: [field: 2, field: 3]
+        import Arbor.DSL.Render, except: [stream: 2]
 
         import Arbor.DSL.State,
           only: [
@@ -119,11 +120,49 @@ defmodule Arbor.DSL.State do
   """
   @spec stream_async(atom(), Macro.t()) :: Macro.t()
   @spec stream_async(atom(), Macro.t(), keyword()) :: Macro.t()
-  defmacro stream_async(name, item_type, opts \\ []) when is_atom(name) and is_list(opts) do
+  defmacro stream_async(name, do: block) when is_atom(name) do
+    type = Arbor.DSL.Schema.async_stream_type(Arbor.DSL.Schema.type_from_block(block), [])
+
     quote do
       Arbor.DSL.Field.field(
         unquote(name),
-        Arbor.AsyncResult.of(stream(unquote(item_type))),
+        unquote(type),
+        []
+      )
+    end
+  end
+
+  defmacro stream_async(name, item_type) when is_atom(name) do
+    type = Arbor.DSL.Schema.async_stream_type(item_type, [])
+
+    quote do
+      Arbor.DSL.Field.field(
+        unquote(name),
+        unquote(type),
+        []
+      )
+    end
+  end
+
+  defmacro stream_async(name, opts, do: block) when is_atom(name) and is_list(opts) do
+    type = Arbor.DSL.Schema.async_stream_type(Arbor.DSL.Schema.type_from_block(block), opts)
+
+    quote do
+      Arbor.DSL.Field.field(
+        unquote(name),
+        unquote(type),
+        unquote(opts)
+      )
+    end
+  end
+
+  defmacro stream_async(name, item_type, opts) when is_atom(name) and is_list(opts) do
+    type = Arbor.DSL.Schema.async_stream_type(item_type, opts)
+
+    quote do
+      Arbor.DSL.Field.field(
+        unquote(name),
+        unquote(type),
         unquote(opts)
       )
     end

@@ -350,10 +350,43 @@ defmodule Arbor.Type do
     end
   end
 
-  defp do_valid?(value, {{:., _dot, [_aliased, :of]}, _call, [_inner]}, _host_module),
-    do: is_map(value)
+  defp do_valid?(value, {{:., _dot, [aliased, :of]}, _call, [inner]}, host_module) do
+    async_result_alias?(aliased) and valid_async_result?(value, inner, host_module)
+  end
 
   defp do_valid?(_value, _type_ast, _host_module), do: false
+
+  defp valid_async_result?(
+         %{
+           "__arbor_async__" => true,
+           "status" => status,
+           "result" => result,
+           "reason" => reason
+         },
+         inner,
+         host_module
+       ) do
+    case status do
+      "loading" ->
+        is_nil(reason) and valid_async_result_value?(result, inner, host_module)
+
+      "ok" ->
+        is_nil(reason) and do_valid?(result, inner, host_module)
+
+      "failed" ->
+        not is_nil(reason) and valid_async_result_value?(result, inner, host_module)
+
+      _other ->
+        false
+    end
+  end
+
+  defp valid_async_result?(_value, _inner, _host_module), do: false
+
+  defp valid_async_result_value?(nil, _inner, _host_module), do: true
+
+  defp valid_async_result_value?(result, inner, host_module),
+    do: do_valid?(result, inner, host_module)
 
   defp validate_via_module(module, value) do
     cond do

@@ -26,6 +26,7 @@ defmodule Arbor.Resolver do
   wire-form root is available via the registry root entry's `:wire_state`.
   """
 
+  alias Arbor.AsyncResult
   alias Arbor.Child
   alias Arbor.Lifecycle
   alias Arbor.Page.StoreRegistry
@@ -211,6 +212,18 @@ defmodule Arbor.Resolver do
       :error ->
         raise ArgumentError, "stream #{inspect(name)} is not declared"
     end
+  end
+
+  defp replace_stream_placeholders!(%AsyncResult{} = async, path, placements, streams_by_name) do
+    {resolved_result, next_placements} =
+      replace_stream_placeholders!(
+        async.result,
+        ["result" | path],
+        placements,
+        streams_by_name
+      )
+
+    {%{async | result: resolved_result}, next_placements}
   end
 
   defp replace_stream_placeholders!(value, path, placements, streams_by_name)
