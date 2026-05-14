@@ -6,7 +6,7 @@ import type { StoreProxy } from "@arbor/react"
 import { CART_PAGE_ROOT } from "./arbor"
 
 type Registry = Arbor.Stores
-type RootModule = "MyApp.Stores.CartPageStore"
+type RootModule = "CartPage.Stores.CartPageStore"
 
 const PRODUCT_OPTIONS = [
   {

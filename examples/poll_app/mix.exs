@@ -15,7 +15,7 @@ defmodule PollApp.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {MyApp.Application, []}
+      mod: {PollApp.Application, []}
     ]
   end
 

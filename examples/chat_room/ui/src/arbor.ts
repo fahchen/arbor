@@ -10,7 +10,7 @@ export const socket = new Socket("/socket", {})
 export const ROOT_ID = "general" as const
 
 export const CHAT_ROOM_ROOT = {
-  module: "MyApp.Stores.ChatRoomStore",
+  module: "ChatRoom.Stores.ChatRoomStore",
   id: ROOT_ID,
   params: {
     room_id: "general"

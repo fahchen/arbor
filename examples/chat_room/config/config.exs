@@ -4,10 +4,10 @@ config :phoenix, :json_library, Jason
 
 config :arbor, :ts_codegen_output_path, "ui/src/generated/arbor.d.ts"
 
-config :chat_room, MyAppWeb.Endpoint,
+config :chat_room, ChatRoomWeb.Endpoint,
   adapter: Bandit.PhoenixAdapter,
   url: [host: "localhost"],
-  pubsub_server: MyApp.PubSub,
+  pubsub_server: ChatRoom.PubSub,
   secret_key_base: "chat_room_secret_key_base_for_example_only_0123456789abcdef",
   server: true,
   http: [ip: {127, 0, 0, 1}, port: 4002]
