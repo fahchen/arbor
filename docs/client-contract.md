@@ -192,6 +192,10 @@ type PatchEnvelope = {
   stream_ops: StreamOp[]
 }
 
+type WireStreamMarker = {
+  __arbor_stream__: string
+}
+
 type ConnectionPatchEnvelope = PatchEnvelope & {
   root_id: string
 }
@@ -205,8 +209,11 @@ Envelope rules:
 - reconnect creates a fresh page runtime and fresh version sequence
 - in connection transport, every patch envelope includes `root_id`; the client
   applies it only to the matching mounted root runtime
-- stream-typed paths never appear in `ops`
+- stream placement paths contain `WireStreamMarker` objects in `ops`
 - stream contents move through `stream_ops`
+
+See [Streams](streams.md) for declaration, render placement, and validation
+rules.
 
 ## Async Values
 
@@ -241,7 +248,9 @@ Normalization rules:
 - `result` becomes `data`
 - `reason` becomes `error`
 - `AsyncResult.of(T)` projects to `AsyncResult<T>`
-- `AsyncResult.of(stream(T))` projects to `AsyncResult<T[]>`
+- `AsyncResult.of(stream(T))` projects to `AsyncResult<T[]>`; on the wire the
+  async `result` is the stream marker, and item content still arrives through
+  `stream_ops`
 
 ## Generated TypeScript
 
@@ -354,10 +363,11 @@ Property resolution on a proxy follows the live wire shape:
 
 1. reserved runtime members return runtime implementations
 2. wire values carrying `__arbor_store_id__` return cached nested proxies
-3. stream fields return materialized arrays
+3. wire values carrying `__arbor_stream__` return materialized arrays
 4. async values return normalized `AsyncResult<T>`
 5. async streams return normalized `AsyncResult<T[]>`
-6. plain fields return their wire value
+6. plain objects recurse through the same resolution rules
+7. plain fields return their wire value
 
 Generated marker types only drive TypeScript inference. Runtime behavior is
 driven by the wire tree, stream tables, and proxy cache.

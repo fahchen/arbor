@@ -99,6 +99,13 @@ defmodule Arbor.Codegen.TypeScript.TypeRendererTest do
       ast = quote(do: %{outer: %{inner: integer()}})
       assert TypeRenderer.render(ast) == "{ outer: { inner: number } }"
     end
+
+    test "nested map with stream field" do
+      ast = quote(do: %{feed: %{messages: stream(String.t())}})
+
+      assert TypeRenderer.render(ast) ==
+               "{ feed: { messages: Arbor.StreamField<string> } }"
+    end
   end
 
   describe "unions" do

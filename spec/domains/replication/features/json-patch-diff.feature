@@ -69,17 +69,17 @@ Feature: JSON Patch Diff and Replication
       And the first patch envelope after the fresh mount uses base_version: 0 and version: 1
       And the client treats the reconnect as a clean slate
 
-  Rule: Stream-typed fields are excluded from JSON Patch ops
+  Rule: Stream-typed item content is excluded from JSON Patch ops
 
-    Scenario: Stream-typed field appears as empty array at initial delivery
+    Scenario: Stream-typed field appears as marker at initial delivery
       Given a store declares state do stream :messages, MessageState.t(), ... end
       When the first patch envelope is emitted
-      Then the value at /messages in the initial replace is []
+      Then the value at /messages in the initial replace is {"__arbor_stream__": "messages"}
 
-    Scenario: Subsequent ops never touch stream-typed paths
+    Scenario: Subsequent ops never carry stream item content
       Given streams/lifecycle delivers items via stream_ops
       When the runtime emits a patch envelope
-      Then ops never contain any op whose path is at or inside a stream-typed field
+      Then ops never contain stream item values
       And stream content flows entirely through stream_ops
 
   Rule: The diff engine emits the structural minimal diff with no fallback to subtree replace

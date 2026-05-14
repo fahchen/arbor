@@ -60,9 +60,9 @@ defmodule Arbor.TestSupport.ExampleStore do
   @impl Arbor.Store
   def render(_socket) do
     %{
-      messages: [],
-      events: [],
-      load_state: nil,
+      messages: stream(:messages),
+      events: stream(:events),
+      load_state: async_stream(:load_state),
       child: %{id: "child"},
       money: %{amount: 0},
       status: %{type: :active},
@@ -99,7 +99,7 @@ defmodule Arbor.TestSupport.StreamOnlyStore do
   @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
   @impl Arbor.Store
-  def render(_socket), do: %{notes: []}
+  def render(_socket), do: %{notes: stream(:notes)}
   @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
@@ -121,7 +121,10 @@ defmodule Arbor.TestSupport.AsyncStreamStore do
   @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
   @impl Arbor.Store
-  def render(_socket), do: %{loaded: nil}
+  def render(_socket) do
+    %{loaded: async_stream(:loaded)}
+  end
+
   @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
@@ -134,6 +137,35 @@ defmodule Arbor.TestSupport.StreamStateModule do
   state do
     stream(:lines, String.t(), limit: 25)
   end
+end
+
+defmodule Arbor.TestSupport.NestedSchemaStore do
+  @moduledoc false
+
+  use Arbor.Store
+
+  state do
+    field :message do
+      field :body, String.t()
+    end
+
+    field :feed do
+      stream :messages do
+        field :body, String.t()
+      end
+    end
+  end
+
+  @impl Arbor.Store
+  def mount(socket), do: {:ok, socket}
+
+  @impl Arbor.Store
+  def render(_socket) do
+    %{message: %{body: "hi"}, feed: %{messages: stream(:messages)}}
+  end
+
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
 defmodule Arbor.TestSupport.MultiCommandStore do
@@ -200,6 +232,16 @@ defmodule Arbor.CompileTimeDslTest do
                item_key: default_item_key_ast,
                limit: nil,
                opts: event_stream_opts
+             },
+             %{
+               name: :load_state,
+               path: ["load_state", "result"],
+               item_type:
+                 {{:., _load_dot_meta, [{:__aliases__, _load_alias_meta, [:MoneyState]}, :t]},
+                  _load_call_meta, []},
+               item_key: load_state_item_key_ast,
+               limit: nil,
+               opts: load_state_stream_opts
              }
            ] = ExampleStore.__arbor__(:streams)
 
@@ -211,6 +253,8 @@ defmodule Arbor.CompileTimeDslTest do
 
     assert nil == Keyword.get(event_stream_opts, :limit)
     assert {:&, _default_ast_meta, _default_ast_body} = default_item_key_ast
+    assert {:&, _load_state_meta, _load_state_body} = load_state_item_key_ast
+    assert nil == Keyword.get(load_state_stream_opts, :limit)
 
     assert [] = ExampleStore.__arbor__(:attrs)
   end
@@ -415,18 +459,21 @@ defmodule Arbor.CompileTimeDslTest do
 
   describe "stream declarations inside state do" do
     alias Arbor.TestSupport.AsyncStreamStore
+    alias Arbor.TestSupport.NestedSchemaStore
     alias Arbor.TestSupport.StreamOnlyStore
     alias Arbor.TestSupport.StreamStateModule
 
     test "stream/3 inside state do registers a stream slot" do
-      # ExampleStore declares two stream fields inside its state do block:
+      # ExampleStore declares direct streams and an async stream field:
       #   stream :messages, MoneyState.t(), item_key: ..., limit: -100
       #   stream :events,   String.t()
+      #   field :load_state, AsyncResult.of(stream(MoneyState.t()))
       # Both must round-trip into __arbor__(:streams).
       stream_names = Enum.map(ExampleStore.__arbor__(:streams), & &1.name)
 
       assert :messages in stream_names
       assert :events in stream_names
+      assert :load_state in stream_names
     end
 
     test "stream fields are also enumerated by __arbor__(:fields)" do
@@ -462,6 +509,26 @@ defmodule Arbor.CompileTimeDslTest do
                StreamStateModule.__arbor__(:streams)
 
       assert {{:., _dot, [{:__aliases__, _alias, [:String]}, :t]}, _call, []} = item_type
+    end
+
+    test "nested field blocks and inline stream item schemas reflect paths" do
+      assert {:ok, %{type: {:%{}, _meta, message_pairs}}} =
+               NestedSchemaStore.__arbor__(:field, :message)
+
+      assert Enum.any?(message_pairs, fn
+               {:body, {{:., _dot, [{:__aliases__, _alias, [:String]}, :t]}, _call, []}} ->
+                 true
+
+               _other ->
+                 false
+             end)
+
+      assert [%{name: :messages, path: ["feed", "messages"], item_type: item_type}] =
+               NestedSchemaStore.__arbor__(:streams)
+
+      assert {:%{}, _meta,
+              [{:body, {{:., _dot, [{:__aliases__, _alias, [:String]}, :t]}, _call, []}}]} =
+               item_type
     end
 
     test "explicit item_key is preserved as a quoted capture, not evaluated" do
@@ -505,11 +572,15 @@ defmodule Arbor.CompileTimeDslTest do
       assert {:stream, _meta, [_string_type]} = StreamOnlyStore.__arbor__(:type, :notes)
     end
 
-    test "AsyncResult.of(stream(T)) composite is NOT registered as a stream slot in M1" do
-      # M1 scope: only direct `stream(T)` field types register a stream slot.
-      # `AsyncResult.of(stream(T))` is the wire shape consumed by `stream_async/4`
-      # (M5), which will register the slot at runtime via the async pipeline.
-      assert [] = AsyncStreamStore.__arbor__(:streams)
+    test "AsyncResult.of(stream(T)) composite is registered as an async stream slot" do
+      assert [
+               %{
+                 name: :loaded,
+                 path: ["loaded", "result"],
+                 limit: -200,
+                 item_key: {:&, _meta, _body}
+               }
+             ] = AsyncStreamStore.__arbor__(:streams)
 
       assert {{:., _meta, [{:__aliases__, _alias_meta, [:Arbor, :AsyncResult]}, :of]}, _call_meta,
               [_inner]} = AsyncStreamStore.__arbor__(:type, :loaded)

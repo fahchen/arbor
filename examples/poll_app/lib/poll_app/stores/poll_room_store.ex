@@ -70,8 +70,7 @@ defmodule PollApp.Stores.PollRoomStore do
   def render(socket) do
     %{
       poll: socket.assigns.poll,
-      # Stream-typed fields are forced to `[]` on the wire (BDR-0014/0018).
-      options: [],
+      options: stream(:options),
       user_vote: socket.assigns.user_vote
     }
   end

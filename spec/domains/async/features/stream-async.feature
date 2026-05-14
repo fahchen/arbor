@@ -13,7 +13,7 @@ Feature: stream_async
   Rule: stream_async follows LV's combined async + stream flow
 
     Scenario: First call ensures both the AsyncResult assignment and the stream slot
-      Given a store declares state do stream :messages, AsyncResult.of(MessageState.t()), ... end
+      Given a store declares state do stream_async :messages, MessageState.t(), ... end
       When the application calls stream_async(socket, :messages, fn -> {:ok, items} end)
       Then socket.assigns.messages is set to Arbor.AsyncResult.loading() synchronously
       And the stream slot named messages is initialized
@@ -43,7 +43,8 @@ Feature: stream_async
 
     Scenario: Single envelope captures both transitions
       When the task completes successfully with items [msg1, msg2]
-      Then the next envelope contains JSON Patch ops at /messages/status and /messages/result reflecting AsyncResult transitions
+      Then the next envelope contains JSON Patch ops at /messages/status reflecting AsyncResult transitions
+      And the value at /messages/result remains {"__arbor_stream__": "messages"}
       And the same envelope contains stream_ops with insert ops for each item
       And socket.assigns.messages is %AsyncResult{status: :ok, result: true, reason: nil} (status flag, not the items themselves — items live in the stream)
 
@@ -99,8 +100,9 @@ Feature: stream_async
   Rule: state do field type for stream_async-managed slots is composite
 
     Scenario: Composite typespec
-      Given a store declares state do stream :messages, AsyncResult.of(MessageState.t()), ... end
-      Then the runtime accepts the value as a three-field AsyncResult (status, result, reason) whose result is true and status is :ok once populated
+      Given a store declares state do stream_async :messages, MessageState.t(), ... end
+      Then reflection exposes the field type as AsyncResult.of(stream(MessageState.t()))
+      And the runtime accepts the wire value as a three-field AsyncResult whose result is {"__arbor_stream__": "messages"}
       And codegen emits a TypeScript composite shape combining AsyncResult and an items array
 
   Rule: Two refresh paths, by intent

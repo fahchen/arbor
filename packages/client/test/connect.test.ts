@@ -132,6 +132,14 @@ type TestStores = {
       title: string
       child: Arbor.StoreField<"Test.Child">
       counter: number
+      feed: {
+        messages: Arbor.StreamField<{ body: string }>
+      }
+      async_messages: Arbor.AsyncField<Arbor.StreamField<{ id: string; body: string }>>
+      metadata: {
+        messages: string
+      }
+      users: Arbor.StreamField<{ id: string; name: string }>
     },
     {
       rename: {
@@ -377,8 +385,87 @@ describe("connect", () => {
       __arbor_store_id__: [],
       title: "Inbox",
       counter: 1,
+      feed: { messages: [] },
+      async_messages: { status: "loading", data: [], error: null },
+      metadata: { messages: "literal" },
+      users: [],
       child: { __arbor_store_id__: ["child"], count: 1 }
     })
+  })
+
+  test("stream markers resolve at nested paths", async () => {
+    const { connect } = await import("../src/connect")
+    const socket = new MockSocket()
+    const connectionPromise = connect(socket)
+    const channel = lastChannel(socket)
+    channel.resolveJoin()
+    const connection = await connectionPromise
+    const proxyPromise = connection.mountStore<TestStores, "Test.Store">({
+      module: "Test.Store",
+      id: "alpha-1"
+    })
+    await Promise.resolve()
+
+    lastPush(channel).push.resolve("ok", { root_id: "alpha-1" })
+    channel.emit(
+      "patch",
+      connectionEnvelope(
+        "alpha-1",
+        0,
+        1,
+        [{ op: "replace", path: "", value: rootState() }],
+        [
+          {
+            op: "insert",
+            stream: "messages",
+            ref: "1",
+            store_id: [],
+            item_key: "messages-1",
+            at: -1,
+            item: { body: "hello" },
+            limit: null
+          },
+          {
+            op: "insert",
+            stream: "async_messages",
+            ref: "3",
+            store_id: [],
+            item_key: "async_messages-1",
+            at: -1,
+            item: { id: "a1", body: "loaded" },
+            limit: null
+          },
+          {
+            op: "insert",
+            stream: "users",
+            ref: "2",
+            store_id: [],
+            item_key: "users-u1",
+            at: -1,
+            item: { id: "u1", name: "Ada" },
+            limit: null
+          }
+        ]
+      )
+    )
+
+    const proxy = await proxyPromise
+
+    expect(proxy.feed.messages).toEqual([{ body: "hello" }])
+    expect(proxy.async_messages).toEqual({
+      status: "loading",
+      data: [{ id: "a1", body: "loaded" }],
+      error: null
+    })
+    expect(proxy.metadata.messages).toBe("literal")
+    expect(proxy.users).toEqual([{ id: "u1", name: "Ada" }])
+    expect(proxy.snapshot().feed.messages).toEqual([{ body: "hello" }])
+    expect(proxy.snapshot().async_messages).toEqual({
+      status: "loading",
+      data: [{ id: "a1", body: "loaded" }],
+      error: null
+    })
+    expect(proxy.snapshot().metadata.messages).toBe("literal")
   })
 
   test("unmountStore sends an unmount push and resets the root runtime", async () => {
@@ -483,6 +570,19 @@ function rootState(title = "Inbox"): Record<string, unknown> {
       count: 1,
       __arbor_store_id__: ["child"]
     },
+    feed: {
+      messages: { __arbor_stream__: "messages" }
+    },
+    async_messages: {
+      __arbor_async__: true,
+      status: "loading",
+      result: { __arbor_stream__: "async_messages" },
+      reason: null
+    },
+    metadata: {
+      messages: "literal"
+    },
+    users: { __arbor_stream__: "users" },
     __arbor_store_id__: []
   }
 }

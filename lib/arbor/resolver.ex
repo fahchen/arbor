@@ -26,6 +26,7 @@ defmodule Arbor.Resolver do
   wire-form root is available via the registry root entry's `:wire_state`.
   """
 
+  alias Arbor.AsyncResult
   alias Arbor.Child
   alias Arbor.Lifecycle
   alias Arbor.Page.StoreRegistry
@@ -33,6 +34,9 @@ defmodule Arbor.Resolver do
   alias Arbor.Reconciler
   alias Arbor.Socket
   alias Arbor.Stream
+  alias Arbor.Stream.AsyncPlaceholder
+  alias Arbor.Stream.Marker
+  alias Arbor.Stream.Placeholder
   alias Arbor.Telemetry
   alias Arbor.Wire
 
@@ -108,6 +112,7 @@ defmodule Arbor.Resolver do
     {resolved_state, resolved_registry, resolved_live_identities} =
       resolve_value(raw_state, socket, registry, store_id, live_identities)
 
+    resolved_state = normalize_stream_placeholders!(resolved_state, socket)
     resolved_state = inject_store_id(resolved_state, store_id)
 
     after_render_socket =
@@ -154,6 +159,222 @@ defmodule Arbor.Resolver do
   end
 
   defp inject_store_id(resolved_state, _store_id), do: resolved_state
+
+  @spec normalize_stream_placeholders!(resolved_value(), Socket.t()) :: resolved_value()
+  defp normalize_stream_placeholders!(resolved_state, %Socket{} = socket) do
+    streams_by_name = declared_streams_by_name(socket.module)
+
+    {normalized, placements} =
+      replace_stream_placeholders!(resolved_state, [], %{}, streams_by_name, socket)
+
+    ensure_all_streams_placed!(streams_by_name, placements)
+    normalized
+  end
+
+  @spec declared_streams_by_name(module()) :: %{optional(atom()) => map()}
+  defp declared_streams_by_name(module) do
+    if function_exported?(module, :__arbor__, 1) do
+      streams = module.__arbor__(:streams)
+
+      streams
+      |> List.wrap()
+      |> Map.new(fn %{name: name} = stream -> {name, stream} end)
+    else
+      %{}
+    end
+  end
+
+  @spec replace_stream_placeholders!(
+          resolved_value(),
+          [String.t()],
+          %{optional(atom()) => [String.t()]},
+          %{
+            optional(atom()) => map()
+          },
+          Socket.t()
+        ) ::
+          {resolved_value(), %{optional(atom()) => [String.t()]}}
+  defp replace_stream_placeholders!(
+         %Placeholder{name: name},
+         path,
+         placements,
+         streams_by_name,
+         _socket
+       ) do
+    current_path = Enum.reverse(path)
+
+    case Map.fetch(streams_by_name, name) do
+      {:ok, %{path: ^current_path}} ->
+        if Map.has_key?(placements, name) do
+          raise ArgumentError,
+                "stream #{inspect(name)} rendered more than once"
+        end
+
+        {Marker.new(name), Map.put(placements, name, current_path)}
+
+      {:ok, %{path: expected_path}} ->
+        raise ArgumentError,
+              "stream #{inspect(name)} rendered at #{format_stream_path(current_path)}, " <>
+                "but it is declared at #{format_stream_path(expected_path)}"
+
+      :error ->
+        raise ArgumentError, "stream #{inspect(name)} is not declared"
+    end
+  end
+
+  defp replace_stream_placeholders!(
+         %AsyncPlaceholder{name: name},
+         path,
+         placements,
+         streams_by_name,
+         %Socket{} = socket
+       ) do
+    current_path = Enum.reverse(path)
+
+    case Map.fetch(streams_by_name, name) do
+      {:ok, %{path: expected_path}} ->
+        expected_parent_path = async_stream_parent_path!(name, expected_path)
+
+        cond do
+          Map.has_key?(placements, name) ->
+            raise ArgumentError,
+                  "stream #{inspect(name)} rendered more than once"
+
+          current_path != expected_parent_path ->
+            raise ArgumentError,
+                  "async stream #{inspect(name)} rendered at #{format_stream_path(current_path)}, " <>
+                    "but it is declared at #{format_stream_path(expected_parent_path)}"
+
+          true ->
+            async = async_stream_assign!(socket, name)
+            {%{async | result: Marker.new(name)}, Map.put(placements, name, expected_path)}
+        end
+
+      :error ->
+        raise ArgumentError, "async stream #{inspect(name)} is not declared"
+    end
+  end
+
+  defp replace_stream_placeholders!(
+         %AsyncResult{} = async,
+         path,
+         placements,
+         streams_by_name,
+         socket
+       ) do
+    {resolved_result, next_placements} =
+      replace_stream_placeholders!(
+        async.result,
+        ["result" | path],
+        placements,
+        streams_by_name,
+        socket
+      )
+
+    {%{async | result: resolved_result}, next_placements}
+  end
+
+  defp replace_stream_placeholders!(value, path, placements, streams_by_name, socket)
+       when is_map(value) and not is_struct(value) do
+    cond do
+      Map.has_key?(value, @store_id_key) ->
+        {value, placements}
+
+      Marker.marker?(value) ->
+        raise ArgumentError,
+              "stream marker at #{format_stream_path(Enum.reverse(path))} was not produced by stream(:name)"
+
+      true ->
+        Enum.reduce(value, {%{}, placements}, fn {key, child}, {acc, current_placements} ->
+          {resolved_child, next_placements} =
+            replace_stream_placeholders!(
+              child,
+              [to_string(key) | path],
+              current_placements,
+              streams_by_name,
+              socket
+            )
+
+          {Map.put(acc, key, resolved_child), next_placements}
+        end)
+    end
+  end
+
+  defp replace_stream_placeholders!(value, path, placements, streams_by_name, socket)
+       when is_list(value) do
+    {resolved_list, next_placements} =
+      value
+      |> Enum.with_index()
+      |> Enum.map_reduce(placements, fn {element, index}, current_placements ->
+        {resolved_element, next_placements} =
+          replace_stream_placeholders!(
+            element,
+            [Integer.to_string(index) | path],
+            current_placements,
+            streams_by_name,
+            socket
+          )
+
+        {resolved_element, next_placements}
+      end)
+
+    {resolved_list, next_placements}
+  end
+
+  defp replace_stream_placeholders!(value, _path, placements, _streams_by_name, _socket) do
+    {value, placements}
+  end
+
+  defp async_stream_parent_path!(name, expected_path) do
+    case Enum.reverse(expected_path) do
+      ["result" | reversed_parent_path] ->
+        Enum.reverse(reversed_parent_path)
+
+      _other ->
+        raise ArgumentError,
+              "async_stream(#{inspect(name)}) requires an AsyncResult.of(stream(...)) " <>
+                "state declaration"
+    end
+  end
+
+  defp async_stream_assign!(%Socket{} = socket, name) when is_atom(name) do
+    case Map.fetch(socket.assigns, name) do
+      {:ok, %AsyncResult{} = async} ->
+        async
+
+      {:ok, other} ->
+        raise ArgumentError,
+              "async_stream(#{inspect(name)}) expects socket.assigns.#{name} to be " <>
+                "an Arbor.AsyncResult, got: #{inspect(other)}"
+
+      :error ->
+        AsyncResult.loading()
+    end
+  end
+
+  @spec ensure_all_streams_placed!(%{optional(atom()) => map()}, %{
+          optional(atom()) => [String.t()]
+        }) ::
+          :ok
+  defp ensure_all_streams_placed!(streams_by_name, placements) do
+    missing =
+      streams_by_name
+      |> Map.keys()
+      |> Enum.reject(&Map.has_key?(placements, &1))
+
+    case missing do
+      [] ->
+        :ok
+
+      [name | _rest] ->
+        raise ArgumentError,
+              "declared stream #{inspect(name)} was not rendered with stream(#{inspect(name)})"
+    end
+  end
+
+  @spec format_stream_path([String.t()]) :: String.t()
+  defp format_stream_path([]), do: "/"
+  defp format_stream_path(path), do: "/" <> Enum.join(path, "/")
 
   defp resolve_value(
          %Child{} = child,

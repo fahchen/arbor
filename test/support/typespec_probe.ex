@@ -47,8 +47,8 @@ defmodule Arbor.TestSupport.TypespecProbe do
   @impl Arbor.Store
   def render(_socket),
     do: %{
-      messages: [],
-      items: [],
+      messages: stream(:messages),
+      items: stream(:items),
       load_stream: nil,
       profile: nil,
       status: %{type: :active},

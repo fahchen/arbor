@@ -29,7 +29,7 @@ defmodule Arbor.Page.ServerChildAsyncTest do
     state do
       field :data, String.t() | nil
       field :slow, Arbor.AsyncResult.of(String.t())
-      stream :messages, %{id: String.t(), body: String.t()}
+      stream_async :messages, %{id: String.t(), body: String.t()}
     end
 
     attr :test_pid, pid(), required: true
@@ -64,13 +64,18 @@ defmodule Arbor.Page.ServerChildAsyncTest do
         end)
         |> Arbor.Socket.assign(:data, nil)
         |> Arbor.Socket.assign(:slow, AsyncResult.loading())
+        |> Arbor.Socket.assign(:messages, AsyncResult.loading())
 
       {:ok, socket}
     end
 
     @impl Arbor.Store
     def render(socket) do
-      %{data: Map.get(socket.assigns, :data), slow: socket.assigns.slow, messages: []}
+      %{
+        data: Map.get(socket.assigns, :data),
+        slow: socket.assigns.slow,
+        messages: async_stream(:messages)
+      }
     end
 
     @impl Arbor.Store

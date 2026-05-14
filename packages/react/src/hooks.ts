@@ -8,12 +8,23 @@ import type {
   CommandPayload,
   CommandReply,
   MountStoreOptions,
+  ArborConnection,
   StoreModule,
   StoreProxy,
   StoreSnapshot
 } from "@arbor/client"
 
 const identitySelector = <S>(value: S): S => value
+const pendingRootMounts: WeakMap<ArborConnection, Map<string, SharedRootMount>> =
+  new WeakMap()
+
+type SharedRootMount = {
+  rootId: string
+  refs: number
+  promise: Promise<StoreProxy<unknown, never>>
+  failed: boolean
+  cleanupTimer: ReturnType<typeof setTimeout> | null
+}
 
 export type ArborRootMount<R, M extends StoreModule<R>> =
   | { status: "loading"; store: null; error: null }
@@ -42,8 +53,6 @@ export function useArborRoot<R, M extends StoreModule<R> = StoreModule<R>>(
 
   useEffect(() => {
     let cancelled = false
-    let mounted = false
-    const rootId = options.id
     const unmountOnCleanup = options.unmountOnCleanup ?? true
     const mountOptions: MountStoreOptions<R, M> = {
       module: options.module,
@@ -53,20 +62,15 @@ export function useArborRoot<R, M extends StoreModule<R> = StoreModule<R>>(
 
     setState({ status: "loading", store: null, error: null })
 
-    connection
-      .mountStore<R, M>(mountOptions)
+    const sharedMount = acquireRootMount(connection, mountOptions)
+
+    sharedMount.promise
       .then((store) => {
-        mounted = true
-
         if (cancelled) {
-          if (unmountOnCleanup) {
-            void connection.unmountStore(rootId)
-          }
-
           return
         }
 
-        setState({ status: "ready", store, error: null })
+        setState({ status: "ready", store: store as StoreProxy<R, M>, error: null })
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -81,13 +85,103 @@ export function useArborRoot<R, M extends StoreModule<R> = StoreModule<R>>(
     return () => {
       cancelled = true
 
-      if (mounted && unmountOnCleanup) {
-        void connection.unmountStore(rootId)
-      }
+      releaseRootMount(connection, sharedMount.key, unmountOnCleanup)
     }
   }, [connection, options.module, options.id, options.params, options.unmountOnCleanup])
 
   return state
+}
+
+function acquireRootMount<R, M extends StoreModule<R>>(
+  connection: ArborConnection,
+  options: MountStoreOptions<R, M>
+): SharedRootMount & { key: string } {
+  const key = rootMountKey(options)
+  const mounts = rootMountsFor(connection)
+  const existing = mounts.get(key)
+
+  if (existing) {
+    if (existing.cleanupTimer) {
+      clearTimeout(existing.cleanupTimer)
+      existing.cleanupTimer = null
+    }
+
+    existing.refs += 1
+    return { ...existing, key }
+  }
+
+  const shared: SharedRootMount = {
+    rootId: options.id,
+    refs: 1,
+    promise: Promise.resolve(null as never),
+    failed: false,
+    cleanupTimer: null
+  }
+
+  shared.promise = connection
+    .mountStore(options)
+    .catch((error: unknown) => {
+      shared.failed = true
+      mounts.delete(key)
+      throw error
+    }) as Promise<StoreProxy<unknown, never>>
+
+  mounts.set(key, shared)
+  return { ...shared, key }
+}
+
+function releaseRootMount(
+  connection: ArborConnection,
+  key: string,
+  unmountOnCleanup: boolean
+): void {
+  const mounts = pendingRootMounts.get(connection)
+  const shared = mounts?.get(key)
+
+  if (!mounts || !shared) {
+    return
+  }
+
+  shared.refs -= 1
+
+  if (shared.refs > 0) {
+    return
+  }
+
+  if (!unmountOnCleanup) {
+    mounts.delete(key)
+    return
+  }
+
+  shared.cleanupTimer = setTimeout(() => {
+    if (shared.refs > 0) {
+      return
+    }
+
+    mounts.delete(key)
+
+    if (!shared.failed) {
+      void connection.unmountStore(shared.rootId)
+    }
+  }, 0)
+}
+
+function rootMountsFor(connection: ArborConnection): Map<string, SharedRootMount> {
+  const existing = pendingRootMounts.get(connection)
+
+  if (existing) {
+    return existing
+  }
+
+  const mounts = new Map<string, SharedRootMount>()
+  pendingRootMounts.set(connection, mounts)
+  return mounts
+}
+
+function rootMountKey<R, M extends StoreModule<R>>(
+  options: MountStoreOptions<R, M>
+): string {
+  return `${options.id}\u0000${options.module}\u0000${JSON.stringify(options.params ?? {})}`
 }
 
 /**

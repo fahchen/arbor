@@ -8,6 +8,7 @@ defmodule Arbor.Plugin.StateField do
   @type field_definition() :: Normalize.field_definition()
   @type stream_definition() :: %{
           name: atom(),
+          path: [String.t()],
           item_type: Macro.t(),
           item_key: Macro.t(),
           limit: integer() | nil,
@@ -20,37 +21,19 @@ defmodule Arbor.Plugin.StateField do
   ## Examples
 
       iex> fields = [%{name: :messages, type: {:stream, [], [String.t()]}, opts: [limit: -10]}]
-      iex> [%{name: :messages, limit: -10}] = Arbor.Plugin.StateField.stream_fields(fields)
+      iex> [%{name: :messages, path: ["messages"], limit: -10}] = Arbor.Plugin.StateField.stream_fields(fields)
   """
   @spec stream_fields([field_definition()]) :: [stream_definition()]
   def stream_fields(fields) do
-    Enum.flat_map(fields, fn %{name: name, type: type, opts: opts} ->
-      case stream_item_type(type) do
-        {:ok, item_type} ->
-          item_key = Keyword.get(opts, :item_key, default_item_key_ast(name))
-          limit = normalize_literal_opt(Keyword.get(opts, :limit))
-
-          [
-            %{
-              name: name,
-              item_type: item_type,
-              item_key: item_key,
-              limit: limit,
-              opts:
-                opts
-                |> Keyword.put_new(:item_key, item_key)
-                |> Keyword.update(:limit, nil, &normalize_literal_opt/1)
-            }
-          ]
-
-        :error ->
-          []
-      end
+    fields
+    |> Enum.flat_map(fn %{name: name, type: type, opts: opts} ->
+      stream_fields_from_type(name, type, opts, [Atom.to_string(name)])
     end)
+    |> validate_unique_stream_names!()
   end
 
   @doc """
-  Returns the item type from a `stream(T)` AST node.
+  Extracts the item type from a `stream(T)` AST node.
 
   ## Examples
 
@@ -61,6 +44,11 @@ defmodule Arbor.Plugin.StateField do
   """
   @spec stream_item_type(Macro.t()) :: {:ok, Macro.t()} | :error
   def stream_item_type({:stream, _meta, [item_type]}), do: {:ok, item_type}
+
+  def stream_item_type({{:., _dot, [aliased, :of]}, _call, [{:stream, _meta, [item_type]}]}) do
+    if async_result_alias?(aliased), do: {:ok, item_type}, else: :error
+  end
+
   def stream_item_type(_other), do: :error
 
   @doc """
@@ -89,17 +77,15 @@ defmodule Arbor.Plugin.StateField do
       iex> Arbor.Plugin.StateField.normalize_literal_opt(fn_ast)
       fn_ast
   """
-  @spec normalize_literal_opt(term()) :: term()
-  def normalize_literal_opt(nil), do: nil
+  @typep literal_opt() :: Macro.t() | integer() | nil
 
-  def normalize_literal_opt(value) do
-    case Code.eval_quoted(value, [], __ENV__) do
-      {evaluated, []} -> evaluated
-      _other -> value
-    end
-  rescue
-    _error -> value
-  end
+  @spec normalize_literal_opt(literal_opt()) :: literal_opt()
+  def normalize_literal_opt(nil), do: nil
+  def normalize_literal_opt(value) when is_integer(value), do: value
+
+  def normalize_literal_opt({:-, _meta, [value]}) when is_integer(value), do: -value
+  def normalize_literal_opt({:+, _meta, [value]}) when is_integer(value), do: value
+  def normalize_literal_opt(value), do: value
 
   @impl TypedStructor.Plugin
   defmacro after_definition(definition, _opts) do
@@ -125,5 +111,81 @@ defmodule Arbor.Plugin.StateField do
     end)
 
     :ok
+  end
+
+  @spec stream_fields_from_type(atom(), Macro.t(), keyword(), [String.t()]) ::
+          [stream_definition()]
+  defp stream_fields_from_type(name, type, opts, path) do
+    nested_opts = Arbor.DSL.Schema.stream_opts(type)
+    opts = if nested_opts == [], do: opts, else: nested_opts
+
+    case stream_item_type(type) do
+      {:ok, item_type} ->
+        stream_path = if async_stream_type?(type), do: ["result" | path], else: path
+        [build_stream_definition(name, item_type, opts, stream_path)]
+
+      :error ->
+        nested_stream_fields(type, path)
+    end
+  end
+
+  @spec nested_stream_fields(Macro.t(), [String.t()]) :: [stream_definition()]
+  defp nested_stream_fields({:%{}, _meta, pairs}, path) when is_list(pairs) do
+    Enum.flat_map(pairs, fn
+      {name, nested_type} when is_atom(name) ->
+        stream_fields_from_type(name, nested_type, [], [Atom.to_string(name) | path])
+
+      _other ->
+        []
+    end)
+  end
+
+  defp nested_stream_fields(_type, _path), do: []
+
+  @spec async_stream_type?(Macro.t()) :: boolean()
+  defp async_stream_type?({{:., _dot, [aliased, :of]}, _call, [{:stream, _meta, [_item_type]}]}) do
+    async_result_alias?(aliased)
+  end
+
+  defp async_stream_type?(_type), do: false
+
+  @spec async_result_alias?(Macro.t()) :: boolean()
+  defp async_result_alias?({:__aliases__, _meta, [:Arbor, :AsyncResult]}), do: true
+  defp async_result_alias?(Arbor.AsyncResult), do: true
+  defp async_result_alias?(_other), do: false
+
+  @spec build_stream_definition(atom(), Macro.t(), keyword(), [String.t()]) :: stream_definition()
+  defp build_stream_definition(name, item_type, opts, path) do
+    item_key = Keyword.get(opts, :item_key, default_item_key_ast(name))
+    limit = normalize_literal_opt(Keyword.get(opts, :limit))
+
+    %{
+      name: name,
+      path: Enum.reverse(path),
+      item_type: item_type,
+      item_key: item_key,
+      limit: limit,
+      opts:
+        opts
+        |> Keyword.put_new(:item_key, item_key)
+        |> Keyword.update(:limit, nil, &normalize_literal_opt/1)
+    }
+  end
+
+  @spec validate_unique_stream_names!([stream_definition()]) :: [stream_definition()]
+  defp validate_unique_stream_names!(streams) do
+    duplicates =
+      streams
+      |> Enum.frequencies_by(& &1.name)
+      |> Enum.filter(fn {_name, count} -> count > 1 end)
+
+    case duplicates do
+      [] ->
+        streams
+
+      [{name, _count} | _rest] ->
+        raise CompileError,
+          description: "duplicate stream declaration #{inspect(name)} in state block"
+    end
   end
 end

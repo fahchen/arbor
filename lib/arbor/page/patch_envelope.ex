@@ -6,8 +6,8 @@ defmodule Arbor.Page.PatchEnvelope do
   `stream_ops` accumulated by the stream API. Per BDR-0014/0018:
 
     * `ops` are the post-filtered Arbor JSON Patch ops (`add`/`remove`/`replace` only).
-    * `stream_ops` carry stream-typed content (the diff engine never touches
-      stream paths — those values surface as `[]` in `ops`).
+    * `stream_ops` carry stream-typed content (the wire tree carries stable
+      `%{"__arbor_stream__" => name}` markers at stream placement paths).
     * The page runtime emits an envelope when `ops` *or* `stream_ops` is
       non-empty; an idle render cycle produces no envelope.
 
@@ -52,7 +52,7 @@ defmodule Arbor.Page.PatchEnvelope do
     field :ops, [op()],
       default: [],
       doc:
-        "RFC 6902 ops describing the wire-form delta. Only `add`/`remove`/`replace` (BDR-0014). Stream-typed paths never appear here."
+        "RFC 6902 ops describing the wire-form delta. Only `add`/`remove`/`replace` (BDR-0014). Stream item content never appears here."
 
     field :stream_ops, [stream_op()],
       default: [],

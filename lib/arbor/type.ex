@@ -91,7 +91,7 @@ defmodule Arbor.Type do
   Returns whether the wire-form `value` matches `type_ast`.
 
   Single-AST-node predicate. Recurses through unions, lists, literal-keyed
-  maps, `stream(T)`, and `Arbor.AsyncResult.of(T)`. For `Module.t()` and
+  maps, stream marker fields, and `Arbor.AsyncResult.of(T)`. For `Module.t()` and
   `Module.state()` references it dispatches to
   `Module.__arbor_validate_state__/1` and reduces its result to a boolean.
 
@@ -298,10 +298,8 @@ defmodule Arbor.Type do
 
   defp do_valid?(_value, {:list, _meta, [_inner]}, _host_module), do: false
 
-  defp do_valid?(value, {:stream, _meta, [inner]}, host_module) when is_list(value),
-    do: Enum.all?(value, &do_valid?(&1, inner, host_module))
-
-  defp do_valid?(_value, {:stream, _meta, [_inner]}, _host_module), do: false
+  defp do_valid?(value, {:stream, _meta, [_inner]}, _host_module),
+    do: Arbor.Stream.Marker.marker?(value)
 
   defp do_valid?(value, {:map, _meta, []}, _host_module), do: is_map(value)
 
@@ -352,10 +350,43 @@ defmodule Arbor.Type do
     end
   end
 
-  defp do_valid?(value, {{:., _dot, [_aliased, :of]}, _call, [_inner]}, _host_module),
-    do: is_map(value)
+  defp do_valid?(value, {{:., _dot, [aliased, :of]}, _call, [inner]}, host_module) do
+    async_result_alias?(aliased) and valid_async_result?(value, inner, host_module)
+  end
 
   defp do_valid?(_value, _type_ast, _host_module), do: false
+
+  defp valid_async_result?(
+         %{
+           "__arbor_async__" => true,
+           "status" => status,
+           "result" => result,
+           "reason" => reason
+         },
+         inner,
+         host_module
+       ) do
+    case status do
+      "loading" ->
+        is_nil(reason) and valid_async_result_value?(result, inner, host_module)
+
+      "ok" ->
+        is_nil(reason) and do_valid?(result, inner, host_module)
+
+      "failed" ->
+        not is_nil(reason) and valid_async_result_value?(result, inner, host_module)
+
+      _other ->
+        false
+    end
+  end
+
+  defp valid_async_result?(_value, _inner, _host_module), do: false
+
+  defp valid_async_result_value?(nil, _inner, _host_module), do: true
+
+  defp valid_async_result_value?(result, inner, host_module),
+    do: do_valid?(result, inner, host_module)
 
   defp validate_via_module(module, value) do
     cond do
