@@ -3,16 +3,19 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   Single-store chat-room page. Demonstrates Arbor's full async + stream +
   PubSub surface in one module:
 
-    * `stream :messages, MessageState.t()` slot — server forgets values
-      after flush; only the per-stream slot config (item_key fn, limit,
-      ref counter) survives on the socket. The client owns the
-      materialized list.
-    * `Arbor.Stream.stream/4` on root `mount/2` to seed the latest stored messages
+    * `stream_async :messages, MessageState.t()` slot — async-seeded stream.
+      `socket.assigns.messages` carries a `loading | ok | failed`
+      `AsyncResult`; items live in the stream slot. After the initial
+      seed completes, `handle_info({:message_received, ...})` continues
+      to drive incremental inserts via `Arbor.Stream.stream_insert/4`.
+    * `Arbor.Async.stream_async/3` on root `mount/2` to seed the latest
+      stored messages off the mount path (mount returns immediately;
+      messages flip to `:ok` once the background task settles).
     * `assign_async/3` for the `:online_users` AsyncResult field
     * `set_name` command backed by the application-owned presence registry
     * `start_async/3` + `handle_async/3` for the optimistic `:send_message`
       flow with delivery receipts and the BDR-0020 caught-exception path
-    * `cancel_async/2` from `terminate/2` to abandon any in-flight send
+    * `cancel_async/2` from `terminate/2` to abandon in-flight tasks
     * `Phoenix.PubSub.subscribe/2` inside root `mount/2` (BDR-0005:
       application-owned PubSub) and `handle_info/2` dispatch
   """
@@ -33,8 +36,12 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   # keeping the client-side materialized stream to the newest messages.
   @stream_limit -100
 
+  # Artificial latency so the `:messages` AsyncResult loading -> ok
+  # transition is visible in the UI on first mount/reconnect.
+  @history_load_delay_ms 1_500
+
   state do
-    stream(:messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: @stream_limit)
+    stream_async(:messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: @stream_limit)
     field(:current_user, OnlineUser.t())
     field(:online_users, Arbor.AsyncResult.of(list(OnlineUser.t())))
 
@@ -67,7 +74,12 @@ defmodule ChatRoom.Stores.ChatRoomStore do
       |> Arbor.Socket.assign(:user_id, user_id)
       |> Arbor.Socket.assign(:current_user, current_user)
       |> Arbor.Socket.assign(:last_send_status, %{type: :idle})
-      |> Arbor.Stream.stream(:messages, Chat.recent(room_id, @message_limit), reset: true)
+      |> Arbor.Async.stream_async(:messages, fn ->
+        # Simulated history-load latency so the AsyncResult loading->ok
+        # transition is visible client-side.
+        Process.sleep(@history_load_delay_ms)
+        {:ok, Chat.recent(room_id, @message_limit), reset: true}
+      end)
       |> Arbor.Async.assign_async(:online_users, fn -> {:ok, Presence.list(room_id)} end)
 
     {:ok, socket}
@@ -80,7 +92,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   @impl Arbor.Store
   def render(socket) do
     %{
-      messages: stream(:messages),
+      messages: async_stream(:messages),
       current_user: socket.assigns.current_user,
       online_users: socket.assigns.online_users,
       last_send_status: socket.assigns.last_send_status
@@ -192,7 +204,12 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   @impl Arbor.Store
   def terminate(_reason, socket) do
     Presence.leave(socket.assigns.room_id, socket.assigns.user_id)
-    Arbor.Async.cancel_async(socket, :send_message)
+
+    socket
+    |> Arbor.Async.cancel_async(:send_message)
+    |> Arbor.Async.cancel_async(:messages)
+    |> Arbor.Async.cancel_async(:online_users)
+
     :ok
   end
 end

@@ -38,6 +38,8 @@ function ChatRoom({ root }: { root: StoreProxy<Registry, RootModule> }) {
   const onlineUsers = room.online_users
   const messages = room.messages
   const onlineCount = onlineUsers.status === "ok" ? onlineUsers.data.length : 0
+  const messagesList = messages.data ?? []
+  const messagesCount = messagesList.length
 
   useEffect(() => {
     setNameDraft(currentUser.name)
@@ -156,19 +158,30 @@ function ChatRoom({ root }: { root: StoreProxy<Registry, RootModule> }) {
           </div>
           <div className="chat-stats" aria-label="Room activity">
             <span>{onlineCount} online</span>
-            <span>{messages.length} messages</span>
+            <span>{messagesCount} messages</span>
+            <span className={`status-dot status-${messages.status}`} aria-label={`history ${messages.status}`} />
           </div>
         </header>
 
         <div className="messages-viewport">
-          {messages.length === 0 ? (
+          {messages.status === "loading" && messagesCount === 0 ? (
+            <div className="empty-state">
+              <div className="empty-mark">…</div>
+              <p>Loading history</p>
+            </div>
+          ) : messages.status === "failed" && messagesCount === 0 ? (
+            <div className="empty-state">
+              <div className="empty-mark">!</div>
+              <p>Could not load history.</p>
+            </div>
+          ) : messagesCount === 0 ? (
             <div className="empty-state">
               <div className="empty-mark">+</div>
               <p>No messages yet.</p>
             </div>
           ) : (
             <ol className="messages">
-              {messages.map((message) => {
+              {messagesList.map((message) => {
                 const fromSelf = message.sender === currentUser.name
 
                 return (
