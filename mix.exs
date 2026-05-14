@@ -43,7 +43,7 @@ defmodule Arbor.MixProject do
       {:telemetry, "~> 1.2"},
       {:typed_structor, "~> 0.6.1"},
       {:jsonpatch, "~> 2.2"},
-      {:phoenix, ">= 1.7.0 and < 2.0.0"},
+      {:phoenix, ">= 1.5.13 and < 2.0.0"},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ritual, github: "fahchen/ritual", only: :dev, runtime: false},
