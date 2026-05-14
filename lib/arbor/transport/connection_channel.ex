@@ -1,3 +1,5 @@
+# Phoenix is an optional dependency for core Arbor builds, so this adapter only
+# exists when Phoenix.Channel is loaded.
 if Code.ensure_loaded?(Phoenix.Channel) do
   defmodule Arbor.Transport.ConnectionChannel do
     @moduledoc """
