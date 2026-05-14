@@ -110,7 +110,7 @@ defmodule Arbor.Page.ServerAsyncTest do
         user: socket.assigns.user,
         org: socket.assigns.org,
         cache_status: socket.assigns.cache_status,
-        messages: stream(:messages, async: socket.assigns.messages)
+        messages: async_stream(:messages)
       }
     end
 

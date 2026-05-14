@@ -43,17 +43,14 @@ def render(socket) do
 end
 ```
 
-For async streams, place the stream inside the `AsyncResult.result` field by
-passing the current async assign to `stream/2`:
+For async streams, use `async_stream(:name)`. Arbor reads the current
+`AsyncResult` from `socket.assigns.name`, or renders `loading()` before the
+task has started:
 
 ```elixir
 def render(socket) do
   %{
-    older_messages:
-      stream(
-        :older_messages,
-        async: Map.get(socket.assigns, :older_messages, Arbor.AsyncResult.loading())
-      )
+    older_messages: async_stream(:older_messages)
   }
 end
 ```

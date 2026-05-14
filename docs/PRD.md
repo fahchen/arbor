@@ -520,7 +520,7 @@ defmodule MyApp.Stores.MessagesStore do
   end
 
   def render(socket) do
-    %{messages: stream(:messages, async: socket.assigns.messages)}
+    %{messages: async_stream(:messages)}
   end
 end
 ```

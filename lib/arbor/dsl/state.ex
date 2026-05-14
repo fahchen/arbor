@@ -27,7 +27,7 @@ defmodule Arbor.DSL.State do
 
         import TypedStructor, except: [field: 2, field: 3]
         import Arbor.DSL.Field, only: [field: 2, field: 3]
-        import Arbor.DSL.Render, except: [stream: 2]
+        import Arbor.DSL.Render, only: [stream: 1, async_stream: 1]
 
         import Arbor.DSL.State,
           only: [

@@ -19,9 +19,8 @@ defmodule Arbor.StreamAsyncTest do
     @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
     @impl Arbor.Store
-    def render(socket) do
-      async = Map.get(socket.assigns, :messages, Arbor.AsyncResult.loading())
-      %{messages: stream(:messages, async: async)}
+    def render(_socket) do
+      %{messages: async_stream(:messages)}
     end
 
     @impl Arbor.Store

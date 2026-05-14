@@ -129,9 +129,8 @@ defmodule Arbor.ResolverTest do
       do: {:ok, Arbor.Socket.assign(socket, :messages, Arbor.AsyncResult.loading())}
 
     @impl Arbor.Store
-    def render(socket) do
-      async = Map.get(socket.assigns, :messages, Arbor.AsyncResult.loading())
-      %{messages: stream(:messages, async: async)}
+    def render(_socket) do
+      %{messages: async_stream(:messages)}
     end
 
     @impl Arbor.Store

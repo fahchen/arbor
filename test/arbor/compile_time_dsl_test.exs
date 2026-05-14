@@ -62,7 +62,7 @@ defmodule Arbor.TestSupport.ExampleStore do
     %{
       messages: stream(:messages),
       events: stream(:events),
-      load_state: stream(:load_state, async: Arbor.AsyncResult.loading()),
+      load_state: async_stream(:load_state),
       child: %{id: "child"},
       money: %{amount: 0},
       status: %{type: :active},
@@ -121,9 +121,8 @@ defmodule Arbor.TestSupport.AsyncStreamStore do
   @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
   @impl Arbor.Store
-  def render(socket) do
-    async = Map.get(socket.assigns, :loaded, Arbor.AsyncResult.loading())
-    %{loaded: stream(:loaded, async: async)}
+  def render(_socket) do
+    %{loaded: async_stream(:loaded)}
   end
 
   @impl Arbor.Store

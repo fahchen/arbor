@@ -74,7 +74,7 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       %{
         data: Map.get(socket.assigns, :data),
         slow: socket.assigns.slow,
-        messages: stream(:messages, async: socket.assigns.messages)
+        messages: async_stream(:messages)
       }
     end
 
