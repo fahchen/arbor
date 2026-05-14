@@ -145,7 +145,7 @@ export type ProxyValue<R, T> =
       : IsStreamField<T> extends true
         ? SnapshotValue<R, StreamFieldItem<T>>[]
         : T extends readonly (infer U)[]
-          ? SnapshotValue<R, U>[]
+          ? ProxyValue<R, U>[]
           : T extends object
             ? { [K in keyof T]: ProxyValue<R, T[K]> }
             : T
