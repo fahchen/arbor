@@ -7,17 +7,17 @@ defmodule MyApp.Stores.ChatRoomStore do
       after flush; only the per-stream slot config (item_key fn, limit,
       ref counter) survives on the socket. The client owns the
       materialized list.
-    * `Arbor.Stream.stream/4` on `mount/1` to seed the latest stored messages
+    * `Arbor.Stream.stream/4` on root `mount/2` to seed the latest stored messages
     * `assign_async/3` for the `:online_users` AsyncResult field
     * `set_name` command backed by the application-owned presence registry
     * `start_async/3` + `handle_async/3` for the optimistic `:send_message`
       flow with delivery receipts and the BDR-0020 caught-exception path
     * `cancel_async/2` from `terminate/2` to abandon any in-flight send
-    * `Phoenix.PubSub.subscribe/2` inside `mount/1` (BDR-0005:
+    * `Phoenix.PubSub.subscribe/2` inside root `mount/2` (BDR-0005:
       application-owned PubSub) and `handle_info/2` dispatch
   """
 
-  use Arbor.Store
+  use Arbor.Store, root: true
 
   alias MyApp.Chat
   alias MyApp.MessageState
@@ -55,14 +55,15 @@ defmodule MyApp.Stores.ChatRoomStore do
   end
 
   @impl Arbor.Store
-  def mount(socket) do
-    room_id = socket.assigns.room_id
+  def mount(params, socket) do
+    room_id = Map.fetch!(params, "room_id")
     user_id = new_user_id()
     current_user = Presence.join(room_id, user_id, default_name(user_id))
     Phoenix.PubSub.subscribe(MyApp.PubSub, "room:" <> room_id)
 
     socket =
       socket
+      |> Arbor.Socket.assign(:room_id, room_id)
       |> Arbor.Socket.assign(:user_id, user_id)
       |> Arbor.Socket.assign(:current_user, current_user)
       |> Arbor.Socket.assign(:last_send_status, %{type: :idle})

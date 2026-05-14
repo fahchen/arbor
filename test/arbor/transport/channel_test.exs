@@ -30,7 +30,7 @@ defmodule Arbor.Transport.ChannelTest do
   defmodule RootStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Arbor.Store, root: true
 
     state do
       field :title, String.t()
@@ -53,7 +53,7 @@ defmodule Arbor.Transport.ChannelTest do
   defmodule ParamStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Arbor.Store, root: true
 
     attr :room_id, String.t(), required: true
 
@@ -139,18 +139,17 @@ defmodule Arbor.Transport.ChannelTest do
     shutdown_channel(socket)
   end
 
-  test "join normalizes string-keyed params for root store attrs" do
-    {:ok, _reply, socket} =
-      join_root(%{
-        "module" => @param_module_str,
-        "params" => %{"room_id" => "general"}
-      })
+  test "join does not normalize string-keyed params for root store attrs" do
+    log =
+      capture_log(fn ->
+        assert {:error, %{reason: "join crashed"}} =
+                 join_root(%{
+                   "module" => @param_module_str,
+                   "params" => %{"room_id" => "general"}
+                 })
+      end)
 
-    assert_push("patch", %{
-      "ops" => [%{op: "replace", path: "", value: %{"room_id" => "general"}}]
-    })
-
-    shutdown_channel(socket)
+    assert log =~ "missing required attr :room_id"
   end
 
   test "command event flows through Arbor.Page.Server.command/4 and replies + patches" do
@@ -172,6 +171,37 @@ defmodule Arbor.Transport.ChannelTest do
       "base_version" => 1,
       "ops" => [%{op: "replace", path: "/title", value: "Outbox"}]
     })
+
+    shutdown_channel(socket)
+  end
+
+  test "unknown command replies with an error without stopping the page server" do
+    {:ok, _reply, socket} = join_root()
+
+    assert_push("patch", %{"version" => 1})
+
+    page_pid = Map.fetch!(socket.assigns, :__arbor_page__)
+    page_down = Process.monitor(page_pid)
+
+    unknown_ref =
+      push(socket, "command", %{
+        "store_id" => [],
+        "name" => "missing",
+        "payload" => %{}
+      })
+
+    assert_reply(unknown_ref, :error, %{reason: "unknown command"})
+    refute_receive {:DOWN, ^page_down, :process, ^page_pid, _reason}
+
+    command_ref =
+      push(socket, "command", %{
+        "store_id" => [],
+        "name" => "rename",
+        "payload" => %{"title" => "Still open"}
+      })
+
+    assert_reply(command_ref, :ok, %{})
+    assert_push("patch", %{"ops" => [%{op: "replace", path: "/title", value: "Still open"}]})
 
     shutdown_channel(socket)
   end

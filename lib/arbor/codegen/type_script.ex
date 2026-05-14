@@ -25,7 +25,12 @@ defmodule Arbor.Codegen.TypeScript do
   Consumers thread the generated `<Root>.Stores` type through the
   `@arbor/client` API as the registry generic:
 
-      const cart = await connectStore<MyApp.Stores>(socket, {
+      const connection = await connect(socket)
+
+      const cart = await connection.mountStore<
+        MyApp.Stores,
+        "MyApp.Stores.CartPageStore"
+      >({
         module: "MyApp.Stores.CartPageStore",
         id: "cart:demo"
       })

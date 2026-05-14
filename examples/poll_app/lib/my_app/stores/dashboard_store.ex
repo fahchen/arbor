@@ -4,7 +4,7 @@ defmodule MyApp.Stores.DashboardStore do
   Demonstrates a stream-driven list page backed by PubSub refreshes.
   """
 
-  use Arbor.Store
+  use Arbor.Store, root: true
 
   alias MyApp.DashboardHeader
   alias MyApp.Polls
@@ -16,7 +16,7 @@ defmodule MyApp.Stores.DashboardStore do
   end
 
   @impl Arbor.Store
-  def mount(socket) do
+  def mount(_params, socket) do
     Phoenix.PubSub.subscribe(MyApp.PubSub, "dashboard")
 
     {:ok, Arbor.Stream.stream(socket, :polls, Polls.list_summaries(), reset: true)}

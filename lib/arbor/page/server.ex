@@ -43,10 +43,14 @@ defmodule Arbor.Page.Server do
   alias Arbor.Stream
   alias Arbor.Telemetry
 
-  @type start_arg() :: {module(), map(), term()}
+  @type transport_opts() :: map()
+  @type start_arg() ::
+          {module(), map(), transport_opts()} | {module(), map(), Socket.t(), transport_opts()}
   @type store_id() :: Socket.store_id()
+  @type command_name() :: Arbor.Store.command_name()
   @type command_payload() :: map()
   @type command_reply() :: map()
+  @type command_error() :: :unknown_command | :unknown_store
 
   @doc """
   Starts one page-scoped runtime for the given root store module.
@@ -58,6 +62,11 @@ defmodule Arbor.Page.Server do
   """
   @spec start_link(start_arg()) :: GenServer.on_start()
   def start_link({root_module, _params, _transport_opts} = arg) when is_atom(root_module) do
+    GenServer.start_link(__MODULE__, arg)
+  end
+
+  def start_link({root_module, _params, %Socket{}, _transport_opts} = arg)
+      when is_atom(root_module) do
     GenServer.start_link(__MODULE__, arg)
   end
 
@@ -83,36 +92,67 @@ defmodule Arbor.Page.Server do
       Arbor.Page.Server.command(pid, ["filters"], :change_query, %{"query" => "shirt"})
       #=> {:ok, %{}}
   """
-  @spec command(GenServer.server(), store_id(), atom(), command_payload()) ::
+  @spec command(GenServer.server(), store_id(), command_name(), command_payload()) ::
           {:ok, command_reply()}
   def command(server, store_id, command_name, payload)
       when is_list(store_id) and is_atom(command_name) and is_map(payload) do
     GenServer.call(server, {:command, store_id, command_name, payload})
   end
 
+  @doc """
+  Dispatches a client command whose name arrived as a string.
+
+  The command name is resolved against the addressed mounted store module's
+  declared commands before dispatch, so transports do not create atoms from
+  client input.
+
+  ## Examples
+
+      Arbor.Page.Server.command_by_name(pid, ["filters"], "change_query", %{"query" => "shirt"})
+      #=> {:ok, %{}}
+
+      Arbor.Page.Server.command_by_name(pid, [], "missing", %{})
+      #=> {:error, :unknown_command}
+  """
+  @spec command_by_name(GenServer.server(), store_id(), String.t(), command_payload()) ::
+          {:ok, command_reply()} | {:error, command_error()}
+  def command_by_name(server, store_id, command_name, payload)
+      when is_list(store_id) and is_binary(command_name) and is_map(payload) do
+    GenServer.call(server, {:command_by_name, store_id, command_name, payload})
+  end
+
   @impl GenServer
   @spec init(start_arg()) ::
           {:ok, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
   def init({root_module, params, transport_opts}) do
+    root_socket =
+      Socket.assign(
+        %Socket{id: "", parent_path: [], module: root_module, assigns: %{}, private: %{}},
+        params
+      )
+
+    init_root_runtime(root_module, params, root_socket, transport_opts)
+  end
+
+  def init({root_module, params, %Socket{} = root_socket, transport_opts}) do
+    init_root_runtime(root_module, params, root_socket, transport_opts)
+  end
+
+  @spec init_root_runtime(module(), map(), Socket.t(), transport_opts()) ::
+          {:ok, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+  defp init_root_runtime(root_module, params, %Socket{} = root_socket, transport_opts) do
     Process.flag(:trap_exit, true)
 
     transport_pid =
       if is_map(transport_opts), do: Map.get(transport_opts, :transport_pid), else: nil
 
-    root_assigns = Reconciler.normalize_assigns(root_module, params)
-
     root_socket =
-      %Socket{
-        id: "",
-        parent_path: [],
-        module: root_module,
-        assigns: %{},
-        private: %{},
-        transport_pid: transport_pid
-      }
-      |> Socket.assign(root_assigns)
+      %{root_socket | id: "", parent_path: [], module: root_module, transport_pid: transport_pid}
+      |> Socket.put_root_params(params)
       |> attach_default_hooks()
-      |> Reconciler.mount_store()
+      |> mount_root_store(params)
+      |> normalize_root_assigns()
+      |> Reconciler.init_store()
 
     store_registry =
       StoreRegistry.put(StoreRegistry.new(), [], %Entry{
@@ -146,15 +186,69 @@ defmodule Arbor.Page.Server do
     {:ok, state, {:continue, {:push_patch, envelope}}}
   end
 
+  @spec mount_root_store(Socket.t(), map()) :: Socket.t()
+  defp mount_root_store(%Socket{module: module} = socket, params)
+       when is_atom(module) and is_map(params) do
+    result =
+      if root_store?(module) do
+        module.mount(params, socket)
+      else
+        {:ok, socket}
+      end
+
+    validate_mount_result!(result, module, :mount, 2)
+  end
+
+  @spec root_store?(module()) :: boolean()
+  defp root_store?(module) when is_atom(module) do
+    function_exported?(module, :__arbor__, 1) and module.__arbor__(:root?)
+  end
+
+  @spec normalize_root_assigns(Socket.t()) :: Socket.t()
+  defp normalize_root_assigns(%Socket{module: module, assigns: assigns} = socket)
+       when is_atom(module) and is_map(assigns) do
+    %{socket | assigns: Reconciler.normalize_assigns(module, assigns)}
+  end
+
+  @spec validate_mount_result!({:ok, Socket.t()} | tuple(), module(), atom(), pos_integer()) ::
+          Socket.t()
+  defp validate_mount_result!({:ok, %Socket{} = socket}, module, fun, arity)
+       when is_atom(module) and is_atom(fun) and is_integer(arity) do
+    socket
+  end
+
+  defp validate_mount_result!(other, module, fun, arity)
+       when is_atom(module) and is_atom(fun) and is_integer(arity) do
+    raise ArgumentError,
+          "bad callback response from #{inspect(module)}.#{fun}/#{arity}: expected {:ok, %Arbor.Socket{}}, got #{inspect(other)}"
+  end
+
   @impl GenServer
   @spec handle_call(
-          {:command, store_id(), atom(), command_payload()},
+          {:command, store_id(), command_name(), command_payload()}
+          | {:command_by_name, store_id(), String.t(), command_payload()},
           GenServer.from(),
           State.t()
         ) ::
           {:reply, {:ok, command_reply()}, State.t(),
            {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+          | {:reply, {:error, command_error()}, State.t()}
   def handle_call({:command, store_id, command_name, payload}, _from, %State{} = state) do
+    handle_command_call(store_id, command_name, payload, state)
+  end
+
+  def handle_call({:command_by_name, store_id, command_name, payload}, _from, %State{} = state) do
+    case resolve_command_name(state.store_registry, store_id, command_name) do
+      {:ok, resolved_name} -> handle_command_call(store_id, resolved_name, payload, state)
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  @spec handle_command_call(store_id(), command_name(), command_payload(), State.t()) ::
+          {:reply, {:ok, command_reply()}, State.t(),
+           {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
+  defp handle_command_call(store_id, command_name, payload, %State{} = state)
+       when is_list(store_id) and is_atom(command_name) and is_map(payload) do
     base_meta = %{page_id: page_id(state), store_id: store_id, command: command_name}
     started_at = System.monotonic_time()
     Telemetry.emit([:arbor, :command, :start], %{system_time: System.system_time()}, base_meta)
@@ -197,6 +291,39 @@ defmodule Arbor.Page.Server do
     end
   end
 
+  @spec resolve_command_name(StoreRegistry.t(), store_id(), String.t()) ::
+          {:ok, command_name()} | {:error, command_error()}
+  defp resolve_command_name(%StoreRegistry{} = registry, store_id, command_name)
+       when is_list(store_id) and is_binary(command_name) do
+    case StoreRegistry.get(registry, store_id) do
+      %Entry{module: module} -> fetch_declared_command_name(module, command_name)
+      nil -> {:error, :unknown_store}
+    end
+  end
+
+  @spec fetch_declared_command_name(module(), String.t()) ::
+          {:ok, command_name()} | {:error, :unknown_command}
+  defp fetch_declared_command_name(module, command_name)
+       when is_atom(module) and is_binary(command_name) do
+    case Enum.find(declared_command_names(module), &(Atom.to_string(&1) == command_name)) do
+      nil -> {:error, :unknown_command}
+      name -> {:ok, name}
+    end
+  end
+
+  @spec declared_command_names(module()) :: [command_name()]
+  defp declared_command_names(module) when is_atom(module) do
+    if function_exported?(module, :__arbor__, 1) do
+      commands = module.__arbor__(:commands)
+
+      commands
+      |> List.wrap()
+      |> Enum.map(& &1.name)
+    else
+      []
+    end
+  end
+
   @impl GenServer
   @spec handle_continue({:push_patch, PatchEnvelope.t() | nil}, State.t()) ::
           {:noreply, State.t()}
@@ -208,7 +335,7 @@ defmodule Arbor.Page.Server do
         :ok
 
       pid when is_pid(pid) ->
-        send(pid, {:patch, envelope})
+        send(pid, patch_message(state, envelope))
     end
 
     {:noreply, state}
@@ -633,6 +760,15 @@ defmodule Arbor.Page.Server do
   end
 
   defp transport_pid(_state), do: nil
+
+  @spec patch_message(State.t(), PatchEnvelope.t()) ::
+          {:patch, PatchEnvelope.t()} | {:arbor_root_patch, String.t(), PatchEnvelope.t()}
+  defp patch_message(%State{transport: %{root_id: root_id}}, %PatchEnvelope{} = envelope)
+       when is_binary(root_id) do
+    {:arbor_root_patch, root_id, envelope}
+  end
+
+  defp patch_message(%State{}, %PatchEnvelope{} = envelope), do: {:patch, envelope}
 
   defp log_linked_process_exit(pid, reason) when is_pid(pid) do
     message = "page server linked process exited: #{inspect(pid)} reason=#{inspect(reason)}"

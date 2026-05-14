@@ -5,16 +5,16 @@ defmodule MyApp.Stores.PollRoomStore do
 
     * `stream :options, PollOption.t()` slot — server forgets values after
       flush; the client owns the materialized list.
-    * `Arbor.Stream.stream/4` on `mount/1` to seed poll options
+    * `Arbor.Stream.stream/4` on root `mount/2` to seed poll options
     * `assign_async/3` for the `:user_vote` AsyncResult field
     * `vote` command with async delivery and BDR-0020 caught-exception path
     * `reset_vote` command to clear a vote
     * `toggle_status` command (sync) to open/close the poll
-    * `Phoenix.PubSub.subscribe/2` inside `mount/1` (BDR-0005) and
+    * `Phoenix.PubSub.subscribe/2` inside root `mount/2` (BDR-0005) and
       `handle_info/2` dispatch for live cross-user updates
   """
 
-  use Arbor.Store
+  use Arbor.Store, root: true
 
   alias MyApp.PollDetail
   alias MyApp.PollOption
@@ -44,13 +44,14 @@ defmodule MyApp.Stores.PollRoomStore do
   end
 
   @impl Arbor.Store
-  def mount(socket) do
-    poll_id = socket.assigns.poll_id
+  def mount(params, socket) do
+    poll_id = Map.fetch!(params, "poll_id")
     user_id = new_user_id()
     Phoenix.PubSub.subscribe(MyApp.PubSub, "poll:" <> poll_id)
 
     socket =
       socket
+      |> Arbor.Socket.assign(:poll_id, poll_id)
       |> Arbor.Socket.assign(:user_id, user_id)
       |> Arbor.Socket.assign(:poll, Polls.get_detail(poll_id))
       |> Arbor.Stream.stream(:options, Polls.list_options(poll_id), reset: true)

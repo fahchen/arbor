@@ -67,8 +67,8 @@ defmodule Arbor.Reconciler do
         end
 
       _missing_or_module_change ->
-        {:mount, store_id, new_child_socket(parent_path, child.module, id, assigns),
-         consumed_keys}
+        {:mount, store_id,
+         new_child_socket(parent_socket, parent_path, child.module, id, assigns), consumed_keys}
     end
   end
 
@@ -95,20 +95,52 @@ defmodule Arbor.Reconciler do
   end
 
   @doc """
-  Runs the required `mount/1` callback and returns the initialized socket.
+  Runs the store initialization callback and returns the initialized socket.
 
   ## Examples
 
       iex> defmodule ReconcilerMountDocStore do
-      ...>   def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :mounted?, true)}
+      ...>   def init(socket), do: {:ok, Arbor.Socket.assign(socket, :mounted?, true)}
       ...> end
       iex> socket = %Arbor.Socket{module: ReconcilerMountDocStore}
+      iex> Arbor.Reconciler.init_store(socket).assigns.mounted?
+      true
+  """
+  @spec init_store(Socket.t()) :: Socket.t()
+  def init_store(%Socket{module: module} = socket) when is_atom(module) do
+    {result, fun, arity} =
+      cond do
+        function_exported?(module, :init, 1) ->
+          {module.init(socket), :init, 1}
+
+        function_exported?(module, :mount, 1) ->
+          {module.mount(socket), :mount, 1}
+
+        true ->
+          {{:ok, socket}, :init, 1}
+      end
+
+    validate_callback_result!(result, module, fun, arity)
+  end
+
+  @doc """
+  Runs the legacy store mount callback.
+
+  This function remains as a compatibility wrapper for callers using the old
+  `mount/1` naming. New code should call `init_store/1`.
+
+  ## Examples
+
+      iex> defmodule ReconcilerLegacyMountDocStore do
+      ...>   def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :mounted?, true)}
+      ...> end
+      iex> socket = %Arbor.Socket{module: ReconcilerLegacyMountDocStore}
       iex> Arbor.Reconciler.mount_store(socket).assigns.mounted?
       true
   """
   @spec mount_store(Socket.t()) :: Socket.t()
-  def mount_store(%Socket{module: module} = socket) when is_atom(module) do
-    validate_callback_result!(module.mount(socket), module, :mount, 1)
+  def mount_store(%Socket{} = socket) do
+    init_store(socket)
   end
 
   @doc """
@@ -178,18 +210,9 @@ defmodule Arbor.Reconciler do
       end
 
     Enum.reduce(attrs, assigns, fn %{name: name, required: required, default: default}, acc ->
-      string_name = Atom.to_string(name)
-
       cond do
         Map.has_key?(acc, name) ->
           acc
-
-        Map.has_key?(acc, string_name) ->
-          value = Map.fetch!(acc, string_name)
-
-          acc
-          |> Map.delete(string_name)
-          |> Map.put(name, value)
 
         default != Attr.no_default() ->
           Map.put(acc, name, default)
@@ -219,11 +242,17 @@ defmodule Arbor.Reconciler do
     )
   end
 
-  @spec new_child_socket([String.t()], module(), String.t(), map()) :: Socket.t()
-  defp new_child_socket(parent_path, module, id, assigns)
+  @spec new_child_socket(Socket.t(), [String.t()], module(), String.t(), map()) :: Socket.t()
+  defp new_child_socket(%Socket{} = parent_socket, parent_path, module, id, assigns)
        when is_list(parent_path) and is_atom(module) and is_binary(id) and is_map(assigns) do
     Socket.assign(
-      %Socket{id: id, parent_path: parent_path, module: module, assigns: %{}, private: %{}},
+      Socket.inherit_context(parent_socket, %Socket{
+        id: id,
+        parent_path: parent_path,
+        module: module,
+        assigns: %{},
+        private: %{}
+      }),
       assigns
     )
   end

@@ -9,8 +9,8 @@ fit that contract.
 
 The settled direction is:
 
-- roots connect by `{module, id}`
-- one physical `Phoenix.Socket` can carry many logical Arbor roots
+- clients open one Arbor connection, then mount declared roots by `{module, id}`
+- one physical `Phoenix.Socket` carries many logical Arbor roots
 - the server owns the store tree and sends patch envelopes
 - the TypeScript client materializes the tree, streams, async values, and
   store proxies
@@ -24,18 +24,26 @@ Runtime keys are deliberately stable. In particular, keep
 
 ## Public Client Shape
 
-Applications create one Phoenix socket and connect Arbor roots through it.
+Applications create one Phoenix socket, open one Arbor connection, and mount
+declared roots through that connection.
 The generated `Arbor.Stores` registry type is threaded into the client API;
-the `module` string literal then selects the concrete store type.
+the `module` string literal selects the concrete store type and is validated
+against roots declared by the backend socket module.
 
 ```ts
 const phx = new Phoenix.Socket("/socket", {
   params: { token: window.userToken },
 })
 
-const cart = await connectStore<Arbor.Stores>(phx, {
+const connection = await connect(phx)
+
+const cart = await connection.mountStore<
+  Arbor.Stores,
+  "MyApp.Stores.CartPageStore"
+>({
   module: "MyApp.Stores.CartPageStore",
   id: "cart:page",
+  params: { cart_id: "cart:page" },
 })
 
 cart.title
@@ -45,29 +53,63 @@ cart.lines.map((line) => line.name)
 const reply = await cart.dispatchCommand("checkout", {})
 ```
 
+The backend socket module declares the root-store allowlist and implements only
+Arbor callbacks. Phoenix socket and channel behaviours are adapter details.
+
+```elixir
+defmodule MyAppWeb.UserSocket do
+  use Arbor.Socket,
+    roots: [
+      MyApp.Stores.CartPageStore,
+      MyApp.Stores.DashboardStore
+    ]
+
+  @impl Arbor.Socket
+  def handle_connect(%{"token" => token}, socket) do
+    {:ok, Arbor.Socket.assign(socket, :token, token)}
+  end
+
+  @impl Arbor.Socket
+  def handle_join(_params, socket), do: {:ok, socket}
+end
+```
+
 Public rules:
 
-- callers connect a root by module name plus root id
+- callers open one connection and mount roots by module name plus root id
 - callers do not pass generated runtime values
 - callers do not decode patches, streams, or async wire values manually
+- callers may explicitly unmount mounted roots with `connection.unmountStore(rootId)`
 - child stores are exposed as nested proxies
 - streams are exposed as materialized arrays
 - async values are exposed as normalized `AsyncResult<T>`
 
 ## Identity
 
-Root connection identity is:
+Arbor connection identity is the Phoenix channel topic:
 
 ```ts
-type RootConnect = {
+type Connect = {
+  topic?: string
+}
+```
+
+The default topic is `"arbor:connection"`. The client sends an empty channel join
+payload for the connection. Auth and transport-level data should come from
+Phoenix socket params/connect_info; root business params belong to `mountStore`.
+
+Root mount identity is:
+
+```ts
+type MountStore = {
   module: string
   id: string
   params?: Record<string, unknown>
 }
 ```
 
-The transport may derive an internal channel topic, but `topic` is not public
-client API.
+The `module` string must match a root store module declared by the backend
+connection. The `id` must be unique within that connection.
 
 Mounted store identity inside a connected tree is:
 
@@ -92,10 +134,21 @@ type StoreNodeRef = {
 
 ## Wire Contract
 
-Commands target mounted stores by `store_id`:
+Mounting a declared root sends:
+
+```ts
+type MountMessage = {
+  module: string
+  id: string
+  params: Record<string, unknown>
+}
+```
+
+Commands target mounted stores by `root_id` plus `store_id`:
 
 ```ts
 type CommandMessage = {
+  root_id: string
   store_id: StoreId
   name: string
   payload: Record<string, unknown>
@@ -138,6 +191,10 @@ type PatchEnvelope = {
   ops: JsonPatchOp[]
   stream_ops: StreamOp[]
 }
+
+type ConnectionPatchEnvelope = PatchEnvelope & {
+  root_id: string
+}
 ```
 
 Envelope rules:
@@ -146,6 +203,8 @@ Envelope rules:
 - each later envelope must apply to the client's current version
 - idle render cycles emit no envelope
 - reconnect creates a fresh page runtime and fresh version sequence
+- in connection transport, every patch envelope includes `root_id`; the client
+  applies it only to the matching mounted root runtime
 - stream-typed paths never appear in `ops`
 - stream contents move through `stream_ops`
 

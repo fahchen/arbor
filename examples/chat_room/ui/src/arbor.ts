@@ -1,5 +1,5 @@
 import { Socket } from "phoenix"
-import { connectStore } from "@arbor/client"
+import { connect } from "@arbor/client"
 
 // The generated `arbor.d.ts` is ambient — tsc auto-loads it from
 // `src/generated/arbor.d.ts` via the project's `include` glob, so no
@@ -7,17 +7,16 @@ import { connectStore } from "@arbor/client"
 
 export const socket = new Socket("/socket", {})
 
-export const ROOT_MODULE = "MyApp.Stores.ChatRoomStore" as const
 export const ROOT_ID = "general" as const
 
-export const DEFAULT_JOIN_PARAMS = {
-  room_id: "general"
+export const CHAT_ROOM_ROOT = {
+  module: "MyApp.Stores.ChatRoomStore",
+  id: ROOT_ID,
+  params: {
+    room_id: "general"
+  }
 } as const
 
-export function connectRoot() {
-  return connectStore<Arbor.Stores>(socket, {
-    module: ROOT_MODULE,
-    id: ROOT_ID,
-    params: DEFAULT_JOIN_PARAMS
-  })
+export function connectArbor() {
+  return connect(socket)
 }
