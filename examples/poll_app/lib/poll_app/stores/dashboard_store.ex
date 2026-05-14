@@ -34,8 +34,7 @@ defmodule PollApp.Stores.DashboardStore do
         closed_count: closed,
         total_count: length(polls)
       },
-      # Stream-typed field — content flows via stream_ops (BDR-0014/0018).
-      polls: []
+      polls: stream(:polls)
     }
   end
 

@@ -80,9 +80,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   @impl Arbor.Store
   def render(socket) do
     %{
-      # Stream-typed fields are forced to `[]` on the wire by `Arbor.Wire`
-      # (BDR-0014/0018) — content flows via stream_ops.
-      messages: [],
+      messages: stream(:messages),
       current_user: socket.assigns.current_user,
       online_users: socket.assigns.online_users,
       last_send_status: socket.assigns.last_send_status
