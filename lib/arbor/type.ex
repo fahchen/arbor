@@ -91,7 +91,7 @@ defmodule Arbor.Type do
   Returns whether the wire-form `value` matches `type_ast`.
 
   Single-AST-node predicate. Recurses through unions, lists, literal-keyed
-  maps, `stream(T)`, and `Arbor.AsyncResult.of(T)`. For `Module.t()` and
+  maps, stream marker fields, and `Arbor.AsyncResult.of(T)`. For `Module.t()` and
   `Module.state()` references it dispatches to
   `Module.__arbor_validate_state__/1` and reduces its result to a boolean.
 
@@ -298,10 +298,8 @@ defmodule Arbor.Type do
 
   defp do_valid?(_value, {:list, _meta, [_inner]}, _host_module), do: false
 
-  defp do_valid?(value, {:stream, _meta, [inner]}, host_module) when is_list(value),
-    do: Enum.all?(value, &do_valid?(&1, inner, host_module))
-
-  defp do_valid?(_value, {:stream, _meta, [_inner]}, _host_module), do: false
+  defp do_valid?(value, {:stream, _meta, [_inner]}, _host_module),
+    do: Arbor.Stream.Marker.marker?(value)
 
   defp do_valid?(value, {:map, _meta, []}, _host_module), do: is_map(value)
 

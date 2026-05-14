@@ -146,6 +146,7 @@ defmodule Arbor.Store do
       import Arbor.DSL.State, only: [state: 1]
       import Arbor.DSL.Attr, only: [attr: 2, attr: 3]
       import Arbor.Child, only: [child: 2]
+      import Arbor.DSL.Render, only: [stream: 1]
 
       # Note: `stream_async/3,4` is intentionally NOT imported here. The
       # `state do` DSL exposes `stream_async/2,3` for declaring async-wrapped

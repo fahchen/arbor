@@ -18,7 +18,7 @@ defmodule Arbor.StreamTest do
     @impl Arbor.Store
     def mount(socket), do: {:ok, socket}
     @impl Arbor.Store
-    def render(_socket), do: %{messages: [], songs: []}
+    def render(_socket), do: %{messages: stream(:messages), songs: stream(:songs)}
     @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end

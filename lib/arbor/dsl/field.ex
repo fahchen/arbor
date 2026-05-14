@@ -35,6 +35,19 @@ defmodule Arbor.DSL.Field do
   """
   @spec field(atom(), Macro.t()) :: Macro.t()
   @spec field(atom(), Macro.t(), keyword()) :: Macro.t()
+  defmacro field(name, do: block) when is_atom(name) do
+    validate_reserved!(name)
+    type = Arbor.DSL.Schema.type_from_block(block)
+
+    quote do
+      TypedStructor.field(
+        unquote(name),
+        unquote(type),
+        []
+      )
+    end
+  end
+
   defmacro field(name, type, opts \\ []) when is_atom(name) and is_list(opts) do
     validate_reserved!(name)
 

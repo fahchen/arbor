@@ -60,8 +60,8 @@ defmodule Arbor.TestSupport.ExampleStore do
   @impl Arbor.Store
   def render(_socket) do
     %{
-      messages: [],
-      events: [],
+      messages: stream(:messages),
+      events: stream(:events),
       load_state: nil,
       child: %{id: "child"},
       money: %{amount: 0},
@@ -99,7 +99,7 @@ defmodule Arbor.TestSupport.StreamOnlyStore do
   @impl Arbor.Store
   def mount(socket), do: {:ok, socket}
   @impl Arbor.Store
-  def render(_socket), do: %{notes: []}
+  def render(_socket), do: %{notes: stream(:notes)}
   @impl Arbor.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
@@ -134,6 +134,35 @@ defmodule Arbor.TestSupport.StreamStateModule do
   state do
     stream(:lines, String.t(), limit: 25)
   end
+end
+
+defmodule Arbor.TestSupport.NestedSchemaStore do
+  @moduledoc false
+
+  use Arbor.Store
+
+  state do
+    field :message do
+      field :body, String.t()
+    end
+
+    field :feed do
+      stream :messages do
+        field :body, String.t()
+      end
+    end
+  end
+
+  @impl Arbor.Store
+  def mount(socket), do: {:ok, socket}
+
+  @impl Arbor.Store
+  def render(_socket) do
+    %{message: %{body: "hi"}, feed: %{messages: stream(:messages)}}
+  end
+
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
 end
 
 defmodule Arbor.TestSupport.MultiCommandStore do
@@ -415,6 +444,7 @@ defmodule Arbor.CompileTimeDslTest do
 
   describe "stream declarations inside state do" do
     alias Arbor.TestSupport.AsyncStreamStore
+    alias Arbor.TestSupport.NestedSchemaStore
     alias Arbor.TestSupport.StreamOnlyStore
     alias Arbor.TestSupport.StreamStateModule
 
@@ -462,6 +492,26 @@ defmodule Arbor.CompileTimeDslTest do
                StreamStateModule.__arbor__(:streams)
 
       assert {{:., _dot, [{:__aliases__, _alias, [:String]}, :t]}, _call, []} = item_type
+    end
+
+    test "nested field blocks and inline stream item schemas reflect paths" do
+      assert {:ok, %{type: {:%{}, _meta, message_pairs}}} =
+               NestedSchemaStore.__arbor__(:field, :message)
+
+      assert Enum.any?(message_pairs, fn
+               {:body, {{:., _dot, [{:__aliases__, _alias, [:String]}, :t]}, _call, []}} ->
+                 true
+
+               _other ->
+                 false
+             end)
+
+      assert [%{name: :messages, path: ["feed", "messages"], item_type: item_type}] =
+               NestedSchemaStore.__arbor__(:streams)
+
+      assert {:%{}, _meta,
+              [{:body, {{:., _dot, [{:__aliases__, _alias, [:String]}, :t]}, _call, []}}]} =
+               item_type
     end
 
     test "explicit item_key is preserved as a quoted capture, not evaluated" do

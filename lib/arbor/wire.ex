@@ -40,10 +40,7 @@ defprotocol Arbor.Wire do
           |> Map.new(fn {key, value} ->
             wire_value =
               if key in stream_field_names do
-                # Per BDR-0014 + replication/json-patch-diff, stream-typed
-                # field values never appear in JSON Patch ops. The diff sees
-                # `[]` on both sides; stream content flows via stream_ops.
-                []
+                Arbor.Wire.to_wire(Arbor.Stream.Marker.new(key))
               else
                 Arbor.Wire.to_wire(value)
               end

@@ -50,7 +50,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
     end
 
     @impl Arbor.Store
-    def render(socket), do: %{title: socket.assigns.title, messages: []}
+    def render(socket), do: %{title: socket.assigns.title, messages: stream(:messages)}
 
     @impl Arbor.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
@@ -70,7 +70,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
     def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "static")}
 
     @impl Arbor.Store
-    def render(socket), do: %{title: socket.assigns.title, messages: []}
+    def render(socket), do: %{title: socket.assigns.title, messages: stream(:messages)}
 
     command :ping
 
@@ -114,7 +114,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
              } = envelope
     end
 
-    test "mount-time stream seeds split between ops (empty list at path) and stream_ops" do
+    test "mount-time stream seeds split between marker at path and stream_ops" do
       _pid = start_supervised!({Server, {SeedingStore, %{}, %{transport_pid: self()}}})
 
       assert_receive {:patch, envelope}
@@ -126,8 +126,8 @@ defmodule Arbor.Page.PatchEnvelopeTest do
                stream_ops: stream_ops
              } = envelope
 
-      # Stream-typed `messages` field appears as [] inside the wire root.
-      assert root_wire["messages"] == []
+      # Stream-typed `messages` field appears as a marker inside the wire root.
+      assert root_wire["messages"] == %{"__arbor_stream__" => "messages"}
       assert root_wire["title"] == "Hello"
 
       # Stream content flows entirely through stream_ops.

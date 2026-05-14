@@ -33,6 +33,8 @@ defmodule Arbor.Resolver do
   alias Arbor.Reconciler
   alias Arbor.Socket
   alias Arbor.Stream
+  alias Arbor.Stream.Marker
+  alias Arbor.Stream.Placeholder
   alias Arbor.Telemetry
   alias Arbor.Wire
 
@@ -108,6 +110,7 @@ defmodule Arbor.Resolver do
     {resolved_state, resolved_registry, resolved_live_identities} =
       resolve_value(raw_state, socket, registry, store_id, live_identities)
 
+    resolved_state = normalize_stream_placeholders!(resolved_state, socket.module)
     resolved_state = inject_store_id(resolved_state, store_id)
 
     after_render_socket =
@@ -154,6 +157,134 @@ defmodule Arbor.Resolver do
   end
 
   defp inject_store_id(resolved_state, _store_id), do: resolved_state
+
+  @spec normalize_stream_placeholders!(resolved_value(), module()) :: resolved_value()
+  defp normalize_stream_placeholders!(resolved_state, module) when is_atom(module) do
+    streams_by_name = declared_streams_by_name(module)
+
+    {normalized, placements} =
+      replace_stream_placeholders!(resolved_state, [], %{}, streams_by_name)
+
+    ensure_all_streams_placed!(streams_by_name, placements)
+    normalized
+  end
+
+  @spec declared_streams_by_name(module()) :: %{optional(atom()) => map()}
+  defp declared_streams_by_name(module) do
+    if function_exported?(module, :__arbor__, 1) do
+      streams = module.__arbor__(:streams)
+
+      streams
+      |> List.wrap()
+      |> Map.new(fn %{name: name} = stream -> {name, stream} end)
+    else
+      %{}
+    end
+  end
+
+  @spec replace_stream_placeholders!(
+          resolved_value(),
+          [String.t()],
+          %{optional(atom()) => [String.t()]},
+          %{
+            optional(atom()) => map()
+          }
+        ) ::
+          {resolved_value(), %{optional(atom()) => [String.t()]}}
+  defp replace_stream_placeholders!(%Placeholder{name: name}, path, placements, streams_by_name) do
+    current_path = Enum.reverse(path)
+
+    case Map.fetch(streams_by_name, name) do
+      {:ok, %{path: ^current_path}} ->
+        if Map.has_key?(placements, name) do
+          raise ArgumentError,
+                "stream #{inspect(name)} rendered more than once"
+        end
+
+        {Marker.new(name), Map.put(placements, name, current_path)}
+
+      {:ok, %{path: expected_path}} ->
+        raise ArgumentError,
+              "stream #{inspect(name)} rendered at #{format_stream_path(current_path)}, " <>
+                "but it is declared at #{format_stream_path(expected_path)}"
+
+      :error ->
+        raise ArgumentError, "stream #{inspect(name)} is not declared"
+    end
+  end
+
+  defp replace_stream_placeholders!(value, path, placements, streams_by_name)
+       when is_map(value) and not is_struct(value) do
+    cond do
+      Map.has_key?(value, @store_id_key) ->
+        {value, placements}
+
+      Marker.marker?(value) ->
+        raise ArgumentError,
+              "stream marker at #{format_stream_path(Enum.reverse(path))} was not produced by stream(:name)"
+
+      true ->
+        Enum.reduce(value, {%{}, placements}, fn {key, child}, {acc, current_placements} ->
+          {resolved_child, next_placements} =
+            replace_stream_placeholders!(
+              child,
+              [to_string(key) | path],
+              current_placements,
+              streams_by_name
+            )
+
+          {Map.put(acc, key, resolved_child), next_placements}
+        end)
+    end
+  end
+
+  defp replace_stream_placeholders!(value, path, placements, streams_by_name)
+       when is_list(value) do
+    {resolved_list, next_placements} =
+      value
+      |> Enum.with_index()
+      |> Enum.map_reduce(placements, fn {element, index}, current_placements ->
+        {resolved_element, next_placements} =
+          replace_stream_placeholders!(
+            element,
+            [Integer.to_string(index) | path],
+            current_placements,
+            streams_by_name
+          )
+
+        {resolved_element, next_placements}
+      end)
+
+    {resolved_list, next_placements}
+  end
+
+  defp replace_stream_placeholders!(value, _path, placements, _streams_by_name) do
+    {value, placements}
+  end
+
+  @spec ensure_all_streams_placed!(%{optional(atom()) => map()}, %{
+          optional(atom()) => [String.t()]
+        }) ::
+          :ok
+  defp ensure_all_streams_placed!(streams_by_name, placements) do
+    missing =
+      streams_by_name
+      |> Map.keys()
+      |> Enum.reject(&Map.has_key?(placements, &1))
+
+    case missing do
+      [] ->
+        :ok
+
+      [name | _rest] ->
+        raise ArgumentError,
+              "declared stream #{inspect(name)} was not rendered with stream(#{inspect(name)})"
+    end
+  end
+
+  @spec format_stream_path([String.t()]) :: String.t()
+  defp format_stream_path([]), do: "/"
+  defp format_stream_path(path), do: "/" <> Enum.join(path, "/")
 
   defp resolve_value(
          %Child{} = child,

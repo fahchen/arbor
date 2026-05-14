@@ -91,6 +91,114 @@ defmodule Arbor.ResolverTest do
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
+  defmodule NestedStreamRootStore do
+    use Arbor.Store
+
+    state do
+      field :feed do
+        stream :messages do
+          field :body, String.t()
+        end
+      end
+
+      stream :users, %{id: String.t(), name: String.t()}
+    end
+
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+
+    @impl Arbor.Store
+    def render(_socket) do
+      %{feed: %{messages: stream(:messages)}, users: stream(:users)}
+    end
+
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+  end
+
+  defmodule MissingStreamRootStore do
+    use Arbor.Store
+
+    state do
+      stream :messages, String.t()
+    end
+
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
+    def render(_socket), do: %{}
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+  end
+
+  defmodule WrongStreamPathRootStore do
+    use Arbor.Store
+
+    state do
+      field :feed do
+        stream :messages, String.t()
+      end
+    end
+
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
+    def render(_socket), do: %{messages: stream(:messages)}
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+  end
+
+  defmodule DuplicateStreamRootStore do
+    use Arbor.Store
+
+    state do
+      field :feed do
+        stream :messages, String.t()
+      end
+    end
+
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+
+    @impl Arbor.Store
+    def render(_socket) do
+      %{feed: %{"messages" => stream(:messages), :messages => stream(:messages)}}
+    end
+
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+  end
+
+  defmodule ListStreamRootStore do
+    use Arbor.Store
+
+    state do
+      stream :messages, String.t()
+    end
+
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
+    def render(_socket), do: %{messages: []}
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+  end
+
+  defmodule HandWrittenStreamMarkerRootStore do
+    use Arbor.Store
+
+    state do
+      stream :messages, String.t()
+    end
+
+    @impl Arbor.Store
+    def mount(socket), do: {:ok, socket}
+    @impl Arbor.Store
+    def render(_socket), do: %{messages: %{__arbor_stream__: "messages"}}
+    @impl Arbor.Store
+    def handle_command(_name, _payload, socket), do: {:noreply, socket}
+  end
+
   defmodule ListChildStore do
     use Arbor.Store
 
@@ -574,6 +682,63 @@ defmodule Arbor.ResolverTest do
                header: %{user_name: "Alice", __arbor_store_id__: ["header"]},
                __arbor_store_id__: []
              }
+    end
+
+    test "stream placeholders render wire markers at nested declared paths" do
+      socket = root_socket(NestedStreamRootStore)
+      registry = registry(socket)
+
+      assert {:ok, resolved_root, _socket, resolved_registry} = Resolver.resolve(socket, registry)
+
+      assert %{
+               feed: %{messages: %{__arbor_stream__: "messages"}},
+               users: %{__arbor_stream__: "users"},
+               __arbor_store_id__: []
+             } = resolved_root
+
+      assert %Entry{wire_state: wire_state} = StoreRegistry.get(resolved_registry, [])
+      assert %{"feed" => %{"messages" => %{"__arbor_stream__" => "messages"}}} = wire_state
+      assert %{"users" => %{"__arbor_stream__" => "users"}} = wire_state
+    end
+
+    test "declared streams must be rendered with stream/1" do
+      socket = root_socket(MissingStreamRootStore)
+
+      assert_raise ArgumentError, ~r/declared stream :messages was not rendered/, fn ->
+        Resolver.resolve(socket, registry(socket))
+      end
+    end
+
+    test "stream placeholders must match their declared schema path" do
+      socket = root_socket(WrongStreamPathRootStore)
+
+      assert_raise ArgumentError, ~r/rendered at \/messages.*declared at \/feed\/messages/, fn ->
+        Resolver.resolve(socket, registry(socket))
+      end
+    end
+
+    test "a stream may be placed only once" do
+      socket = root_socket(DuplicateStreamRootStore)
+
+      assert_raise ArgumentError, ~r/stream :messages rendered more than once/, fn ->
+        Resolver.resolve(socket, registry(socket))
+      end
+    end
+
+    test "plain lists are not valid stream placeholders" do
+      socket = root_socket(ListStreamRootStore)
+
+      assert_raise ArgumentError, ~r/declared stream :messages was not rendered/, fn ->
+        Resolver.resolve(socket, registry(socket))
+      end
+    end
+
+    test "user-authored stream marker maps are rejected" do
+      socket = root_socket(HandWrittenStreamMarkerRootStore)
+
+      assert_raise ArgumentError, ~r/was not produced by stream\(:name\)/, fn ->
+        Resolver.resolve(socket, registry(socket))
+      end
     end
 
     test "Reordering a keyed list preserves child assigns" do

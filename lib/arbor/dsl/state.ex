@@ -56,11 +56,49 @@ defmodule Arbor.DSL.State do
   """
   @spec stream(atom(), Macro.t()) :: Macro.t()
   @spec stream(atom(), Macro.t(), keyword()) :: Macro.t()
-  defmacro stream(name, item_type, opts \\ []) when is_atom(name) and is_list(opts) do
+  defmacro stream(name, do: block) when is_atom(name) do
+    type = Arbor.DSL.Schema.stream_type(Arbor.DSL.Schema.type_from_block(block), [])
+
     quote do
       Arbor.DSL.Field.field(
         unquote(name),
-        stream(unquote(item_type)),
+        unquote(type),
+        []
+      )
+    end
+  end
+
+  defmacro stream(name, item_type) when is_atom(name) do
+    type = Arbor.DSL.Schema.stream_type(item_type, [])
+
+    quote do
+      Arbor.DSL.Field.field(
+        unquote(name),
+        unquote(type),
+        []
+      )
+    end
+  end
+
+  defmacro stream(name, opts, do: block) when is_atom(name) and is_list(opts) do
+    type = Arbor.DSL.Schema.stream_type(Arbor.DSL.Schema.type_from_block(block), opts)
+
+    quote do
+      Arbor.DSL.Field.field(
+        unquote(name),
+        unquote(type),
+        unquote(opts)
+      )
+    end
+  end
+
+  defmacro stream(name, item_type, opts) when is_atom(name) and is_list(opts) do
+    type = Arbor.DSL.Schema.stream_type(item_type, opts)
+
+    quote do
+      Arbor.DSL.Field.field(
+        unquote(name),
+        unquote(type),
         unquote(opts)
       )
     end

@@ -14,6 +14,16 @@ defmodule Arbor.WireTest do
     end
   end
 
+  defmodule StreamState do
+    @moduledoc false
+
+    use Arbor.State
+
+    state do
+      stream :messages, String.t()
+    end
+  end
+
   test "atoms convert to wire form" do
     assert Wire.to_wire(:active) == "active"
     assert Wire.to_wire(nil) == nil
@@ -39,6 +49,14 @@ defmodule Arbor.WireTest do
   test "auto-derives for Arbor.State / Arbor.Store structs" do
     state = struct!(LeafState, title: "Inbox", status: :active)
     assert Wire.to_wire(state) == %{"title" => "Inbox", "status" => "active"}
+  end
+
+  test "auto-derived stream fields serialize as markers" do
+    state = struct!(StreamState, messages: ["ignored"])
+
+    assert Wire.to_wire(state) == %{
+             "messages" => %{"__arbor_stream__" => "messages"}
+           }
   end
 
   test "raises a clear error when an unresolved Arbor.Child slips through" do

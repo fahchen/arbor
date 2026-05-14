@@ -88,6 +88,12 @@ defmodule Arbor.TypeTest do
       assert Type.valid?("Inbox", quote(do: String.t() | nil))
     end
 
+    test "stream fields validate only stream marker wire values" do
+      assert Type.valid?(%{"__arbor_stream__" => "messages"}, quote(do: stream(String.t())))
+      refute Type.valid?([], quote(do: stream(String.t())))
+      refute Type.valid?(["a"], quote(do: stream(String.t())))
+    end
+
     test "Module.t() resolves through host_module namespace" do
       assert Type.valid?(
                %{"title" => "Inbox"},
