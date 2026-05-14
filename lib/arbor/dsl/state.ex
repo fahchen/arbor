@@ -29,6 +29,11 @@ defmodule Arbor.DSL.State do
         import Arbor.DSL.Field, only: [field: 2, field: 3]
         import Arbor.DSL.Render, only: [stream: 1, async_stream: 1]
 
+        # Drop the facade's runtime `stream/3,4` and `stream_async/3,4` for
+        # the `state do` block so they cannot collide with the field-declaration
+        # macros below.
+        import Arbor.Store, except: [stream: 3, stream: 4, stream_async: 3, stream_async: 4]
+
         import Arbor.DSL.State,
           only: [
             stream: 2,
