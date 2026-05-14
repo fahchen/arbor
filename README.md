@@ -34,9 +34,6 @@ def deps do
 end
 ```
 
-Arbor uses Phoenix Channel transport internally and supports Phoenix
-`>= 1.5.3 and < 2.0.0`.
-
 For generated TypeScript types, add Arbor's compiler to the consumer app:
 
 ```elixir
