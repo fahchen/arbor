@@ -14,7 +14,7 @@ config :arbor, Arbor.Transport.ChannelTest.TestEndpoint,
   secret_key_base: String.duplicate("a", 64),
   server: false
 
-config :arbor, Arbor.Transport.SessionChannelTest.TestEndpoint,
-  pubsub_server: Arbor.Transport.SessionChannelTest.PubSub,
+config :arbor, Arbor.Transport.ConnectionChannelTest.TestEndpoint,
+  pubsub_server: Arbor.Transport.ConnectionChannelTest.PubSub,
   secret_key_base: String.duplicate("a", 64),
   server: false

@@ -72,6 +72,129 @@ defmodule Arbor.Socket do
   @typedoc "Phoenix connect_info data captured when the Arbor socket connects."
   @type connect_info() :: map()
 
+  @typedoc "Root store modules that may be mounted through this socket."
+  @type roots() :: [module()]
+
+  @typedoc "Parameters supplied when the transport socket connects."
+  @type connect_params() :: map()
+
+  @typedoc "Parameters supplied when an Arbor connection joins."
+  @type join_params() :: map()
+
+  @typedoc "Application-level denial reasons returned by socket callbacks."
+  @type callback_error_reason() :: :unauthorized | :not_found | :invalid_params | :forbidden
+
+  @typedoc "Return shape for Arbor socket lifecycle callbacks."
+  @type callback_result() :: {:ok, t()} | :error | {:error, callback_error_reason()}
+
+  @doc """
+  Runs once when the transport socket connects.
+
+  Use this callback for connection-level authentication and assigns that should
+  be visible to every Arbor connection and mounted root store.
+  """
+  @callback handle_connect(params :: connect_params(), socket :: t()) :: callback_result()
+
+  @doc """
+  Runs once when an Arbor connection joins.
+
+  Use this callback for connection-level scope checks such as workspace or
+  tenant authorization. It does not receive root store module or id data; those
+  are validated later when the root store is mounted.
+  """
+  @callback handle_join(params :: join_params(), socket :: t()) :: callback_result()
+
+  @doc """
+  Declares an Arbor socket module.
+
+  The generated module is a Phoenix socket adapter internally, but application
+  code implements only Arbor callbacks.
+
+  ## Examples
+
+      defmodule MyAppWeb.UserSocket do
+        use Arbor.Socket,
+          roots: [
+            MyApp.Stores.DashboardStore,
+            MyApp.Stores.PollRoomStore
+          ]
+
+        @impl Arbor.Socket
+        def handle_connect(%{"token" => token}, socket) do
+          {:ok, Arbor.Socket.assign(socket, :token, token)}
+        end
+
+        @impl Arbor.Socket
+        def handle_join(_params, socket), do: {:ok, socket}
+      end
+  """
+  @spec __using__(keyword()) :: Macro.t()
+  defmacro __using__(opts) do
+    quote do
+      use Arbor.Transport.Socket, unquote(opts)
+    end
+  end
+
+  @doc """
+  Fetches a declared root store module by its client module string.
+
+  The string is compared against modules already declared in the socket;
+  Arbor does not convert arbitrary strings into atoms.
+
+  ## Examples
+
+      iex> defmodule SocketFetchRootByModuleDoc do
+      ...>   defmodule Store do
+      ...>     use Arbor.Store, root: true
+      ...>
+      ...>     state do
+      ...>       field :ok, boolean()
+      ...>     end
+      ...>
+      ...>     def render(_socket), do: %{ok: true}
+      ...>     def handle_command(_name, _payload, socket), do: {:noreply, socket}
+      ...>   end
+      ...>
+      ...>   use Arbor.Socket, roots: [Store]
+      ...> end
+      iex> Arbor.Socket.fetch_root_by_module(SocketFetchRootByModuleDoc, "SocketFetchRootByModuleDoc.Store")
+      {:ok, SocketFetchRootByModuleDoc.Store}
+      iex> Arbor.Socket.fetch_root_by_module(SocketFetchRootByModuleDoc, "Missing.Store")
+      :error
+  """
+  @spec fetch_root_by_module(module(), String.t()) :: {:ok, module()} | :error
+  def fetch_root_by_module(socket_module, module_str)
+      when is_atom(socket_module) and is_binary(module_str) do
+    socket_module
+    |> socket_roots()
+    |> Enum.find(&module_matches?(&1, module_str))
+    |> case do
+      nil -> :error
+      module when is_atom(module) -> {:ok, module}
+    end
+  end
+
+  @doc false
+  @spec __normalize_roots__([Macro.t()], Macro.Env.t()) :: roots()
+  def __normalize_roots__(roots, %Macro.Env{} = env) when is_list(roots) do
+    if roots != [] and Keyword.keyword?(roots) do
+      raise ArgumentError,
+            "Arbor.Socket roots must be a list of StoreModule modules, got keyword entries: #{inspect(roots)}"
+    end
+
+    Enum.map(roots, fn module_ast ->
+      module = Macro.expand(module_ast, env)
+
+      unless is_atom(module) do
+        raise ArgumentError,
+              "Arbor.Socket root must be a module, got: #{inspect(module_ast)}"
+      end
+
+      validate_root_store!(module)
+      module
+    end)
+  end
+
   @doc """
   Returns the runtime identity (`store_id`) of the store node owning this socket.
 
@@ -363,6 +486,39 @@ defmodule Arbor.Socket do
   @spec context_private_keys() :: [private_key()]
   defp context_private_keys do
     [@session_private_key, @connect_info_private_key]
+  end
+
+  @spec socket_roots(module()) :: roots()
+  defp socket_roots(socket_module) when is_atom(socket_module) do
+    if function_exported?(socket_module, :__arbor_roots__, 0) do
+      socket_module.__arbor_roots__()
+    else
+      []
+    end
+  end
+
+  @spec module_matches?(module(), String.t()) :: boolean()
+  defp module_matches?(module, module_str) when is_atom(module) and is_binary(module_str) do
+    module |> Module.split() |> Enum.join(".") == module_str
+  end
+
+  @spec validate_root_store!(module()) :: :ok
+  defp validate_root_store!(module) when is_atom(module) do
+    cond do
+      not Code.ensure_loaded?(module) ->
+        raise ArgumentError, "Arbor.Socket root module #{inspect(module)} is not loadable"
+
+      not function_exported?(module, :__arbor__, 1) ->
+        raise ArgumentError,
+              "Arbor.Socket root module #{inspect(module)} must use Arbor.Store, root: true"
+
+      module.__arbor__(:root?) ->
+        :ok
+
+      true ->
+        raise ArgumentError,
+              "Arbor.Socket root module #{inspect(module)} must use Arbor.Store, root: true"
+    end
   end
 
   @spec ensure_changed(t()) :: map()

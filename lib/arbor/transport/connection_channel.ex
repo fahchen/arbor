@@ -1,22 +1,22 @@
 if Code.ensure_loaded?(Phoenix.Channel) do
-  defmodule Arbor.Transport.SessionChannel do
+  defmodule Arbor.Transport.ConnectionChannel do
     @moduledoc """
-    Phoenix Channel adapter for Arbor sessions with multiple root stores.
+    Phoenix Channel adapter for Arbor sockets with multiple root stores.
 
-    The channel owns one Arbor session socket and a dynamic set of root page
-    servers. `join/3` runs `Arbor.Session.join/3` once. Each client `"mount"`
-    message starts one root store page server using the shared session socket
-    assigns and private session context.
+    The channel owns one joined Arbor socket and a dynamic set of root page
+    servers. `join/3` runs the socket module's `Arbor.Socket.handle_join/2` once.
+    Each client `"mount"` message starts one root store page server using the
+    shared joined socket assigns and private connection context.
 
     ## Telemetry
 
       * `[:arbor, :channel, :join]` — `%{system_time: integer}`. Metadata:
         `module`, `id`, `topic`, `page_pid`. For this adapter `module` is the
-        Arbor session module, and `id`/`page_pid` are `nil` because roots mount
-        later inside the joined session.
+        Arbor socket module, and `id`/`page_pid` are `nil` because roots mount
+        later inside the joined connection.
       * `[:arbor, :channel, :terminate]` — `%{system_time: integer}`.
         Metadata: `module`, `id`, `topic`, `reason`, `page_pid`, `root_count`.
-        `root_count` is the number of mounted root page servers the session is
+        `root_count` is the number of mounted root page servers the connection is
         stopping.
     """
 
@@ -24,14 +24,14 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     alias Arbor.Page.PatchEnvelope
     alias Arbor.Page.Server
-    alias Arbor.Session
     alias Arbor.Socket
     alias Arbor.Telemetry
+    alias Arbor.Transport.Socket, as: TransportSocket
 
-    # Phoenix socket assign containing the Arbor session module.
-    @session_module_key :__arbor_session_module__
-    # Phoenix socket assign containing the shared Arbor session socket.
-    @session_socket_key :__arbor_session_socket__
+    # Phoenix socket assign containing the Arbor socket module.
+    @socket_module_key :__arbor_socket_module__
+    # Phoenix socket assign containing the joined Arbor socket context.
+    @connection_socket_key :__arbor_connection_socket__
     # Phoenix socket assign containing mounted root runtime entries keyed by root id.
     @mounted_roots_key :__arbor_mounted_roots__
     # Phoenix socket assign containing the channel topic.
@@ -42,21 +42,20 @@ if Code.ensure_loaded?(Phoenix.Channel) do
             {:ok, Phoenix.Socket.t()} | {:error, map()}
     def join(topic, params, %Phoenix.Socket{} = socket)
         when is_binary(topic) and is_map(params) do
-      with {:ok, session_module} <- fetch_session_module(socket),
-           session_data <- phoenix_session(socket),
-           connect_info <- phoenix_connect_info(socket),
-           arbor_socket <- build_session_socket(topic, socket, session_data, connect_info),
-           {:ok, joined_socket} <- session_module.join(params, session_data, arbor_socket) do
+      with {:ok, socket_module} <- fetch_socket_module(socket),
+           {:ok, connect_socket} <- TransportSocket.fetch_connect_socket(socket),
+           arbor_socket <- build_connection_socket(topic, connect_socket),
+           {:ok, joined_socket} <- socket_module.handle_join(params, arbor_socket) do
         Telemetry.emit(
           [:arbor, :channel, :join],
           %{system_time: System.system_time()},
-          %{module: session_module, id: nil, topic: topic, page_pid: nil}
+          %{module: socket_module, id: nil, topic: topic, page_pid: nil}
         )
 
         {:ok,
          socket
-         |> Phoenix.Socket.assign(@session_module_key, session_module)
-         |> Phoenix.Socket.assign(@session_socket_key, joined_socket)
+         |> Phoenix.Socket.assign(@socket_module_key, socket_module)
+         |> Phoenix.Socket.assign(@connection_socket_key, joined_socket)
          |> Phoenix.Socket.assign(@mounted_roots_key, %{})
          |> Phoenix.Socket.assign(@topic_key, topic)}
       else
@@ -135,13 +134,13 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     def terminate(reason, %Phoenix.Socket{} = socket) do
       roots = mounted_roots(socket)
       topic = Map.get(socket.assigns, @topic_key)
-      session_module = Map.get(socket.assigns, @session_module_key)
+      socket_module = Map.get(socket.assigns, @socket_module_key)
 
       Telemetry.emit(
         [:arbor, :channel, :terminate],
         %{system_time: System.system_time()},
         %{
-          module: session_module,
+          module: socket_module,
           id: nil,
           topic: topic,
           reason: reason,
@@ -157,52 +156,18 @@ if Code.ensure_loaded?(Phoenix.Channel) do
       :ok
     end
 
-    @spec fetch_session_module(Phoenix.Socket.t()) :: {:ok, module()} | {:error, :missing_session}
-    defp fetch_session_module(%Phoenix.Socket{handler: handler}) when is_atom(handler) do
-      if function_exported?(handler, :__arbor_session__, 0) do
-        {:ok, handler.__arbor_session__()}
+    @spec fetch_socket_module(Phoenix.Socket.t()) :: {:ok, module()} | {:error, :missing_socket}
+    defp fetch_socket_module(%Phoenix.Socket{handler: handler}) when is_atom(handler) do
+      if function_exported?(handler, :__arbor_roots__, 0) do
+        {:ok, handler}
       else
-        {:error, :missing_session}
+        {:error, :missing_socket}
       end
     end
 
-    @spec phoenix_session(Phoenix.Socket.t()) :: map()
-    defp phoenix_session(%Phoenix.Socket{assigns: assigns}) do
-      Map.get(assigns, :__arbor_session__, %{})
-    end
-
-    @spec phoenix_connect_info(Phoenix.Socket.t()) :: map()
-    defp phoenix_connect_info(%Phoenix.Socket{assigns: assigns}) do
-      Map.get(assigns, :__arbor_connect_info__, %{})
-    end
-
-    @spec build_session_socket(String.t(), Phoenix.Socket.t(), map(), map()) :: Socket.t()
-    defp build_session_socket(topic, %Phoenix.Socket{} = phoenix_socket, session, connect_info)
-         when is_binary(topic) and is_map(session) and is_map(connect_info) do
-      %Socket{
-        assigns: shared_assigns(phoenix_socket),
-        private: %{},
-        topic: topic,
-        transport_pid: self()
-      }
-      |> Socket.put_session(session)
-      |> Socket.put_connect_info(connect_info)
-    end
-
-    @spec shared_assigns(Phoenix.Socket.t()) :: map()
-    defp shared_assigns(%Phoenix.Socket{assigns: assigns}) do
-      assigns
-      |> Enum.reject(fn {key, _value} -> internal_assign_key?(key) end)
-      |> Map.new()
-    end
-
-    @spec internal_assign_key?(atom() | String.t()) :: boolean()
-    defp internal_assign_key?(key) when is_atom(key) do
-      key |> Atom.to_string() |> String.starts_with?("__arbor_")
-    end
-
-    defp internal_assign_key?(key) when is_binary(key) do
-      String.starts_with?(key, "__arbor_")
+    @spec build_connection_socket(String.t(), Socket.t()) :: Socket.t()
+    defp build_connection_socket(topic, %Socket{} = connect_socket) when is_binary(topic) do
+      %{connect_socket | topic: topic, transport_pid: self()}
     end
 
     @spec fetch_root_id(map()) :: {:ok, String.t()} | {:error, :missing_root_id}
@@ -235,8 +200,8 @@ if Code.ensure_loaded?(Phoenix.Channel) do
             {:ok, module()} | {:error, :unknown_root}
     defp fetch_declared_root(%Phoenix.Socket{} = socket, module_str) when is_binary(module_str) do
       socket.assigns
-      |> Map.fetch!(@session_module_key)
-      |> Session.fetch_root_by_module(module_str)
+      |> Map.fetch!(@socket_module_key)
+      |> Socket.fetch_root_by_module(module_str)
       |> case do
         {:ok, module} -> {:ok, module}
         :error -> {:error, :unknown_root}
@@ -255,14 +220,14 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     end
 
     @spec start_root_page(module(), String.t(), map(), Phoenix.Socket.t()) ::
-            {:ok, pid()} | {:error, :missing_session_socket}
+            {:ok, pid()} | {:error, :missing_connection_socket}
     defp start_root_page(root_module, root_id, params, %Phoenix.Socket{} = socket)
          when is_atom(root_module) and is_binary(root_id) and is_map(params) do
-      case Map.fetch(socket.assigns, @session_socket_key) do
-        {:ok, %Socket{} = session_socket} ->
+      case Map.fetch(socket.assigns, @connection_socket_key) do
+        {:ok, %Socket{} = connection_socket} ->
           root_socket =
-            Socket.inherit_context(session_socket, %Socket{
-              assigns: session_socket.assigns,
+            Socket.inherit_context(connection_socket, %Socket{
+              assigns: connection_socket.assigns,
               private: %{},
               topic: Map.get(socket.assigns, @topic_key),
               transport_pid: self()
@@ -273,7 +238,7 @@ if Code.ensure_loaded?(Phoenix.Channel) do
           )
 
         :error ->
-          {:error, :missing_session_socket}
+          {:error, :missing_connection_socket}
       end
     end
 
@@ -307,7 +272,7 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     @spec stop_root(pid(), term()) :: :ok
     defp stop_root(pid, reason) when is_pid(pid) do
       # Page servers are started with `start_link/1`; unlink before controlled
-      # stops so unmounting one root does not terminate the session channel.
+      # stops so unmounting one root does not terminate the connection channel.
       Process.unlink(pid)
 
       if Process.alive?(pid) do
@@ -332,8 +297,8 @@ if Code.ensure_loaded?(Phoenix.Channel) do
             | :invalid_params
             | :missing_field
             | :missing_root_id
-            | :missing_session
-            | :missing_session_socket
+            | :missing_connection_socket
+            | :missing_socket
             | :not_root_store
             | :unauthorized
             | :unknown_root
@@ -342,8 +307,8 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     defp error_reason(:invalid_params), do: "params must be a map"
     defp error_reason(:missing_field), do: "missing required field"
     defp error_reason(:missing_root_id), do: "missing root id"
-    defp error_reason(:missing_session), do: "missing Arbor session"
-    defp error_reason(:missing_session_socket), do: "missing Arbor session socket"
+    defp error_reason(:missing_connection_socket), do: "missing Arbor connection socket"
+    defp error_reason(:missing_socket), do: "missing Arbor socket"
     defp error_reason(:not_root_store), do: "declared store is not a root store"
     defp error_reason(:unauthorized), do: "unauthorized"
     defp error_reason(:unknown_root), do: "unknown root"

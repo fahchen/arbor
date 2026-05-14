@@ -28,7 +28,7 @@ Applications create one Phoenix socket, open one Arbor connection, and mount
 declared roots through that connection.
 The generated `Arbor.Stores` registry type is threaded into the client API;
 the `module` string literal selects the concrete store type and is validated
-against roots declared by the backend connection module.
+against roots declared by the backend socket module.
 
 ```ts
 const phx = new Phoenix.Socket("/socket", {
@@ -51,6 +51,27 @@ cart.header.title
 cart.lines.map((line) => line.name)
 
 const reply = await cart.dispatchCommand("checkout", {})
+```
+
+The backend socket module declares the root-store allowlist and implements only
+Arbor callbacks. Phoenix socket and channel behaviours are adapter details.
+
+```elixir
+defmodule MyAppWeb.UserSocket do
+  use Arbor.Socket,
+    roots: [
+      MyApp.Stores.CartPageStore,
+      MyApp.Stores.DashboardStore
+    ]
+
+  @impl Arbor.Socket
+  def handle_connect(%{"token" => token}, socket) do
+    {:ok, Arbor.Socket.assign(socket, :token, token)}
+  end
+
+  @impl Arbor.Socket
+  def handle_join(_params, socket), do: {:ok, socket}
+end
 ```
 
 Public rules:

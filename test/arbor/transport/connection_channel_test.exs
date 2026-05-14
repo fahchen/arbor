@@ -1,11 +1,11 @@
-defmodule Arbor.Transport.SessionChannelTest do
+defmodule Arbor.Transport.ConnectionChannelTest do
   use ExUnit.Case, async: true
 
   defmodule TestEndpoint do
     @moduledoc false
     use Phoenix.Endpoint, otp_app: :arbor
 
-    socket("/arbor", Arbor.Transport.SessionChannelTest.ArborSocket,
+    socket("/arbor", Arbor.Transport.ConnectionChannelTest.ArborSocket,
       websocket: false,
       longpoll: false
     )
@@ -117,38 +117,36 @@ defmodule Arbor.Transport.SessionChannelTest do
     end
   end
 
-  defmodule AppSession do
+  defmodule ArborSocket do
     @moduledoc false
-    use Arbor.Session,
+    use Arbor.Socket,
       roots: [
-        Arbor.Transport.SessionChannelTest.AlphaRootStore,
-        Arbor.Transport.SessionChannelTest.BetaRootStore
+        Arbor.Transport.ConnectionChannelTest.AlphaRootStore,
+        Arbor.Transport.ConnectionChannelTest.BetaRootStore
       ]
 
-    @impl Arbor.Session
-    def join(params, session, socket) do
-      test_pid = Map.fetch!(session, "test_pid")
-      send(test_pid, {:session_join, params, socket.assigns.current_user})
+    @impl Arbor.Socket
+    def handle_connect(%{"current_user" => current_user}, socket) do
+      {:ok, Arbor.Socket.assign(socket, :current_user, current_user)}
+    end
 
-      socket = Arbor.Socket.assign(socket, :current_user, socket.assigns.current_user)
+    @impl Arbor.Socket
+    def handle_join(params, socket) do
+      test_pid = socket |> Arbor.Socket.session() |> Map.fetch!("test_pid")
+      send(test_pid, {:connection_join, params, socket.assigns.current_user})
 
       {:ok, socket}
     end
   end
 
-  defmodule ArborSocket do
-    @moduledoc false
-    use Arbor.Transport.Socket, session: Arbor.Transport.SessionChannelTest.AppSession
-  end
-
   import Phoenix.ChannelTest
 
   @endpoint TestEndpoint
-  @alpha_module_str "Arbor.Transport.SessionChannelTest.AlphaRootStore"
-  @beta_module_str "Arbor.Transport.SessionChannelTest.BetaRootStore"
+  @alpha_module_str "Arbor.Transport.ConnectionChannelTest.AlphaRootStore"
+  @beta_module_str "Arbor.Transport.ConnectionChannelTest.BetaRootStore"
 
   setup_all do
-    start_supervised!({Phoenix.PubSub, name: Arbor.Transport.SessionChannelTest.PubSub})
+    start_supervised!({Phoenix.PubSub, name: Arbor.Transport.ConnectionChannelTest.PubSub})
     start_supervised!(TestEndpoint)
     :ok
   end
@@ -158,10 +156,10 @@ defmodule Arbor.Transport.SessionChannelTest do
     :ok
   end
 
-  test "session join runs once and shared assigns/session are visible to mounted roots and children" do
-    {:ok, _reply, socket} = join_session()
+  test "connection join runs once and shared assigns/session are visible to mounted roots and children" do
+    {:ok, _reply, socket} = join_connection()
 
-    assert_receive {:session_join, %{"scope" => "main"}, "connect-user"}
+    assert_receive {:connection_join, %{"scope" => "main"}, "connect-user"}
 
     mount_ref =
       push(socket, "mount", %{
@@ -215,12 +213,12 @@ defmodule Arbor.Transport.SessionChannelTest do
 
     assert is_pid(alpha_pid)
     assert is_pid(beta_pid)
-    refute_receive {:session_join, _params, _current_user}
+    refute_receive {:connection_join, _params, _current_user}
   end
 
   test "command routes through root_id and patches only that root" do
-    {:ok, _reply, socket} = join_session()
-    assert_receive {:session_join, _params, _current_user}
+    {:ok, _reply, socket} = join_connection()
+    assert_receive {:connection_join, _params, _current_user}
 
     mount_ref =
       push(socket, "mount", %{
@@ -256,8 +254,8 @@ defmodule Arbor.Transport.SessionChannelTest do
   end
 
   test "malformed command payload replies with an error without stopping mounted roots" do
-    {:ok, _reply, socket} = join_session()
-    assert_receive {:session_join, _params, _current_user}
+    {:ok, _reply, socket} = join_connection()
+    assert_receive {:connection_join, _params, _current_user}
 
     mount_ref =
       push(socket, "mount", %{
@@ -295,8 +293,8 @@ defmodule Arbor.Transport.SessionChannelTest do
   end
 
   test "mount rejects undeclared roots" do
-    {:ok, _reply, socket} = join_session()
-    assert_receive {:session_join, _params, _current_user}
+    {:ok, _reply, socket} = join_connection()
+    assert_receive {:connection_join, _params, _current_user}
 
     unknown_ref =
       push(socket, "mount", %{"module" => "Unknown.RootStore", "id" => "unknown", "params" => %{}})
@@ -305,8 +303,8 @@ defmodule Arbor.Transport.SessionChannelTest do
   end
 
   test "mount requires an id field" do
-    {:ok, _reply, socket} = join_session()
-    assert_receive {:session_join, _params, _current_user}
+    {:ok, _reply, socket} = join_connection()
+    assert_receive {:connection_join, _params, _current_user}
 
     legacy_ref =
       push(socket, "mount", %{
@@ -320,8 +318,8 @@ defmodule Arbor.Transport.SessionChannelTest do
   end
 
   test "mount rejects duplicate root ids" do
-    {:ok, _reply, socket} = join_session()
-    assert_receive {:session_join, _params, _current_user}
+    {:ok, _reply, socket} = join_connection()
+    assert_receive {:connection_join, _params, _current_user}
 
     first_ref =
       push(socket, "mount", %{
@@ -347,8 +345,8 @@ defmodule Arbor.Transport.SessionChannelTest do
   end
 
   test "unmount stops only the addressed root store" do
-    {:ok, _reply, socket} = join_session()
-    assert_receive {:session_join, _params, _current_user}
+    {:ok, _reply, socket} = join_connection()
+    assert_receive {:connection_join, _params, _current_user}
 
     alpha_ref =
       push(socket, "mount", %{
@@ -407,9 +405,9 @@ defmodule Arbor.Transport.SessionChannelTest do
     assert_reply(second_unmount_ref, :error, %{reason: "unknown root"})
   end
 
-  test "leaving the session channel stops all mounted root stores" do
-    {:ok, _reply, socket} = join_session()
-    assert_receive {:session_join, _params, _current_user}
+  test "leaving the connection channel stops all mounted root stores" do
+    {:ok, _reply, socket} = join_connection()
+    assert_receive {:connection_join, _params, _current_user}
 
     alpha_ref =
       push(socket, "mount", %{
@@ -445,13 +443,20 @@ defmodule Arbor.Transport.SessionChannelTest do
     assert_receive {:DOWN, ^beta_down, :process, ^beta_pid, _reason}
   end
 
-  defp join_session do
+  defp join_connection do
     session = %{"test_pid" => self(), "user_id" => "u1"}
     connect_info = %{session: session, peer_data: %{address: {127, 0, 0, 1}}}
 
-    ArborSocket
-    |> socket("user_id", %{current_user: "connect-user"})
-    |> Arbor.Transport.Socket.assign_connect_context(%{}, connect_info)
-    |> subscribe_and_join(Arbor.Transport.SessionChannel, "arbor:connection", %{"scope" => "main"})
+    phoenix_socket = socket(ArborSocket, "user_id", %{})
+
+    {:ok, connected_socket} =
+      ArborSocket.connect(%{"current_user" => "connect-user"}, phoenix_socket, connect_info)
+
+    subscribe_and_join(
+      connected_socket,
+      Arbor.Transport.ConnectionChannel,
+      "arbor:connection",
+      %{"scope" => "main"}
+    )
   end
 end

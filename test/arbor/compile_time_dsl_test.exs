@@ -327,9 +327,9 @@ defmodule Arbor.CompileTimeDslTest do
     end)
   end
 
-  test "sessions cannot declare non-root stores as roots" do
+  test "sockets cannot declare non-root stores as roots" do
     source = """
-    defmodule Arbor.TestSupport.NonRootSessionStore do
+    defmodule Arbor.TestSupport.NonRootSocketStore do
       @moduledoc false
       use Arbor.Store
 
@@ -344,9 +344,9 @@ defmodule Arbor.CompileTimeDslTest do
       def handle_command(_name, _payload, socket), do: {:noreply, socket}
     end
 
-    defmodule Arbor.TestSupport.InvalidRootSession do
+    defmodule Arbor.TestSupport.InvalidRootSocket do
       @moduledoc false
-      use Arbor.Session, roots: [Arbor.TestSupport.NonRootSessionStore]
+      use Arbor.Socket, roots: [Arbor.TestSupport.NonRootSocketStore]
     end
     """
 
@@ -355,9 +355,9 @@ defmodule Arbor.CompileTimeDslTest do
     end
   end
 
-  test "sessions declare roots as module lists" do
+  test "sockets declare roots as module lists" do
     source = """
-    defmodule Arbor.TestSupport.NamedRootSessionStore do
+    defmodule Arbor.TestSupport.NamedRootSocketStore do
       @moduledoc false
       use Arbor.Store, root: true
 
@@ -372,9 +372,9 @@ defmodule Arbor.CompileTimeDslTest do
       def handle_command(_name, _payload, socket), do: {:noreply, socket}
     end
 
-    defmodule Arbor.TestSupport.InvalidNamedRootSession do
+    defmodule Arbor.TestSupport.InvalidNamedRootSocket do
       @moduledoc false
-      use Arbor.Session, roots: [named: Arbor.TestSupport.NamedRootSessionStore]
+      use Arbor.Socket, roots: [named: Arbor.TestSupport.NamedRootSocketStore]
     end
     """
 
