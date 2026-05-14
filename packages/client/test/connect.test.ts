@@ -337,7 +337,7 @@ describe("connect", () => {
     expect(betaListener).toHaveBeenCalledTimes(1)
   })
 
-  test("mountStore rejects duplicate root ids in one connection", async () => {
+  test("mountStore reuses the existing root for duplicate ids in one connection", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
     const connectionPromise = connect(socket)
@@ -350,16 +350,20 @@ describe("connect", () => {
       id: "shared-root"
     })
     await Promise.resolve()
+    const firstPushCount = channel.pushes.length
     lastPush(channel).push.resolve("ok", { root_id: "shared-root" })
     channel.emit("patch", initialConnectionEnvelope("shared-root", rootState()))
-    await firstPromise
+    const firstProxy = await firstPromise
 
-    await expect(
-      connection.mountStore<TestStores, "Test.Store">({
-        module: "Test.Store",
-        id: "shared-root"
-      })
-    ).rejects.toThrow(/already mounted/)
+    const secondProxy = await connection.mountStore<TestStores, "Test.Store">({
+      module: "Test.Store",
+      id: "shared-root"
+    })
+
+    expect(secondProxy).toBe(firstProxy)
+    // No second mount push: dedup reuses the in-memory entry. The server is
+    // the source of truth for duplicate-mount errors; locally we just attach.
+    expect(channel.pushes.length).toBe(firstPushCount)
   })
 
   test("snapshot returns a plain object tree", async () => {
