@@ -838,4 +838,98 @@ defmodule Arbor.Async do
       end
     end)
   end
+
+  # ---------------------------------------------------------------------------
+  # Compile-time entry points used by `Arbor.Store`'s facade macros.
+  #
+  # Each `__<name>_async__/5` is invoked from within a `defmacro` and runs at
+  # compile time. It runs the socket-capture lint against the user fun AST and
+  # returns the quoted runtime call. Keeping the lint here (rather than in a
+  # standalone macros module) means the facade only has to ferry `__CALLER__`.
+  # ---------------------------------------------------------------------------
+
+  @doc false
+  @spec __assign_async__(Macro.t(), Macro.t(), Macro.t(), Macro.t(), Macro.Env.t()) :: Macro.t()
+  def __assign_async__(socket, key_or_keys, fun, opts, caller_env) do
+    __warn_on_socket_capture__(fun, :assign_async, caller_env)
+
+    quote do
+      Arbor.Async.assign_async(
+        unquote(socket),
+        unquote(key_or_keys),
+        unquote(fun),
+        unquote(opts)
+      )
+    end
+  end
+
+  @doc false
+  @spec __start_async__(Macro.t(), Macro.t(), Macro.t(), Macro.t(), Macro.Env.t()) :: Macro.t()
+  def __start_async__(socket, name, fun, opts, caller_env) do
+    __warn_on_socket_capture__(fun, :start_async, caller_env)
+
+    quote do
+      Arbor.Async.start_async(
+        unquote(socket),
+        unquote(name),
+        unquote(fun),
+        unquote(opts)
+      )
+    end
+  end
+
+  @doc false
+  @spec __stream_async__(Macro.t(), Macro.t(), Macro.t(), Macro.t(), Macro.Env.t()) :: Macro.t()
+  def __stream_async__(socket, name, fun, opts, caller_env) do
+    __warn_on_socket_capture__(fun, :stream_async, caller_env)
+
+    quote do
+      Arbor.Async.stream_async(
+        unquote(socket),
+        unquote(name),
+        unquote(fun),
+        unquote(opts)
+      )
+    end
+  end
+
+  # Warn at compile time when the user fun closes over `socket`. Captured
+  # sockets are frozen snapshots and risk data races against the next
+  # handler's mutations — bind locals before the fn instead.
+  @spec __warn_on_socket_capture__(Macro.t(), atom(), Macro.Env.t()) :: :ok
+  defp __warn_on_socket_capture__(fun_ast, fun_name, caller) do
+    if __captures_socket__(fun_ast) do
+      IO.warn(
+        "#{fun_name}/3,4: the task fn captures `socket`. " <>
+          "Capturing the socket inside an async fun frozen at call time risks data races; " <>
+          "bind the values you need to local variables before the fn instead.",
+        Macro.Env.stacktrace(caller)
+      )
+    end
+
+    :ok
+  end
+
+  # Only walk literal `fn …` or `&…` captures so calls like
+  # `start_async(socket, :foo, build_fn(socket))` — where `socket` flows
+  # through a helper rather than being captured by the task fun — don't
+  # trigger a false warning.
+  @spec __captures_socket__(Macro.t()) :: boolean()
+  defp __captures_socket__({:fn, _meta, _clauses} = ast), do: __walk_for_socket__(ast)
+  defp __captures_socket__({:&, _meta, _args} = ast), do: __walk_for_socket__(ast)
+  defp __captures_socket__(_other), do: false
+
+  @spec __walk_for_socket__(Macro.t()) :: boolean()
+  defp __walk_for_socket__(ast) do
+    {_ast, captured?} =
+      Macro.prewalk(ast, false, fn
+        {:socket, _meta, ctx} = node, _acc when is_atom(ctx) ->
+          {node, true}
+
+        node, acc ->
+          {node, acc}
+      end)
+
+    captured?
+  end
 end

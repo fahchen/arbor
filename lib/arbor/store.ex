@@ -196,64 +196,36 @@ defmodule Arbor.Store do
   defdelegate detach_hook(socket, name, stage), to: Lifecycle
 
   # ---------------------------------------------------------------------------
-  # Async helpers — defmacros that lint at compile time and lower to
-  # `Arbor.Async.{assign,start,stream}_async/3,4`.
+  # Async helpers — defmacros that ferry `__CALLER__` into
+  # `Arbor.Async.__<name>__/5` so the socket-capture lint runs at compile
+  # time before lowering to the runtime call.
   # ---------------------------------------------------------------------------
 
   @doc "See `Arbor.Async.assign_async/3,4`."
   defmacro assign_async(socket, key_or_keys, fun) do
-    __warn_on_socket_capture__(fun, :assign_async, __CALLER__)
-
-    quote do
-      Arbor.Async.assign_async(unquote(socket), unquote(key_or_keys), unquote(fun))
-    end
+    Arbor.Async.__assign_async__(socket, key_or_keys, fun, [], __CALLER__)
   end
 
   defmacro assign_async(socket, key_or_keys, fun, opts) do
-    __warn_on_socket_capture__(fun, :assign_async, __CALLER__)
-
-    quote do
-      Arbor.Async.assign_async(
-        unquote(socket),
-        unquote(key_or_keys),
-        unquote(fun),
-        unquote(opts)
-      )
-    end
+    Arbor.Async.__assign_async__(socket, key_or_keys, fun, opts, __CALLER__)
   end
 
   @doc "See `Arbor.Async.start_async/3,4`."
   defmacro start_async(socket, name, fun) do
-    __warn_on_socket_capture__(fun, :start_async, __CALLER__)
-
-    quote do
-      Arbor.Async.start_async(unquote(socket), unquote(name), unquote(fun))
-    end
+    Arbor.Async.__start_async__(socket, name, fun, [], __CALLER__)
   end
 
   defmacro start_async(socket, name, fun, opts) do
-    __warn_on_socket_capture__(fun, :start_async, __CALLER__)
-
-    quote do
-      Arbor.Async.start_async(unquote(socket), unquote(name), unquote(fun), unquote(opts))
-    end
+    Arbor.Async.__start_async__(socket, name, fun, opts, __CALLER__)
   end
 
   @doc "See `Arbor.Async.stream_async/3,4`."
   defmacro stream_async(socket, name, fun) do
-    __warn_on_socket_capture__(fun, :stream_async, __CALLER__)
-
-    quote do
-      Arbor.Async.stream_async(unquote(socket), unquote(name), unquote(fun))
-    end
+    Arbor.Async.__stream_async__(socket, name, fun, [], __CALLER__)
   end
 
   defmacro stream_async(socket, name, fun, opts) do
-    __warn_on_socket_capture__(fun, :stream_async, __CALLER__)
-
-    quote do
-      Arbor.Async.stream_async(unquote(socket), unquote(name), unquote(fun), unquote(opts))
-    end
+    Arbor.Async.__stream_async__(socket, name, fun, opts, __CALLER__)
   end
 
   @doc "See `Arbor.Async.cancel_async/2,3`."
@@ -279,49 +251,6 @@ defmodule Arbor.Store do
     quote do
       %Arbor.Stream.AsyncPlaceholder{name: unquote(name)}
     end
-  end
-
-  # ---------------------------------------------------------------------------
-  # Internal: socket-capture lint shared by the async macros above.
-  # Lifted from `Arbor.Async.Macros` so the facade owns the warning.
-  # ---------------------------------------------------------------------------
-
-  @doc false
-  @spec __warn_on_socket_capture__(Macro.t(), atom(), Macro.Env.t()) :: :ok
-  def __warn_on_socket_capture__(fun_ast, fun_name, caller) do
-    if __captures_socket__(fun_ast) do
-      IO.warn(
-        "#{fun_name}/3,4: the task fn captures `socket`. " <>
-          "Capturing the socket inside an async fun frozen at call time risks data races; " <>
-          "bind the values you need to local variables before the fn instead.",
-        Macro.Env.stacktrace(caller)
-      )
-    end
-
-    :ok
-  end
-
-  # Only walk literal `fn …` or `&…` captures so calls like
-  # `start_async(socket, :foo, build_fn(socket))` —
-  # where `socket` flows through a helper rather than being captured by the
-  # task fun — don't trigger a false warning.
-  @spec __captures_socket__(Macro.t()) :: boolean()
-  defp __captures_socket__({:fn, _meta, _clauses} = ast), do: __walk_for_socket__(ast)
-  defp __captures_socket__({:&, _meta, _args} = ast), do: __walk_for_socket__(ast)
-  defp __captures_socket__(_other), do: false
-
-  @spec __walk_for_socket__(Macro.t()) :: boolean()
-  defp __walk_for_socket__(ast) do
-    {_ast, captured?} =
-      Macro.prewalk(ast, false, fn
-        {:socket, _meta, ctx} = node, _acc when is_atom(ctx) ->
-          {node, true}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    captured?
   end
 
   @doc false
