@@ -88,13 +88,14 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     def handle_in("command", payload, %Phoenix.Socket{} = socket) when is_map(payload) do
       with {:ok, name} <- fetch_string(payload, "name"),
            {:ok, root_id} <- fetch_string(payload, "root_id"),
-           {:ok, page_pid} <- fetch_root_pid(socket, root_id) do
-        store_id = Map.get(payload, "store_id", [])
-        command_payload = Map.get(payload, "payload", %{})
-        command_name = String.to_existing_atom(name)
-
-        {:ok, reply} = Server.command(page_pid, store_id, command_name, command_payload)
-
+           {:ok, page_pid} <- fetch_root_pid(socket, root_id),
+           {:ok, reply} <-
+             Server.command_by_name(
+               page_pid,
+               Map.get(payload, "store_id", []),
+               name,
+               Map.get(payload, "payload", %{})
+             ) do
         {:reply, {:ok, reply}, socket}
       else
         {:error, reason} -> {:reply, {:error, %{reason: error_reason(reason)}}, socket}
@@ -301,7 +302,9 @@ if Code.ensure_loaded?(Phoenix.Channel) do
             | :missing_socket
             | :not_root_store
             | :unauthorized
+            | :unknown_command
             | :unknown_root
+            | :unknown_store
           ) :: String.t()
     defp error_reason(:already_mounted), do: "root already mounted"
     defp error_reason(:invalid_params), do: "params must be a map"
@@ -311,6 +314,8 @@ if Code.ensure_loaded?(Phoenix.Channel) do
     defp error_reason(:missing_socket), do: "missing Arbor socket"
     defp error_reason(:not_root_store), do: "declared store is not a root store"
     defp error_reason(:unauthorized), do: "unauthorized"
+    defp error_reason(:unknown_command), do: "unknown command"
     defp error_reason(:unknown_root), do: "unknown root"
+    defp error_reason(:unknown_store), do: "unknown store"
   end
 end

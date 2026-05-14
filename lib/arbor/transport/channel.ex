@@ -156,18 +156,20 @@ if Code.ensure_loaded?(Phoenix.Channel) do
 
     @doc false
     @spec __handle_command__(map(), Phoenix.Socket.t()) ::
-            {:reply, {:ok, map()}, Phoenix.Socket.t()}
+            {:reply, {:ok, map()} | {:error, map()}, Phoenix.Socket.t()}
     def __handle_command__(%{"name" => name} = payload, %Phoenix.Socket{} = socket)
         when is_binary(name) do
       page_pid = Map.fetch!(socket.assigns, :__arbor_page__)
-      store_id = Map.get(payload, "store_id", [])
-      command_payload = Map.get(payload, "payload", %{})
 
-      command_name = String.to_existing_atom(name)
-
-      {:ok, reply} = Server.command(page_pid, store_id, command_name, command_payload)
-
-      {:reply, {:ok, reply}, socket}
+      case Server.command_by_name(
+             page_pid,
+             Map.get(payload, "store_id", []),
+             name,
+             Map.get(payload, "payload", %{})
+           ) do
+        {:ok, reply} -> {:reply, {:ok, reply}, socket}
+        {:error, reason} -> {:reply, {:error, %{reason: error_reason(reason)}}, socket}
+      end
     end
 
     @doc false
@@ -206,6 +208,9 @@ if Code.ensure_loaded?(Phoenix.Channel) do
         _other -> {:error, "missing #{key}"}
       end
     end
+
+    defp error_reason(:unknown_command), do: "unknown command"
+    defp error_reason(:unknown_store), do: "unknown store"
 
     defp resolve_root(channel_module, module_str) do
       allowlist = channel_module.__arbor_stores__()

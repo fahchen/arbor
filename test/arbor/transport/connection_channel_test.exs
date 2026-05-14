@@ -292,6 +292,49 @@ defmodule Arbor.Transport.ConnectionChannelTest do
     assert_push("patch", %{"root_id" => "beta-1", "ops" => [%{path: "/label"}]})
   end
 
+  test "unknown command replies with an error without stopping mounted roots" do
+    {:ok, _reply, socket} = join_connection()
+    assert_receive {:connection_join, _params, _current_user}
+
+    mount_ref =
+      push(socket, "mount", %{
+        "module" => @alpha_module_str,
+        "id" => "alpha-1",
+        "params" => %{"room_id" => "general"}
+      })
+
+    assert_reply(mount_ref, :ok, %{"root_id" => "alpha-1"})
+    assert_receive {:alpha_mount, alpha_pid, _params, _current_user}
+    assert_receive {:alpha_init, "general"}
+    assert_receive {:child_init, _session, _connect_info}
+    assert_push("patch", %{"root_id" => "alpha-1"})
+
+    alpha_down = Process.monitor(alpha_pid)
+
+    unknown_ref =
+      push(socket, "command", %{
+        "root_id" => "alpha-1",
+        "store_id" => ["child"],
+        "name" => "missing",
+        "payload" => %{}
+      })
+
+    assert_reply(unknown_ref, :error, %{reason: "unknown command"})
+    refute_receive {:DOWN, ^alpha_down, :process, ^alpha_pid, _reason}
+
+    command_ref =
+      push(socket, "command", %{
+        "root_id" => "alpha-1",
+        "store_id" => [],
+        "name" => "rename",
+        "payload" => %{"room_id" => "still-mounted"}
+      })
+
+    assert_reply(command_ref, :ok, %{})
+    assert_push("patch", %{"root_id" => "alpha-1", "ops" => ops})
+    assert %{op: "replace", path: "/room_id", value: "still-mounted"} in ops
+  end
+
   test "mount rejects undeclared roots" do
     {:ok, _reply, socket} = join_connection()
     assert_receive {:connection_join, _params, _current_user}

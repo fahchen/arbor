@@ -175,6 +175,37 @@ defmodule Arbor.Transport.ChannelTest do
     shutdown_channel(socket)
   end
 
+  test "unknown command replies with an error without stopping the page server" do
+    {:ok, _reply, socket} = join_root()
+
+    assert_push("patch", %{"version" => 1})
+
+    page_pid = Map.fetch!(socket.assigns, :__arbor_page__)
+    page_down = Process.monitor(page_pid)
+
+    unknown_ref =
+      push(socket, "command", %{
+        "store_id" => [],
+        "name" => "missing",
+        "payload" => %{}
+      })
+
+    assert_reply(unknown_ref, :error, %{reason: "unknown command"})
+    refute_receive {:DOWN, ^page_down, :process, ^page_pid, _reason}
+
+    command_ref =
+      push(socket, "command", %{
+        "store_id" => [],
+        "name" => "rename",
+        "payload" => %{"title" => "Still open"}
+      })
+
+    assert_reply(command_ref, :ok, %{})
+    assert_push("patch", %{"ops" => [%{op: "replace", path: "/title", value: "Still open"}]})
+
+    shutdown_channel(socket)
+  end
+
   test "join + leave emit channel telemetry and stop the linked page server" do
     handler = self()
 
