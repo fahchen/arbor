@@ -504,10 +504,18 @@ defmodule Arbor.Socket do
 
   @spec validate_root_store!(module()) :: :ok
   defp validate_root_store!(module) when is_atom(module) do
-    cond do
-      not Code.ensure_loaded?(module) ->
-        raise ArgumentError, "Arbor.Socket root module #{inspect(module)} is not loadable"
+    case Code.ensure_compiled(module) do
+      {:module, _module} ->
+        validate_compiled_root_store!(module)
 
+      {:error, _reason} ->
+        raise ArgumentError, "Arbor.Socket root module #{inspect(module)} is not loadable"
+    end
+  end
+
+  @spec validate_compiled_root_store!(module()) :: :ok
+  defp validate_compiled_root_store!(module) when is_atom(module) do
+    cond do
       not function_exported?(module, :__arbor__, 1) ->
         raise ArgumentError,
               "Arbor.Socket root module #{inspect(module)} must use Arbor.Store, root: true"

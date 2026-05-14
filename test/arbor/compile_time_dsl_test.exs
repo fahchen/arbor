@@ -355,6 +355,36 @@ defmodule Arbor.CompileTimeDslTest do
     end
   end
 
+  test "sockets wait for root stores compiled in parallel" do
+    token = System.unique_integer([:positive])
+    tmp_dir = Path.join(System.tmp_dir!(), "arbor_socket_compile_order_#{token}")
+    source_dir = Path.join(tmp_dir, "lib")
+    ebin_dir = Path.join(tmp_dir, "ebin")
+
+    store_module = Arbor.TestSupport.SocketCompileOrder.RootStore
+    socket_module = Arbor.TestSupport.SocketCompileOrder.Socket
+
+    store_path = Path.join(source_dir, "root_store.ex")
+    socket_path = Path.join(source_dir, "socket.ex")
+
+    File.mkdir_p!(source_dir)
+    File.mkdir_p!(ebin_dir)
+    File.write!(store_path, root_store_source(store_module))
+    File.write!(socket_path, socket_source(socket_module, store_module))
+
+    try do
+      assert {:ok, modules, _warnings} =
+               Kernel.ParallelCompiler.compile_to_path([socket_path, store_path], ebin_dir,
+                 return_diagnostics: true
+               )
+
+      assert store_module in modules
+      assert socket_module in modules
+    after
+      File.rm_rf!(tmp_dir)
+    end
+  end
+
   test "sockets declare roots as module lists" do
     source = """
     defmodule Arbor.TestSupport.NamedRootSocketStore do
@@ -563,5 +593,36 @@ defmodule Arbor.CompileTimeDslTest do
 
     # Plain list parameterization survives (rendered in [T] form on the typespec)
     assert rendered =~ "tags: [String.t()]"
+  end
+
+  defp root_store_source(module) when is_atom(module) do
+    """
+    defmodule #{inspect(module)} do
+      @moduledoc false
+
+      use Arbor.Store, root: true
+
+      state do
+        field :id, String.t()
+      end
+
+      @impl Arbor.Store
+      def render(_socket), do: %{id: "ok"}
+
+      @impl Arbor.Store
+      def handle_command(_name, _payload, socket), do: {:noreply, socket}
+    end
+    """
+  end
+
+  defp socket_source(socket_module, store_module)
+       when is_atom(socket_module) and is_atom(store_module) do
+    """
+    defmodule #{inspect(socket_module)} do
+      @moduledoc false
+
+      use Arbor.Socket, roots: [#{inspect(store_module)}]
+    end
+    """
   end
 end
