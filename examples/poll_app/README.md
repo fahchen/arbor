@@ -39,21 +39,16 @@ PollApp.Stores.PollRoomStore (root)
 
 ## Start the example
 
-From the repository root:
+From the repository root, in two terminals:
 
 ```sh
 cd examples/poll_app
-mix deps.get
-mix compile
-mix run --no-halt
+mix server   # deps.get + run --no-halt
 ```
 
-In another terminal:
-
 ```sh
-cd examples/poll_app/ui
-pnpm install
-pnpm dev
+cd examples/poll_app
+mix ui       # pnpm install + pnpm dev (in ui/)
 ```
 
 Open http://localhost:4103. Open a second browser tab to see live cross-user
