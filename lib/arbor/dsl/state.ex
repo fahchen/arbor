@@ -27,7 +27,6 @@ defmodule Arbor.DSL.State do
 
         import TypedStructor, except: [field: 2, field: 3]
         import Arbor.DSL.Field, only: [field: 2, field: 3]
-        import Arbor.DSL.Render, only: [stream: 1, async_stream: 1]
 
         # Drop the facade's runtime `stream/3,4` and `stream_async/3,4` for
         # the `state do` block so they cannot collide with the field-declaration
