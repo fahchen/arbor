@@ -294,7 +294,7 @@ function CartLine({
     setPending(kind)
 
     try {
-      const reply = (await (kind === "inc" ? incQty({}) : decQty({}))) as { qty: number }
+      const reply = await (kind === "inc" ? incQty({}) : decQty({}))
       onFeedback(`Line ${line.sku} -> qty ${reply.qty}`)
     } catch (error) {
       onFeedback(error instanceof Error ? error.message : "Qty update failed.")
