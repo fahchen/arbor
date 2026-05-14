@@ -68,7 +68,7 @@ state do
   field :items, list(CartItemState.t())
   field :subtotal, MoneyState.t()
   field :error, map() | nil
-  stream :messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: -100
+  stream :users, UserState.t(), item_key: &"user-#{&1.id}", limit: -100
 end
 ```
 
@@ -188,13 +188,19 @@ LiveView-parity stream API for collections that should not live in server memory
 
 ```elixir
 state do
+  field :feed do
+    stream :messages do
+      field :body, String.t()
+    end
+  end
+
   stream :messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: -100
 end
 ```
 
 Operations are socket-pipe helpers: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`. This mirrors `Phoenix.LiveView` except Arbor uses item keys, not DOM ids, so LV's `stream_delete_by_dom_id/3` becomes `stream_delete_by_item_key/3`. The full LV option set is otherwise supported: `:at`, `:limit`, `:reset`, `:item_key`, `:update_only`. After flush the runtime retains only the item_key index; item values are dropped.
 
-Stream-typed fields appear in `state do` via `stream :name, item_type, opts` and are opaque to JSON Patch. They render as `[]` in the initial-state envelope; subsequent envelopes' `ops` never touch their paths; stream content flows through `stream_ops` only. Cycles with non-empty `stream_ops` always emit an envelope, even when JSON Patch ops are empty (BDR-0018).
+Stream-typed fields appear in `state do` via `stream :name, item_type, opts` and are opaque to JSON Patch. Store render output places them explicitly with `stream(:name)`, which serializes as `%{"__arbor_stream__" => "<name>"}` in the wire tree; stream content flows through `stream_ops` only. Cycles with non-empty `stream_ops` always emit an envelope, even when JSON Patch ops are empty (BDR-0018).
 
 There is no dedicated reload mechanism. To refresh a stream the application calls `stream(socket, name, fresh_items, reset: true)` directly (the runtime emits a `reset` op followed by per-item inserts in the same envelope). When the refresh involves an async fetch, use `stream_async(socket, name, fun, reset: true)` — see below for the loading-flash variant (BDR-0022).
 
@@ -338,7 +344,7 @@ There is no wire enum of error categories. Malformed or impossible commands (unk
 | `attr name, type, opts` | Declares parent-supplied assign (data or function) | Compile-time only; values flow into `socket.assigns` |
 | `state do ... end` | Declares the public output shape | Validated against `render/1` output |
 | `field name, type, opts` | One field in `state do` | Supports primitives, lists, nested state, `AsyncResult.of(T)`, native typespec unions |
-| `stream name, item_type, opts` | Declares a stream-typed field inside `state do` | `:item_key` (function), `:limit`; wire content travels via `stream_ops` |
+| `stream name, item_type, opts` | Declares a stream-typed field inside `state do` | `:item_key` (function), `:limit`; render with `stream(:name)`; wire content travels via `stream_ops` |
 | `command name do payload ... end` | Declares command + payload schema | Runtime-validated |
 | `attach_hook(socket, id, stage, fun)` | Attach a lifecycle hook on a store node | Sole extension primitive (BDR-0004); replaces the prior `middleware` macro |
 | `detach_hook(socket, id, stage)` | Remove a previously-attached hook | Silent no-op when absent |
@@ -514,7 +520,7 @@ defmodule MyApp.Stores.MessagesStore do
   end
 
   def render(socket) do
-    %{messages: socket.assigns.messages}
+    %{messages: stream(:messages)}
   end
 end
 ```

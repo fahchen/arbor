@@ -98,7 +98,7 @@ Feature: Streams Lifecycle
     Scenario: Mount-time seed
       Given mount/1 calls stream(socket, :messages, [%Msg{id: 1}, %Msg{id: 2}])
       When the first patch envelope is emitted
-      Then the envelope's ops contain a single replace at path "" whose value has messages: []
+      Then the envelope's ops contain a single replace at path "" whose value has messages: {"__arbor_stream__": "messages"}
       And the envelope's stream_ops contain one insert per seed item in seed order
 
   Rule: Stream-only render cycles still emit envelopes
