@@ -58,7 +58,7 @@ defmodule MyAppWeb.Stores.CounterStore do
 
   @impl Arbor.Store
   def mount(params, socket) do
-    {:ok, Arbor.Socket.assign(socket, :count, Map.get(params, "count", 0))}
+    {:ok, assign(socket, :count, Map.get(params, "count", 0))}
   end
 
   @impl Arbor.Store
@@ -68,7 +68,7 @@ defmodule MyAppWeb.Stores.CounterStore do
 
   @impl Arbor.Store
   def handle_command(:increment, %{"amount" => amount}, socket) do
-    {:noreply, Arbor.Socket.update_assign(socket, :count, &(&1 + amount))}
+    {:noreply, update(socket, :count, &(&1 + amount))}
   end
 end
 ```

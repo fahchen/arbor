@@ -5,7 +5,7 @@ defmodule PollApp.Stores.PollRoomStore do
 
     * `stream :options, PollOption.t()` slot — server forgets values after
       flush; the client owns the materialized list.
-    * `Arbor.Stream.stream/4` on root `mount/2` to seed poll options
+    * `stream/4` on root `mount/2` to seed poll options
     * `assign_async/3` for the `:user_vote` AsyncResult field
     * `vote` command with async delivery and BDR-0020 caught-exception path
     * `reset_vote` command to clear a vote

@@ -13,7 +13,7 @@ This document is the reference for that pattern: load on `mount/1`, save on `att
 
 ## Save: `attach_hook(:persist, :after_command, …)`
 
-`:after_command` hooks are arity 3, called as `(command_name, payload, socket)`. Return shape is `{:cont, socket}` or `{:halt, socket}`. `use Arbor.Store` does **not** import socket / lifecycle helpers — call the fully-qualified `Arbor.Socket.*` and `Arbor.Lifecycle.*` functions.
+`:after_command` hooks are arity 3, called as `(command_name, payload, socket)`. Return shape is `{:cont, socket}` or `{:halt, socket}`. `use Arbor.Store` exposes `assign/2,3`, `attach_hook/4`, and the other LV-style helpers bare; the fully-qualified `Arbor.Socket.*` and `Arbor.Lifecycle.*` forms remain available when preferred.
 
 ```elixir
 defmodule MyApp.Stores.CartStore do
@@ -32,8 +32,8 @@ defmodule MyApp.Stores.CartStore do
 
     socket =
       socket
-      |> Arbor.Socket.assign(:items, items)
-      |> Arbor.Lifecycle.attach_hook(:persist, :after_command, &persist/3)
+      |> assign(:items, items)
+      |> attach_hook(:persist, :after_command, &persist/3)
 
     {:ok, socket}
   end
@@ -44,7 +44,7 @@ defmodule MyApp.Stores.CartStore do
   end
 
   def handle_command(:add_item, %{"sku" => sku}, socket) do
-    {:noreply, Arbor.Socket.update_assign(socket, :items, &[CartItemState.new(sku) | &1])}
+    {:noreply, update(socket, :items, &[CartItemState.new(sku) | &1])}
   end
 
   def render(socket), do: %{items: socket.assigns.items}
@@ -87,20 +87,22 @@ end
 ```elixir
 def mount(socket) do
   case MyApp.Storage.load_cart(socket.assigns.cart_id) do
-    {:ok, items} -> {:ok, Arbor.Socket.assign(socket, :items, items)}
-    :error -> {:ok, Arbor.Socket.assign(socket, :items, [])}
+    {:ok, items} -> {:ok, assign(socket, :items, items)}
+    :error -> {:ok, assign(socket, :items, [])}
   end
 end
 ```
 
-If the load is slow, prefer `Arbor.Async.assign_async/3`:
+If the load is slow, prefer `assign_async/3`:
 
 ```elixir
 def mount(socket) do
+  cart_id = socket.assigns.cart_id
+
   socket =
     socket
-    |> Arbor.Socket.assign(:items, [])
-    |> Arbor.Async.assign_async(:loaded, fn -> {:ok, MyApp.Storage.load_cart(socket.assigns.cart_id)} end)
+    |> assign(:items, [])
+    |> assign_async(:loaded, fn -> {:ok, MyApp.Storage.load_cart(cart_id)} end)
 
   {:ok, socket}
 end

@@ -7,10 +7,10 @@ defmodule ChatRoom.Stores.ChatRoomStore do
       `socket.assigns.messages` carries a `loading | ok | failed`
       `AsyncResult`; items live in the stream slot. After the initial
       seed completes, `handle_info({:message_received, ...})` continues
-      to drive incremental inserts via `Arbor.Stream.stream_insert/4`.
-    * `Arbor.Async.stream_async/3` on root `mount/2` to seed the latest
-      stored messages off the mount path (mount returns immediately;
-      messages flip to `:ok` once the background task settles).
+      to drive incremental inserts via `stream_insert/4`.
+    * `stream_async/3` on root `mount/2` to seed the latest stored
+      messages off the mount path (mount returns immediately; messages
+      flip to `:ok` once the background task settles).
     * `assign_async/3` for the `:online_users` AsyncResult field
     * `set_name` command backed by the application-owned presence registry
     * `start_async/3` + `handle_async/3` for the optimistic `:send_message`

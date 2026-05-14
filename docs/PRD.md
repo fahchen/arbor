@@ -97,7 +97,7 @@ Arbor's `socket` mirrors [`Phoenix.Socket`](https://hexdocs.pm/phoenix/1.8.7/Pho
 | `endpoint`, `topic`, `transport_pid` | Phoenix Channel scaffolding | Provided so hooks and helpers can broadcast or push outside the standard envelope flow when needed. Read-only. |
 | `private` | `map()` | Reserved for runtime bookkeeping (hook table, async ref tracking, pending stream ops). Do not read or write directly; use the corresponding helpers. |
 
-Helpers like `assign/2,3`, `update_assign/3`, `attach_hook/4`, `stream/4`, `assign_async/3,4`, `start_async/3,4`, `cancel_async/2,3`, and `stream_async/4` all take a socket as the first argument and return a new socket — chainable with `|>`.
+Helpers like `assign/2,3`, `update/3`, `attach_hook/4`, `stream/4`, `assign_async/3,4`, `start_async/3,4`, `cancel_async/2,3`, and `stream_async/4` all take a socket as the first argument and return a new socket — chainable with `|>`.
 
 ### `attr` — compile-time annotation
 
@@ -367,7 +367,8 @@ happens separately via `Arbor.Wire.to_wire/1`.
 | Function | Purpose |
 |----------|---------|
 | `assign(socket, key, value)` / `assign(socket, kw_or_map)` | Set `socket.assigns` |
-| `update_assign(socket, key, fun)` | Functionally update an assign |
+| `assign_new(socket, key, fun)` | Set an assign only when absent |
+| `update(socket, key, fun)` | Functionally update an assign |
 | `child(Module, opts)` | Render-time placeholder |
 | `attach_hook(socket, id, stage, fun)` | Attach a lifecycle hook |
 | `detach_hook(socket, id, stage)` | Detach a hook (silent no-op if absent) |
@@ -465,7 +466,7 @@ defmodule MyApp.Stores.ProductPageStore do
   end
 
   def handle_info({:notification, _payload}, socket) do
-    {:noreply, update_assign(socket, :unread_count, &(&1 + 1))}
+    {:noreply, update(socket, :unread_count, &(&1 + 1))}
   end
 
   def render(socket) do
@@ -586,7 +587,7 @@ export type ProductPageStoreCommands = {
 
 | Milestone | Deliverables | Effort | Timeline |
 |-----------|--------------|--------|----------|
-| M1: Runtime kernel + metadata | Page runtime GenServer; `use Arbor.Store` / `use Arbor.State`; metadata registry for `attr`/`state`/`command`; `socket` struct with `assign`/`update_assign`/`attach_hook`/`detach_hook`. | High | Weeks 1–2 |
+| M1: Runtime kernel + metadata | Page runtime GenServer; `use Arbor.Store` / `use Arbor.State`; metadata registry for `attr`/`state`/`command`; `socket` struct with `assign`/`update`/`attach_hook`/`detach_hook`. | High | Weeks 1–2 |
 | M2: Render contract + resolver | `child(...)` placeholder, render-output resolver, identity-preserving reconciler, render-output validation hook, `mount`/`update`/`render` lifecycle, `handle_info/2`, root `terminate/2`. | High | Weeks 3–4 |
 | M3: Command pipeline | Store_id-based routing, payload schema validation hook, attach_hook/detach_hook, authorization hook, `handle_command/3`, transport reply contract, let-it-crash for malformed commands, system command namespace. | High | Weeks 5–6 |
 | M4: Replication + streams | RFC 6902 diff engine, patch envelope (`ops` + `stream_ops`), version counter, stream API (LV-parity: `stream/4`, `stream_configure/3`, `stream_insert/4`, `stream_delete/3`, `stream_delete_by_item_key/3`), reference WebSocket adapter. | High | Weeks 7–8 |
