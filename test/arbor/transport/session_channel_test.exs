@@ -121,8 +121,8 @@ defmodule Arbor.Transport.SessionChannelTest do
     @moduledoc false
     use Arbor.Session,
       roots: [
-        alpha: Arbor.Transport.SessionChannelTest.AlphaRootStore,
-        beta: Arbor.Transport.SessionChannelTest.BetaRootStore
+        Arbor.Transport.SessionChannelTest.AlphaRootStore,
+        Arbor.Transport.SessionChannelTest.BetaRootStore
       ]
 
     @impl Arbor.Session

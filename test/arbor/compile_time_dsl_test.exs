@@ -346,11 +346,39 @@ defmodule Arbor.CompileTimeDslTest do
 
     defmodule Arbor.TestSupport.InvalidRootSession do
       @moduledoc false
-      use Arbor.Session, roots: [bad: Arbor.TestSupport.NonRootSessionStore]
+      use Arbor.Session, roots: [Arbor.TestSupport.NonRootSessionStore]
     end
     """
 
     assert_raise ArgumentError, ~r/must use Arbor.Store, root: true/, fn ->
+      Code.compile_string(source)
+    end
+  end
+
+  test "sessions declare roots as module lists" do
+    source = """
+    defmodule Arbor.TestSupport.NamedRootSessionStore do
+      @moduledoc false
+      use Arbor.Store, root: true
+
+      state do
+        field :id, String.t()
+      end
+
+      @impl Arbor.Store
+      def render(_socket), do: %{id: "ok"}
+
+      @impl Arbor.Store
+      def handle_command(_name, _payload, socket), do: {:noreply, socket}
+    end
+
+    defmodule Arbor.TestSupport.InvalidNamedRootSession do
+      @moduledoc false
+      use Arbor.Session, roots: [named: Arbor.TestSupport.NamedRootSessionStore]
+    end
+    """
+
+    assert_raise ArgumentError, ~r/must be a list of StoreModule modules/, fn ->
       Code.compile_string(source)
     end
   end

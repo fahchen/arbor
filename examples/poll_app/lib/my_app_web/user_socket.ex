@@ -3,8 +3,8 @@ defmodule MyAppWeb.AppSession do
 
   use Arbor.Session,
     roots: [
-      dashboard: MyApp.Stores.DashboardStore,
-      poll_room: MyApp.Stores.PollRoomStore
+      MyApp.Stores.DashboardStore,
+      MyApp.Stores.PollRoomStore
     ]
 end
 

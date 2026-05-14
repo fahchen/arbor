@@ -9,8 +9,7 @@ defmodule Arbor.Session do
 
   alias Arbor.Socket
 
-  @type root_name() :: atom()
-  @type roots() :: keyword(module())
+  @type roots() :: [module()]
   @type join_params() :: map()
   @type session_data() :: map()
   @type join_error() :: :error | {:error, :unauthorized | :not_found | :invalid_params}
@@ -30,8 +29,8 @@ defmodule Arbor.Session do
       defmodule MyAppWeb.AppSession do
         use Arbor.Session,
           roots: [
-            dashboard: MyApp.Stores.DashboardStore,
-            poll_room: MyApp.Stores.PollRoomStore
+            MyApp.Stores.DashboardStore,
+            MyApp.Stores.PollRoomStore
           ]
 
         @impl Arbor.Session
@@ -80,7 +79,7 @@ defmodule Arbor.Session do
       ...>     def handle_command(_name, _payload, socket), do: {:noreply, socket}
       ...>   end
       ...>
-      ...>   use Arbor.Session, roots: [dashboard: Store]
+      ...>   use Arbor.Session, roots: [Store]
       ...> end
       iex> Arbor.Session.fetch_root_by_module(SessionFetchRootByModuleDoc, "SessionFetchRootByModuleDoc.Store")
       {:ok, SessionFetchRootByModuleDoc.Store}
@@ -92,10 +91,10 @@ defmodule Arbor.Session do
       when is_atom(session_module) and is_binary(module_str) do
     session_module
     |> session_roots()
-    |> Enum.find(fn {_declared_name, module} -> module_matches?(module, module_str) end)
+    |> Enum.find(&module_matches?(&1, module_str))
     |> case do
-      {_declared_name, module} -> {:ok, module}
       nil -> :error
+      module when is_atom(module) -> {:ok, module}
     end
   end
 
@@ -113,43 +112,42 @@ defmodule Arbor.Session do
     module |> Module.split() |> Enum.join(".") == module_str
   end
 
-  @spec normalize_roots!(list(), Macro.Env.t()) :: roots()
+  @spec normalize_roots!([Macro.t()], Macro.Env.t()) :: roots()
   defp normalize_roots!(roots, %Macro.Env{} = env) when is_list(roots) do
-    Enum.map(roots, fn
-      {name, module_ast} when is_atom(name) ->
-        module = Macro.expand(module_ast, env)
+    if roots != [] and Keyword.keyword?(roots) do
+      raise ArgumentError,
+            "Arbor.Session roots must be a list of StoreModule modules, got keyword entries: #{inspect(roots)}"
+    end
 
-        unless is_atom(module) do
-          raise ArgumentError,
-                "Arbor.Session root #{inspect(name)} must point at a module, got: #{inspect(module_ast)}"
-        end
+    Enum.map(roots, fn module_ast ->
+      module = Macro.expand(module_ast, env)
 
-        validate_root_store!(name, module)
-        {name, module}
-
-      other ->
+      unless is_atom(module) do
         raise ArgumentError,
-              "Arbor.Session roots must be a keyword list of root_name: StoreModule, got: #{inspect(other)}"
+              "Arbor.Session root must be a module, got: #{inspect(module_ast)}"
+      end
+
+      validate_root_store!(module)
+      module
     end)
   end
 
-  @spec validate_root_store!(root_name(), module()) :: :ok
-  defp validate_root_store!(name, module) when is_atom(name) and is_atom(module) do
+  @spec validate_root_store!(module()) :: :ok
+  defp validate_root_store!(module) when is_atom(module) do
     cond do
       not Code.ensure_loaded?(module) ->
-        raise ArgumentError,
-              "Arbor.Session root #{inspect(name)} module #{inspect(module)} is not loadable"
+        raise ArgumentError, "Arbor.Session root module #{inspect(module)} is not loadable"
 
       not function_exported?(module, :__arbor__, 1) ->
         raise ArgumentError,
-              "Arbor.Session root #{inspect(name)} module #{inspect(module)} must use Arbor.Store, root: true"
+              "Arbor.Session root module #{inspect(module)} must use Arbor.Store, root: true"
 
       module.__arbor__(:root?) ->
         :ok
 
       true ->
         raise ArgumentError,
-              "Arbor.Session root #{inspect(name)} module #{inspect(module)} must use Arbor.Store, root: true"
+              "Arbor.Session root module #{inspect(module)} must use Arbor.Store, root: true"
     end
   end
 end

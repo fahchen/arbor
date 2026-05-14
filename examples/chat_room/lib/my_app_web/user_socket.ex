@@ -3,7 +3,7 @@ defmodule MyAppWeb.AppSession do
 
   use Arbor.Session,
     roots: [
-      chat_room: MyApp.Stores.ChatRoomStore
+      MyApp.Stores.ChatRoomStore
     ]
 end
 

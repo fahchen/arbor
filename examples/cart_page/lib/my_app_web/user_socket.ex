@@ -3,7 +3,7 @@ defmodule MyAppWeb.AppSession do
 
   use Arbor.Session,
     roots: [
-      cart_page: MyApp.Stores.CartPageStore
+      MyApp.Stores.CartPageStore
     ]
 end
 
