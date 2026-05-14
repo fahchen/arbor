@@ -44,7 +44,16 @@ declare namespace Arbor {
         price_cents: number
         qty: number
       },
-      {}
+      {
+        inc_qty: {
+          payload: {}
+          reply: { qty: number }
+        }
+        dec_qty: {
+          payload: {}
+          reply: { qty: number }
+        }
+      }
     >
 
     "CartPage.Stores.CartPageStore": StoreDef<

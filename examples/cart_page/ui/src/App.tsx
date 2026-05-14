@@ -231,26 +231,14 @@ function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
             </div>
           ) : (
             <ul className="lines">
-              {page.cart.lines.map((line) => (
-                <li key={line.__arbor_store_id__.join("/")} className="line">
-                  <div className="line-main">
-                    <strong>{line.name}</strong>
-                    <span>
-                      {line.sku} / qty {line.qty}
-                    </span>
-                  </div>
-                  <div className="line-actions">
-                    <span>{formatMoney(line.price_cents * line.qty)}</span>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => void handleRemoveLine(line.id)}
-                      disabled={busy === "remove"}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </li>
+              {cartProxy.lines.map((lineProxy) => (
+                <CartLine
+                  key={lineProxy.__arbor_store_id__.join("/")}
+                  lineProxy={lineProxy}
+                  busy={busy}
+                  onRemove={(id) => void handleRemoveLine(id)}
+                  onFeedback={setFeedback}
+                />
               ))}
             </ul>
           )}
@@ -281,6 +269,83 @@ function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
         </section>
       </div>
     </main>
+  )
+}
+
+type LineProxy = StoreProxy<Registry, "CartPage.Stores.CartLineStore">
+
+function CartLine({
+  lineProxy,
+  busy,
+  onRemove,
+  onFeedback
+}: {
+  lineProxy: LineProxy
+  busy: "add" | "checkout" | "remove" | null
+  onRemove: (id: string) => void
+  onFeedback: (message: string) => void
+}) {
+  const line = useArborSnapshot(lineProxy)
+  const incQty = useArborCommand(lineProxy, "inc_qty")
+  const decQty = useArborCommand(lineProxy, "dec_qty")
+  const [pending, setPending] = useState<"inc" | "dec" | null>(null)
+
+  async function step(kind: "inc" | "dec") {
+    setPending(kind)
+
+    try {
+      const reply = (await (kind === "inc" ? incQty({}) : decQty({}))) as { qty: number }
+      onFeedback(`Line ${line.sku} -> qty ${reply.qty}`)
+    } catch (error) {
+      onFeedback(error instanceof Error ? error.message : "Qty update failed.")
+    } finally {
+      setPending(null)
+    }
+  }
+
+  return (
+    <li className="line">
+      <div className="line-main">
+        <strong>{line.name}</strong>
+        <span>
+          {line.sku} / qty {line.qty}
+        </span>
+      </div>
+      <div className="line-actions">
+        <div className="qty-stepper" role="group" aria-label={`Quantity for ${line.name}`}>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => void step("dec")}
+            disabled={pending !== null || line.qty <= 1}
+            aria-label="Decrease quantity"
+          >
+            −
+          </button>
+          <span className="qty-readout" aria-live="polite">
+            {line.qty}
+          </span>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => void step("inc")}
+            disabled={pending !== null}
+            aria-label="Increase quantity"
+          >
+            +
+          </button>
+        </div>
+        <span>{formatMoney(line.price_cents * line.qty)}</span>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => onRemove(line.id)}
+          disabled={busy === "remove"}
+        >
+          Remove
+        </button>
+      </div>
+    </li>
   )
 }
 

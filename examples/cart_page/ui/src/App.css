@@ -457,6 +457,34 @@ fieldset {
   box-shadow: none;
 }
 
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(27, 33, 31, 0.18);
+  border-radius: 999px;
+  padding: 0.15rem 0.35rem;
+  background: #fffcf4;
+}
+
+.qty-stepper .ghost {
+  min-height: 28px;
+  min-width: 28px;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.qty-readout {
+  min-width: 1.5ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
 .checkout {
   margin-top: 1rem;
   border-top: 2px solid #17221e;

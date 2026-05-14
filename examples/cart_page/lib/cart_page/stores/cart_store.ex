@@ -89,10 +89,32 @@ defmodule CartPage.Stores.CartStore do
 
   @impl Arbor.Store
   def render(socket) do
+    cart_id = socket.assigns.cart_id
+
+    # Child-supplied callback: the line store calls this after it mutates its
+    # own `:qty` assign. Writing through the shared `Persistence` snapshot
+    # broadcasts `{:cart_snapshot, ...}` to the root, which re-flows the new
+    # `:cart_lines` attr back through this store's `update/2` and lets the
+    # next render recompute `:subtotal_cents` / `:total_units`.
+    on_qty_change = fn id, qty ->
+      Persistence.update_cart(cart_id, fn lines ->
+        Enum.map(lines, fn
+          %{id: ^id} = line -> %{line | qty: qty}
+          line -> line
+        end)
+      end)
+
+      :ok
+    end
+
     %{
       lines:
         for line <- socket.assigns.lines do
-          Arbor.Child.child(CartLineStore, id: line.id, line: line)
+          Arbor.Child.child(CartLineStore,
+            id: line.id,
+            line: line,
+            on_qty_change: on_qty_change
+          )
         end,
       total_units: total_units(socket.assigns.lines),
       subtotal_cents: subtotal(socket.assigns.lines),
