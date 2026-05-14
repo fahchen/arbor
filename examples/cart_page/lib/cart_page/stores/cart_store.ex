@@ -68,11 +68,11 @@ defmodule CartPage.Stores.CartStore do
   def mount(socket) do
     socket =
       socket
-      |> Arbor.Socket.assign(:lines, socket.assigns.cart_lines)
-      |> Arbor.Socket.assign(:status, %{type: :open})
-      |> Arbor.Socket.assign(:on_qty_change, build_on_qty_change(socket.assigns.cart_id))
-      |> Arbor.Lifecycle.attach_hook(:authz, :before_command, &authz/3)
-      |> Arbor.Lifecycle.attach_hook(:audit, :after_command, &audit/3)
+      |> assign(:lines, socket.assigns.cart_lines)
+      |> assign(:status, %{type: :open})
+      |> assign(:on_qty_change, build_on_qty_change(socket.assigns.cart_id))
+      |> attach_hook(:authz, :before_command, &authz/3)
+      |> attach_hook(:audit, :after_command, &audit/3)
 
     {:ok, socket}
   end
@@ -81,8 +81,8 @@ defmodule CartPage.Stores.CartStore do
   def update(params, socket) do
     socket =
       socket
-      |> Arbor.Socket.assign(params)
-      |> Arbor.Socket.assign(:lines, params.cart_lines)
+      |> assign(params)
+      |> assign(:lines, params.cart_lines)
       |> reopen_if_lines_present(params.cart_lines)
 
     {:ok, socket}
@@ -93,7 +93,7 @@ defmodule CartPage.Stores.CartStore do
     %{
       lines:
         for line <- socket.assigns.lines do
-          Arbor.Child.child(CartLineStore,
+          child(CartLineStore,
             id: line.id,
             line: line,
             on_qty_change: socket.assigns.on_qty_change
@@ -140,8 +140,8 @@ defmodule CartPage.Stores.CartStore do
 
         socket =
           socket
-          |> Arbor.Socket.assign(:lines, next_lines)
-          |> Arbor.Socket.assign(:status, %{type: :open})
+          |> assign(:lines, next_lines)
+          |> assign(:status, %{type: :open})
 
         {:noreply, socket}
 
@@ -157,7 +157,7 @@ defmodule CartPage.Stores.CartStore do
         Enum.reject(lines, &(&1.id == id))
       end)
 
-    {:noreply, Arbor.Socket.assign(socket, :lines, next_lines)}
+    {:noreply, assign(socket, :lines, next_lines)}
   end
 
   @impl Arbor.Store
@@ -168,8 +168,8 @@ defmodule CartPage.Stores.CartStore do
 
     socket =
       socket
-      |> Arbor.Socket.assign(:lines, [])
-      |> Arbor.Socket.assign(:status, %{type: :checked_out, order_id: order_id})
+      |> assign(:lines, [])
+      |> assign(:status, %{type: :checked_out, order_id: order_id})
 
     {:reply, %{"order_id" => order_id}, socket}
   end
@@ -201,7 +201,7 @@ defmodule CartPage.Stores.CartStore do
 
   defp reopen_if_lines_present(socket, _lines) do
     case socket.assigns.status do
-      %{type: :checked_out} -> Arbor.Socket.assign(socket, :status, %{type: :open})
+      %{type: :checked_out} -> assign(socket, :status, %{type: :open})
       _status -> socket
     end
   end

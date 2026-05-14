@@ -19,7 +19,7 @@ defmodule PollApp.Stores.DashboardStore do
   def mount(_params, socket) do
     Phoenix.PubSub.subscribe(PollApp.PubSub, "dashboard")
 
-    {:ok, Arbor.Stream.stream(socket, :polls, Polls.list_summaries(), reset: true)}
+    {:ok, stream(socket, :polls, Polls.list_summaries(), reset: true)}
   end
 
   @impl Arbor.Store
@@ -43,6 +43,6 @@ defmodule PollApp.Stores.DashboardStore do
 
   @impl Arbor.Store
   def handle_info({:dashboard_updated, polls}, socket) do
-    {:noreply, Arbor.Stream.stream(socket, :polls, polls, reset: true)}
+    {:noreply, stream(socket, :polls, polls, reset: true)}
   end
 end
