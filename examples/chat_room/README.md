@@ -30,21 +30,16 @@ ChatRoom.Stores.ChatRoomStore (root)
 
 ## Start the example
 
-From the repository root:
+From the repository root, in two terminals:
 
 ```sh
 cd examples/chat_room
-mix deps.get
-mix compile
-mix run --no-halt
+mix server   # deps.get + run --no-halt
 ```
 
-In another terminal:
-
 ```sh
-cd examples/chat_room/ui
-pnpm install
-pnpm dev
+cd examples/chat_room
+mix ui       # pnpm install + pnpm dev (in ui/)
 ```
 
 Open http://localhost:4102.
