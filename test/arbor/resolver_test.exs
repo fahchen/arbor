@@ -1,7 +1,6 @@
 defmodule Arbor.ResolverTest do
   use ExUnit.Case, async: true
 
-  import Arbor.Child, only: [child: 2]
   import ExUnit.CaptureLog
 
   require Logger
@@ -882,7 +881,7 @@ defmodule Arbor.ResolverTest do
     end
 
     test "Disappearance silently discards the node" do
-      child = child(HeaderStore, id: "header", user_name: "Alice")
+      child = Arbor.Child.child(HeaderStore, id: "header", user_name: "Alice")
       socket = root_socket(ToggleChildRootStore, %{show?: true, child: child})
       registry = registry(socket)
 
@@ -954,7 +953,7 @@ defmodule Arbor.ResolverTest do
     end
 
     test "Toggling :if=false then :if=true on the same identity remounts" do
-      child = child(ListChildStore, id: "n", label: "Notice", test_pid: self())
+      child = Arbor.Child.child(ListChildStore, id: "n", label: "Notice", test_pid: self())
       socket = root_socket(ToggleChildRootStore, %{show?: true, child: child})
       registry = registry(socket)
 
@@ -1012,7 +1011,7 @@ defmodule Arbor.ResolverTest do
     end
 
     test "Returning {:error, reason} from mount raises" do
-      child = child(BadMountChildStore, id: "child")
+      child = Arbor.Child.child(BadMountChildStore, id: "child")
 
       capture_log(fn ->
         pid =

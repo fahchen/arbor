@@ -86,8 +86,8 @@ own mount params:
 def mount(%{"poll_id" => poll_id}, socket) do
   socket =
     socket
-    |> Arbor.Socket.assign(:poll_id, poll_id)
-    |> Arbor.Socket.assign(:current_user, socket.assigns.current_user)
+    |> assign(:poll_id, poll_id)
+    |> assign(:current_user, socket.assigns.current_user)
 
   {:ok, socket}
 end

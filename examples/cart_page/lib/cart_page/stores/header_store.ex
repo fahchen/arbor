@@ -16,8 +16,8 @@ defmodule CartPage.Stores.HeaderStore do
 
     socket =
       socket
-      |> Arbor.Socket.assign(:signed_in, CartPage.Auth.signed_in?(user))
-      |> Arbor.Socket.assign(:user_name, user_name(user))
+      |> assign(:signed_in, CartPage.Auth.signed_in?(user))
+      |> assign(:user_name, user_name(user))
 
     {:ok, socket}
   end
@@ -33,8 +33,8 @@ defmodule CartPage.Stores.HeaderStore do
 
     socket =
       socket
-      |> Arbor.Socket.assign(:signed_in, CartPage.Auth.signed_in?(user))
-      |> Arbor.Socket.assign(:user_name, user_name(user))
+      |> assign(:signed_in, CartPage.Auth.signed_in?(user))
+      |> assign(:user_name, user_name(user))
 
     {:ok, socket}
   end

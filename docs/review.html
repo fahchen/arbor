@@ -801,7 +801,7 @@
         <tr><td><code>private</code></td><td><code>map()</code></td><td>Reserved for runtime bookkeeping (hook table, async ref tracking, pending stream ops). Do not read or write directly; use the corresponding helpers (<code>attach_hook/4</code>, <code>stream_insert/4</code>, etc.).</td></tr>
       </tbody>
     </table>
-    <p>Helpers like <code>assign/2,3</code>, <code>update_assign/3</code>, <code>attach_hook/4</code>, <code>stream/4</code>, <code>assign_async/3,4</code>, <code>start_async/3,4</code>, <code>cancel_async/2,3</code>, and <code>stream_async/4</code> all take a socket as the first argument and return a new socket — chainable with <code>|&gt;</code>.</p>
+    <p>Helpers like <code>assign/2,3</code>, <code>update/3</code>, <code>attach_hook/4</code>, <code>stream/4</code>, <code>assign_async/3,4</code>, <code>start_async/3,4</code>, <code>cancel_async/2,3</code>, and <code>stream_async/4</code> all take a socket as the first argument and return a new socket — chainable with <code>|&gt;</code>.</p>
   </section>
 
   <!-- ============= 3. DSL ============= -->
@@ -877,7 +877,7 @@
     <span class="tk-kw">do:</span> {<span class="tk-atom">:noreply</span>,
           socket
           |&gt; <span class="tk-fn">stream_insert</span>(<span class="tk-atom">:messages</span>, msg, at: <span class="tk-num">0</span>, limit: <span class="tk-num">-200</span>)
-          |&gt; <span class="tk-fn">update_assign</span>(<span class="tk-atom">:unread_count</span>, <span class="tk-kw">&amp;</span>(<span class="tk-kw">&amp;1</span> + <span class="tk-num">1</span>))}
+          |&gt; <span class="tk-fn">update</span>(<span class="tk-atom">:unread_count</span>, <span class="tk-kw">&amp;</span>(<span class="tk-kw">&amp;1</span> + <span class="tk-num">1</span>))}
 
   <span class="tk-cmt"># The state function — re-run after every assigns change; its
   # return value is diffed against the prior output to produce the patch.</span>

@@ -68,10 +68,10 @@ defmodule CartPage.Stores.CartLineStore do
 
   defp mirror_line(socket, line) do
     socket
-    |> Arbor.Socket.assign(:id, line.id)
-    |> Arbor.Socket.assign(:sku, line.sku)
-    |> Arbor.Socket.assign(:name, line.name)
-    |> Arbor.Socket.assign(:price_cents, line.price_cents)
-    |> Arbor.Socket.assign(:qty, line.qty)
+    |> assign(:id, line.id)
+    |> assign(:sku, line.sku)
+    |> assign(:name, line.name)
+    |> assign(:price_cents, line.price_cents)
+    |> assign(:qty, line.qty)
   end
 end

@@ -1,18 +1,42 @@
 defmodule Arbor.Store do
   @moduledoc """
-  Compile-time DSL entrypoint and behaviour contract for Arbor store modules.
+  Compile-time DSL entrypoint, behaviour contract, and runtime facade for
+  Arbor store modules.
 
   Stores `use Arbor.Store` and implement `init/1`, `render/1`,
   `update/2`, `handle_command/3`, `handle_async/3`, `handle_info/2`,
   and `terminate/2`. Root stores opt in with `use Arbor.Store, root: true`
   and may also implement `mount/2` to receive client mount params before
   `init/1` runs.
+
   `render/1` returns the resolved Elixir-shaped term; wire conversion happens
   separately via `Arbor.Wire.to_wire/1`.
+
+  ## Runtime facade
+
+  `use Arbor.Store` blanket-imports this module so every helper below is
+  available bare inside a store's callbacks. Each helper is a `defdelegate`
+  to the underlying implementation module (`Arbor.Socket`, `Arbor.Stream`,
+  `Arbor.Lifecycle`, `Arbor.Child`, `Arbor.DSL.Render`) or a `defmacro`
+  that lowers to a runtime call (the async lifecycle helpers).
+
+  | Surface          | Helpers                                                                                            |
+  | :--------------- | :------------------------------------------------------------------------------------------------- |
+  | Socket           | `assign/2,3`, `assign_new/3`, `update/3`, `changed?/2`, `get_private/2,3`, `put_private/3`         |
+  | Streams          | `stream/3,4`, `stream_configure/3`, `stream_insert/3,4`, `stream_delete/3`, `stream_delete_by_item_key/3` |
+  | Lifecycle        | `attach_hook/4`, `detach_hook/3`                                                                   |
+  | Async            | `assign_async/3,4`, `start_async/3,4`, `stream_async/3,4`, `cancel_async/2,3`                      |
+  | Render builders  | `child/2`, `stream/1`, `async_stream/1`                                                            |
+
+  The fully-qualified module forms remain available — the facade is purely
+  additive — so `Arbor.Socket.assign(...)` keeps working alongside the bare
+  `assign(...)` form preferred inside store modules.
   """
 
   alias Arbor.Async
+  alias Arbor.Lifecycle
   alias Arbor.Socket
+  alias Arbor.Stream
 
   @type value() ::
           nil
@@ -117,6 +141,118 @@ defmodule Arbor.Store do
                       handle_info: 2,
                       terminate: 2
 
+  # ---------------------------------------------------------------------------
+  # Socket helpers (defdelegate -> Arbor.Socket)
+  # ---------------------------------------------------------------------------
+
+  @doc "See `Arbor.Socket.assign/2`."
+  defdelegate assign(socket, attrs), to: Socket
+
+  @doc "See `Arbor.Socket.assign/3`."
+  defdelegate assign(socket, key, value), to: Socket
+
+  @doc "See `Arbor.Socket.assign_new/3`."
+  defdelegate assign_new(socket, key, fun), to: Socket
+
+  @doc "See `Arbor.Socket.update/3`."
+  defdelegate update(socket, key, fun), to: Socket
+
+  @doc "See `Arbor.Socket.changed?/2`."
+  defdelegate changed?(socket, key), to: Socket
+
+  @doc "See `Arbor.Socket.get_private/3`."
+  defdelegate get_private(socket, key, default \\ nil), to: Socket
+
+  @doc "See `Arbor.Socket.put_private/3`."
+  defdelegate put_private(socket, key, value), to: Socket
+
+  # ---------------------------------------------------------------------------
+  # Stream helpers (defdelegate -> Arbor.Stream)
+  # ---------------------------------------------------------------------------
+
+  @doc "See `Arbor.Stream.stream/4`."
+  defdelegate stream(socket, name, items, opts \\ []), to: Stream
+
+  @doc "See `Arbor.Stream.stream_configure/3`."
+  defdelegate stream_configure(socket, name, opts), to: Stream
+
+  @doc "See `Arbor.Stream.stream_insert/4`."
+  defdelegate stream_insert(socket, name, item, opts \\ []), to: Stream
+
+  @doc "See `Arbor.Stream.stream_delete/3`."
+  defdelegate stream_delete(socket, name, item), to: Stream
+
+  @doc "See `Arbor.Stream.stream_delete_by_item_key/3`."
+  defdelegate stream_delete_by_item_key(socket, name, item_key), to: Stream
+
+  # ---------------------------------------------------------------------------
+  # Lifecycle helpers (defdelegate -> Arbor.Lifecycle)
+  # ---------------------------------------------------------------------------
+
+  @doc "See `Arbor.Lifecycle.attach_hook/4`."
+  defdelegate attach_hook(socket, name, stage, fun), to: Lifecycle
+
+  @doc "See `Arbor.Lifecycle.detach_hook/3`."
+  defdelegate detach_hook(socket, name, stage), to: Lifecycle
+
+  # ---------------------------------------------------------------------------
+  # Async helpers — defmacros that ferry `__CALLER__` into
+  # `Arbor.Async.__<name>__/5` so the socket-capture lint runs at compile
+  # time before lowering to the runtime call.
+  # ---------------------------------------------------------------------------
+
+  @doc "See `Arbor.Async.assign_async/3,4`."
+  defmacro assign_async(socket, key_or_keys, fun) do
+    Arbor.Async.__assign_async__(socket, key_or_keys, fun, [], __CALLER__)
+  end
+
+  defmacro assign_async(socket, key_or_keys, fun, opts) do
+    Arbor.Async.__assign_async__(socket, key_or_keys, fun, opts, __CALLER__)
+  end
+
+  @doc "See `Arbor.Async.start_async/3,4`."
+  defmacro start_async(socket, name, fun) do
+    Arbor.Async.__start_async__(socket, name, fun, [], __CALLER__)
+  end
+
+  defmacro start_async(socket, name, fun, opts) do
+    Arbor.Async.__start_async__(socket, name, fun, opts, __CALLER__)
+  end
+
+  @doc "See `Arbor.Async.stream_async/3,4`."
+  defmacro stream_async(socket, name, fun) do
+    Arbor.Async.__stream_async__(socket, name, fun, [], __CALLER__)
+  end
+
+  defmacro stream_async(socket, name, fun, opts) do
+    Arbor.Async.__stream_async__(socket, name, fun, opts, __CALLER__)
+  end
+
+  @doc "See `Arbor.Async.cancel_async/2,3`."
+  defdelegate cancel_async(socket, target), to: Async
+  defdelegate cancel_async(socket, target, reason), to: Async
+
+  # ---------------------------------------------------------------------------
+  # Render builders (defdelegate / defmacro -> Arbor.Child / Arbor.DSL.Render)
+  # ---------------------------------------------------------------------------
+
+  @doc "See `Arbor.Child.child/2`."
+  defdelegate child(module, opts), to: Arbor.Child
+
+  @doc "See `Arbor.DSL.Render.stream/1`. Render-time placeholder."
+  defmacro stream(name) when is_atom(name) do
+    quote do
+      %Arbor.Stream.Placeholder{name: unquote(name)}
+    end
+  end
+
+  @doc "See `Arbor.DSL.Render.async_stream/1`. Render-time placeholder."
+  defmacro async_stream(name) when is_atom(name) do
+    quote do
+      %Arbor.Stream.AsyncPlaceholder{name: unquote(name)}
+    end
+  end
+
   @doc false
   @spec __before_compile__(Macro.Env.t()) :: Macro.t()
   defmacro __before_compile__(env) do
@@ -142,26 +278,14 @@ defmodule Arbor.Store do
       use TypedStructor
       @behaviour Arbor.Store
 
+      # LV-style single-facade import: every runtime helper a store calls
+      # (assign, stream, attach_hook, assign_async, child, …) flows through
+      # `Arbor.Store`. The compile-time DSL macros stay filtered because they
+      # are only valid in specific syntactic positions.
+      import Arbor.Store
       import Arbor.DSL.Command, only: [command: 1, command: 2]
       import Arbor.DSL.State, only: [state: 1]
       import Arbor.DSL.Attr, only: [attr: 2, attr: 3]
-      import Arbor.Child, only: [child: 2]
-      import Arbor.DSL.Render, only: [stream: 1, async_stream: 1]
-
-      # Note: `stream_async/3,4` is intentionally NOT imported here. The
-      # `state do` DSL exposes `stream_async/2,3` for declaring async-wrapped
-      # stream fields, and Elixir cannot disambiguate same-name imports by
-      # argument count. Stores call the runtime form via the fully-qualified
-      # `Arbor.Async.stream_async/3,4`.
-      import Arbor.Async.Macros,
-        only: [
-          assign_async: 3,
-          assign_async: 4,
-          start_async: 3,
-          start_async: 4,
-          cancel_async: 2,
-          cancel_async: 3
-        ]
 
       Module.register_attribute(__MODULE__, :__arbor_fields__, accumulate: false)
       Module.register_attribute(__MODULE__, :__arbor_commands__, accumulate: true)

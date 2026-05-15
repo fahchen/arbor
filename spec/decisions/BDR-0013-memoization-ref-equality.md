@@ -28,7 +28,7 @@ Reference: `Phoenix.Component.assign/3` and `Phoenix.LiveView.Utils.changed?/1,2
 Adopt the LV pattern verbatim:
 
 - `socket.assigns.__changed__` is a map of keys mutated since the previous render cycle.
-- `assign/3` and `update_assign/3` write to this map; explicit no-op writes (same value) record nothing.
+- `assign/3` and `update/3` write to this map; explicit no-op writes (same value) record nothing.
 - `Arbor.changed?(assigns, key)` and friends inspect the map; the runtime uses these to decide whether a child's `update/2` and `render/1` need to run.
 - After each render cycle the runtime clears `__changed__` to `%{}` before processing the next message.
 

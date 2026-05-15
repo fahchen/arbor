@@ -5,7 +5,7 @@ defmodule PollApp.Stores.PollRoomStore do
 
     * `stream :options, PollOption.t()` slot — server forgets values after
       flush; the client owns the materialized list.
-    * `Arbor.Stream.stream/4` on root `mount/2` to seed poll options
+    * `stream/4` on root `mount/2` to seed poll options
     * `assign_async/3` for the `:user_vote` AsyncResult field
     * `vote` command with async delivery and BDR-0020 caught-exception path
     * `reset_vote` command to clear a vote
@@ -51,11 +51,11 @@ defmodule PollApp.Stores.PollRoomStore do
 
     socket =
       socket
-      |> Arbor.Socket.assign(:poll_id, poll_id)
-      |> Arbor.Socket.assign(:user_id, user_id)
-      |> Arbor.Socket.assign(:poll, Polls.get_detail(poll_id))
-      |> Arbor.Stream.stream(:options, Polls.list_options(poll_id), reset: true)
-      |> Arbor.Async.assign_async(:user_vote, fn ->
+      |> assign(:poll_id, poll_id)
+      |> assign(:user_id, user_id)
+      |> assign(:poll, Polls.get_detail(poll_id))
+      |> stream(:options, Polls.list_options(poll_id), reset: true)
+      |> assign_async(:user_vote, fn ->
         {:ok, Polls.get_user_vote(poll_id, user_id)}
       end)
 
@@ -93,7 +93,7 @@ defmodule PollApp.Stores.PollRoomStore do
       {:reply, %{"status" => "closed"}, socket}
     else
       {:reply, %{"status" => "voted"},
-       Arbor.Async.start_async(socket, :vote, fn ->
+       start_async(socket, :vote, fn ->
          case Polls.vote(poll_id, user_id, option_id) do
            {:ok, :voted} -> {:ok, {:voted, option_id}}
            {:error, reason} -> {:error, reason}
@@ -108,7 +108,7 @@ defmodule PollApp.Stores.PollRoomStore do
     user_id = socket.assigns.user_id
 
     {:reply, %{"status" => "reset"},
-     Arbor.Async.start_async(socket, :reset_vote, fn ->
+     start_async(socket, :reset_vote, fn ->
        Polls.reset_vote(poll_id, user_id)
      end)}
   end
@@ -133,17 +133,13 @@ defmodule PollApp.Stores.PollRoomStore do
   @impl Arbor.Store
   def handle_async(:vote, {:ok, {:ok, {:voted, option_id}}}, socket) do
     {:noreply,
-     Arbor.Socket.assign(
-       socket,
-       :user_vote,
-       Arbor.AsyncResult.ok(socket.assigns.user_vote, option_id)
-     )}
+     assign(socket, :user_vote, Arbor.AsyncResult.ok(socket.assigns.user_vote, option_id))}
   end
 
   @impl Arbor.Store
   def handle_async(:vote, {:ok, {:error, reason}}, socket) do
     {:noreply,
-     Arbor.Socket.assign(
+     assign(
        socket,
        :user_vote,
        Arbor.AsyncResult.failed(socket.assigns.user_vote, {:error, reason})
@@ -153,7 +149,7 @@ defmodule PollApp.Stores.PollRoomStore do
   @impl Arbor.Store
   def handle_async(:vote, {:exit, reason}, socket) do
     {:noreply,
-     Arbor.Socket.assign(
+     assign(
        socket,
        :user_vote,
        Arbor.AsyncResult.failed(socket.assigns.user_vote, {:exit, reason})
@@ -162,18 +158,13 @@ defmodule PollApp.Stores.PollRoomStore do
 
   @impl Arbor.Store
   def handle_async(:reset_vote, {:ok, {:ok, :reset}}, socket) do
-    {:noreply,
-     Arbor.Socket.assign(
-       socket,
-       :user_vote,
-       Arbor.AsyncResult.ok(socket.assigns.user_vote, nil)
-     )}
+    {:noreply, assign(socket, :user_vote, Arbor.AsyncResult.ok(socket.assigns.user_vote, nil))}
   end
 
   @impl Arbor.Store
   def handle_async(:reset_vote, {:exit, reason}, socket) do
     {:noreply,
-     Arbor.Socket.assign(
+     assign(
        socket,
        :user_vote,
        Arbor.AsyncResult.failed(socket.assigns.user_vote, {:exit, reason})
@@ -188,14 +179,14 @@ defmodule PollApp.Stores.PollRoomStore do
   def handle_info({:poll_updated, detail, options}, socket) do
     {:noreply,
      socket
-     |> Arbor.Socket.assign(:poll, detail)
-     |> Arbor.Stream.stream(:options, options, reset: true)}
+     |> assign(:poll, detail)
+     |> stream(:options, options, reset: true)}
   end
 
   @impl Arbor.Store
   def terminate(_reason, socket) do
-    Arbor.Async.cancel_async(socket, :vote)
-    Arbor.Async.cancel_async(socket, :reset_vote)
+    cancel_async(socket, :vote)
+    cancel_async(socket, :reset_vote)
     :ok
   end
 end

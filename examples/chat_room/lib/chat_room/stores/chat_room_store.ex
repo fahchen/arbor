@@ -7,10 +7,10 @@ defmodule ChatRoom.Stores.ChatRoomStore do
       `socket.assigns.messages` carries a `loading | ok | failed`
       `AsyncResult`; items live in the stream slot. After the initial
       seed completes, `handle_info({:message_received, ...})` continues
-      to drive incremental inserts via `Arbor.Stream.stream_insert/4`.
-    * `Arbor.Async.stream_async/3` on root `mount/2` to seed the latest
-      stored messages off the mount path (mount returns immediately;
-      messages flip to `:ok` once the background task settles).
+      to drive incremental inserts via `stream_insert/4`.
+    * `stream_async/3` on root `mount/2` to seed the latest stored
+      messages off the mount path (mount returns immediately; messages
+      flip to `:ok` once the background task settles).
     * `assign_async/3` for the `:online_users` AsyncResult field
     * `set_name` command backed by the application-owned presence registry
     * `start_async/3` + `handle_async/3` for the optimistic `:send_message`
@@ -70,17 +70,17 @@ defmodule ChatRoom.Stores.ChatRoomStore do
 
     socket =
       socket
-      |> Arbor.Socket.assign(:room_id, room_id)
-      |> Arbor.Socket.assign(:user_id, user_id)
-      |> Arbor.Socket.assign(:current_user, current_user)
-      |> Arbor.Socket.assign(:last_send_status, %{type: :idle})
-      |> Arbor.Async.stream_async(:messages, fn ->
+      |> assign(:room_id, room_id)
+      |> assign(:user_id, user_id)
+      |> assign(:current_user, current_user)
+      |> assign(:last_send_status, %{type: :idle})
+      |> stream_async(:messages, fn ->
         # Simulated history-load latency so the AsyncResult loading->ok
         # transition is visible client-side.
         Process.sleep(@history_load_delay_ms)
         {:ok, Chat.recent(room_id, @message_limit), reset: true}
       end)
-      |> Arbor.Async.assign_async(:online_users, fn -> {:ok, Presence.list(room_id)} end)
+      |> assign_async(:online_users, fn -> {:ok, Presence.list(room_id)} end)
 
     {:ok, socket}
   end
@@ -119,7 +119,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
 
     socket =
       socket
-      |> Arbor.Socket.assign(:current_user, current_user)
+      |> assign(:current_user, current_user)
       |> put_online_users(Presence.list(room_id))
 
     {:reply, %{"ok" => true, "name" => current_user.name}, socket}
@@ -134,7 +134,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
     sender = socket.assigns.current_user.name
 
     {:reply, %{"queued" => true},
-     Arbor.Async.start_async(socket, :send_message, fn ->
+     start_async(socket, :send_message, fn ->
        Chat.send_message(room_id, sender, body)
      end)}
   end
@@ -149,11 +149,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
 
   @spec put_online_users(Arbor.Socket.t(), [OnlineUser.t()]) :: Arbor.Socket.t()
   defp put_online_users(socket, users) when is_list(users) do
-    Arbor.Socket.assign(
-      socket,
-      :online_users,
-      Arbor.AsyncResult.ok(socket.assigns.online_users, users)
-    )
+    assign(socket, :online_users, Arbor.AsyncResult.ok(socket.assigns.online_users, users))
   end
 
   # ---------------------------------------------------------------------------
@@ -169,19 +165,19 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   # `handle_async/3`.
   @impl Arbor.Store
   def handle_async(:send_message, {:ok, {:ok, %MessageState{id: id}}}, socket) do
-    {:noreply, Arbor.Socket.assign(socket, :last_send_status, %{type: :ok, id: id})}
+    {:noreply, assign(socket, :last_send_status, %{type: :ok, id: id})}
   end
 
   @impl Arbor.Store
   def handle_async(:send_message, {:ok, {:error, reason}}, socket) do
     status = %{type: :failed, reason: Atom.to_string(reason)}
-    {:noreply, Arbor.Socket.assign(socket, :last_send_status, status)}
+    {:noreply, assign(socket, :last_send_status, status)}
   end
 
   @impl Arbor.Store
   def handle_async(:send_message, {:exit, reason}, socket) do
     status = %{type: :failed, reason: inspect(reason)}
-    {:noreply, Arbor.Socket.assign(socket, :last_send_status, status)}
+    {:noreply, assign(socket, :last_send_status, status)}
   end
 
   # ---------------------------------------------------------------------------
@@ -190,7 +186,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
 
   @impl Arbor.Store
   def handle_info({:message_received, %MessageState{} = msg}, socket) do
-    {:noreply, Arbor.Stream.stream_insert(socket, :messages, msg, at: 0, limit: @stream_limit)}
+    {:noreply, stream_insert(socket, :messages, msg, at: 0, limit: @stream_limit)}
   end
 
   @impl Arbor.Store
@@ -206,9 +202,9 @@ defmodule ChatRoom.Stores.ChatRoomStore do
     Presence.leave(socket.assigns.room_id, socket.assigns.user_id)
 
     socket
-    |> Arbor.Async.cancel_async(:send_message)
-    |> Arbor.Async.cancel_async(:messages)
-    |> Arbor.Async.cancel_async(:online_users)
+    |> cancel_async(:send_message)
+    |> cancel_async(:messages)
+    |> cancel_async(:online_users)
 
     :ok
   end

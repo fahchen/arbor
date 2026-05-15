@@ -27,9 +27,9 @@ defmodule CartPage.Stores.CartPageStore do
 
     socket =
       socket
-      |> Arbor.Socket.assign(:cart_id, cart_id)
-      |> Arbor.Socket.assign(:cart_lines, Persistence.load_cart(cart_id))
-      |> Arbor.Socket.assign(:current_user, normalize_current_user(current_user))
+      |> assign(:cart_id, cart_id)
+      |> assign(:cart_lines, Persistence.load_cart(cart_id))
+      |> assign(:current_user, normalize_current_user(current_user))
 
     {:ok, socket}
   end
@@ -38,12 +38,12 @@ defmodule CartPage.Stores.CartPageStore do
   def render(socket) do
     %{
       header:
-        Arbor.Child.child(HeaderStore,
+        child(HeaderStore,
           id: "header",
           current_user: socket.assigns.current_user
         ),
       cart:
-        Arbor.Child.child(CartStore,
+        child(CartStore,
           id: "cart",
           cart_id: socket.assigns.cart_id,
           cart_lines: socket.assigns.cart_lines,
@@ -59,7 +59,7 @@ defmodule CartPage.Stores.CartPageStore do
   def handle_info({:cart_snapshot, cart_id, lines}, socket)
       when is_binary(cart_id) and is_list(lines) do
     if cart_id == socket.assigns.cart_id do
-      {:noreply, Arbor.Socket.assign(socket, :cart_lines, lines)}
+      {:noreply, assign(socket, :cart_lines, lines)}
     else
       {:noreply, socket}
     end
