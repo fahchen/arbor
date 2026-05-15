@@ -185,9 +185,11 @@ defmodule Arbor.Hooks.ValidateRenderTest do
     assert {:cont, ^socket} =
              ValidateRender.after_serialize(:telemetry, %{"title" => 42}, socket)
 
-    assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
-
-    assert %{store_module: TitleStore, errors: [{"$.title", _msg} | _rest]} = metadata
+    # Filter on `store_module: TitleStore` at receive-time so concurrent tests
+    # emitting `[:arbor, :validate, :exception]` for their own stores don't
+    # race this assertion.
+    assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1},
+                    %{store_module: TitleStore, errors: [{"$.title", _msg} | _rest]}}
   end
 
   test "Scenario: successful validation emits stop telemetry" do
@@ -197,8 +199,11 @@ defmodule Arbor.Hooks.ValidateRenderTest do
     assert {:cont, ^socket} =
              ValidateRender.after_serialize(:raise, %{"title" => "Inbox"}, socket)
 
-    assert_receive {:telemetry_event, [:arbor, :validate, :stop], %{count: 1}, metadata}
-    assert %{store_module: TitleStore, errors: []} = metadata
+    # Filter on `store_module: TitleStore` at receive-time so concurrent tests
+    # emitting `[:arbor, :validate, :stop]` for their own stores don't race
+    # this assertion.
+    assert_receive {:telemetry_event, [:arbor, :validate, :stop], %{count: 1},
+                    %{store_module: TitleStore, errors: []}}
   end
 
   defp attach_telemetry_handler(test_pid) do
