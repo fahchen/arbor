@@ -121,6 +121,16 @@ defmodule Arbor.Page.Server do
     GenServer.call(server, {:command_by_name, store_id, command_name, payload})
   end
 
+  @doc false
+  # Internal introspection used by `Arbor.Testing`. Returns the addressed
+  # store node's current socket and module. Not part of the public runtime
+  # surface — production code routes through commands, not direct reads.
+  @spec peek(GenServer.server(), store_id()) ::
+          {:ok, %{socket: Socket.t(), module: module()}} | {:error, :not_mounted}
+  def peek(server, store_id) when is_list(store_id) do
+    GenServer.call(server, {:peek, store_id})
+  end
+
   @impl GenServer
   @spec init(start_arg()) ::
           {:ok, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
@@ -252,6 +262,16 @@ defmodule Arbor.Page.Server do
     case resolve_command_name(state.store_table, store_id, command_name) do
       {:ok, resolved_name} -> handle_command_call(store_id, resolved_name, payload, state)
       {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:peek, store_id}, _from, %State{store_table: table} = state) do
+    case StoreTable.get(table, store_id) do
+      %Entry{socket: socket, module: module} ->
+        {:reply, {:ok, %{socket: socket, module: module}}, state}
+
+      nil ->
+        {:reply, {:error, :not_mounted}, state}
     end
   end
 
