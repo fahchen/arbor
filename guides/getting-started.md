@@ -182,6 +182,22 @@ In CI, check for drift:
 mix compile.arbor_ts --check
 ```
 
+## Wire Encoding: Atoms Become Strings
+
+Atom-typed fields and atom literals serialize to JSON strings. The TypeScript
+codegen emits matching string-literal unions; compare with strings on the
+client.
+
+| Elixir field type                            | TypeScript                            | Wire    |
+| :------------------------------------------- | :------------------------------------ | :------ |
+| `field :winner, :p1 \| :p2 \| :draw \| nil`  | `"p1" \| "p2" \| "draw" \| null`      | `"p1"`  |
+| `field :status, atom()`                      | `string`                              | `"on"`  |
+
+The mental model: every atom alternative becomes its lowercase string
+spelling on the wire. `nil` serialises to JSON `null`. The Elixir side
+keeps the atom shape inside `socket.assigns`; the conversion happens on
+the way out through `Arbor.Wire.to_wire/1`.
+
 ## Next Steps
 
 - Read `Phoenix Setup` for connection/session details.

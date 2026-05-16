@@ -22,6 +22,9 @@ defmodule Arbor.DSL.Field do
 
         state do
           field :title, String.t()
+          # Atom unions render as TypeScript string-literal unions; the
+          # wire carries the string form ("p1", "draw", nil → null).
+          field :winner, :p1 | :p2 | :draw | nil
         end
       end
 
