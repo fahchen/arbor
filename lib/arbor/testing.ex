@@ -45,9 +45,7 @@ defmodule Arbor.Testing do
     transport = Keyword.get(opts, :transport_pid, self())
 
     pid =
-      ExUnit.Callbacks.start_supervised!(
-        {Server, {module, params, %{transport_pid: transport}}}
-      )
+      ExUnit.Callbacks.start_supervised!({Server, {module, params, %{transport_pid: transport}}})
 
     %__MODULE__{pid: pid, root: module, transport: transport}
   end
