@@ -120,8 +120,78 @@ defmodule Arbor.Reconciler do
           {{:ok, socket}, :init, 1}
       end
 
-    validate_callback_result!(result, module, fun, arity)
+    result
+    |> validate_callback_result!(module, fun, arity)
+    |> validate_required_fields!(module)
   end
+
+  # Catches the most common pre-render bug: a store declares
+  # `field :foo, T` (non-nullable primitive) but `mount/init` returns
+  # without assigning it. Without this check, `render/1` blew up later
+  # inside `ValidateRender` with a stack pointing at the
+  # wire-serialisation path, which made the failure read as a render
+  # bug rather than a mount bug.
+  #
+  # Conservative scope: only primitive-typed fields are checked. Child
+  # slot fields (`Module.t()`) live in render output, not assigns;
+  # stream slots (`stream(T)`, `AsyncResult.of(stream(_))`) live under
+  # the reserved `:__streams__` key. Both are excluded so the check
+  # has no false positives in those cases.
+  @spec validate_required_fields!(Socket.t(), module()) :: Socket.t()
+  defp validate_required_fields!(%Socket{assigns: assigns} = socket, module) do
+    if function_exported?(module, :__arbor__, 1) do
+      missing =
+        for %{name: name, type: type} <- module.__arbor__(:fields),
+            primitive_value_field?(type),
+            not type_includes_nil?(type),
+            is_nil(Map.get(assigns, name)),
+            do: name
+
+      case missing do
+        [] ->
+          socket
+
+        _ ->
+          raise ArgumentError,
+                "#{inspect(module)} mount returned without assigning required fields: " <>
+                  "#{inspect(missing)}. Assign them in the mount/init callback, or mark " <>
+                  "each nullable (`field #{inspect(hd(missing))}, T | nil`)."
+      end
+    else
+      socket
+    end
+  end
+
+  # Strict whitelist: only fields with primitive value types are
+  # checked. Composite forms (`Module.t()`, `Module.of(_)`, `stream(_)`,
+  # `list(_)`, `map()`, struct-shaped maps) can be slot-like or
+  # runtime-managed, and there is no reliable way to distinguish at
+  # the AST level. The whitelist catches the original pain case
+  # (`field :created_at, String.t()`) with zero false positives.
+  @spec primitive_value_field?(Macro.t()) :: boolean()
+  defp primitive_value_field?({:|, _, alts}), do: Enum.all?(alts, &primitive_value_field?/1)
+  defp primitive_value_field?({:string, _, []}), do: true
+  defp primitive_value_field?({:binary, _, []}), do: true
+  defp primitive_value_field?({:integer, _, []}), do: true
+  defp primitive_value_field?({:float, _, []}), do: true
+  defp primitive_value_field?({:boolean, _, []}), do: true
+  defp primitive_value_field?({:atom, _, []}), do: true
+
+  defp primitive_value_field?({{:., _, [{:__aliases__, _, [:String]}, :t]}, _, []}),
+    do: true
+
+  defp primitive_value_field?(literal)
+       when is_atom(literal) or is_binary(literal) or is_number(literal),
+       do: true
+
+  defp primitive_value_field?(_), do: false
+
+  @spec type_includes_nil?(Macro.t()) :: boolean()
+  defp type_includes_nil?({:|, _, alternatives}),
+    do: Enum.any?(alternatives, &type_includes_nil?/1)
+
+  defp type_includes_nil?(nil), do: true
+  defp type_includes_nil?(_), do: false
 
   @doc """
   Runs the legacy store mount callback.
