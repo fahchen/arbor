@@ -151,7 +151,7 @@ codegen output into your JS dev server's watched tree:
 config :my_app, MyAppWeb.Endpoint,
   live_reload: [
     patterns: [
-      ~r"lib/my_app/.*/stores/.*\\.ex$",
+      ~r"lib/.*/stores/.*\\.ex$",
       # ... existing patterns
     ]
   ]
