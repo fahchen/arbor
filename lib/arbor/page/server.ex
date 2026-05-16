@@ -201,7 +201,18 @@ defmodule Arbor.Page.Server do
 
   @spec root_store?(module()) :: boolean()
   defp root_store?(module) when is_atom(module) do
-    function_exported?(module, :__arbor__, 1) and module.__arbor__(:root?)
+    module_exports?(module, :__arbor__, 1) and module.__arbor__(:root?)
+  end
+
+  # Defends against cold-VM races: BEAM lazy-loads modules, so a fresh test
+  # VM (or any context where `module` has not yet been referenced) returns
+  # `false` from `function_exported?/3` even though the .beam exists on
+  # disk. `Code.ensure_loaded?/1` triggers the code server load first, then
+  # `function_exported?/3` returns the truthful answer.
+  @spec module_exports?(module(), atom(), arity()) :: boolean()
+  defp module_exports?(module, fun, arity)
+       when is_atom(module) and is_atom(fun) and is_integer(arity) do
+    Code.ensure_loaded?(module) and function_exported?(module, fun, arity)
   end
 
   @spec normalize_root_assigns(Socket.t()) :: Socket.t()
@@ -313,7 +324,7 @@ defmodule Arbor.Page.Server do
 
   @spec declared_command_names(module()) :: [command_name()]
   defp declared_command_names(module) when is_atom(module) do
-    if function_exported?(module, :__arbor__, 1) do
+    if module_exports?(module, :__arbor__, 1) do
       commands = module.__arbor__(:commands)
 
       commands
@@ -383,7 +394,7 @@ defmodule Arbor.Page.Server do
   @impl GenServer
   @spec terminate(term(), State.t()) :: :ok
   def terminate(reason, %State{root_module: root_module, root_socket: root_socket}) do
-    if function_exported?(root_module, :terminate, 2) do
+    if module_exports?(root_module, :terminate, 2) do
       root_module.terminate(reason, root_socket)
     end
 
@@ -494,7 +505,7 @@ defmodule Arbor.Page.Server do
   @spec validate_command_declared!(module(), atom()) :: :ok
   defp validate_command_declared!(module, command_name) do
     commands =
-      if function_exported?(module, :__arbor__, 1) do
+      if module_exports?(module, :__arbor__, 1) do
         List.wrap(module.__arbor__(:commands))
       else
         []
@@ -618,7 +629,7 @@ defmodule Arbor.Page.Server do
 
   @spec invoke_root_handle_info(term(), State.t()) :: State.t()
   defp invoke_root_handle_info(message, %State{root_module: root_module} = state) do
-    if function_exported?(root_module, :handle_info, 2) do
+    if module_exports?(root_module, :handle_info, 2) do
       %Entry{socket: socket} = entry = lookup_or_raise!(state.store_table, [])
 
       case root_module.handle_info(message, socket) do
@@ -984,7 +995,7 @@ defmodule Arbor.Page.Server do
   defp invoke_handle_async(state, store_id, module, name, delivered) do
     %Entry{socket: socket} = entry = fetch_entry(state, store_id)
 
-    if function_exported?(module, :handle_async, 3) do
+    if module_exports?(module, :handle_async, 3) do
       try do
         case module.handle_async(name, delivered, socket) do
           {:noreply, %Socket{} = next_socket} ->

@@ -231,4 +231,20 @@ defmodule Arbor.Page.ServerTest do
 
     assert_receive {:auth_deny, %{command: :do_thing, module: DenyStore, path: []}}
   end
+
+  test "mount/2 runs even when the store module has been purged before init" do
+    # Simulate the cold-VM race: `function_exported?/3` returns `false` for
+    # an unloaded module, which previously caused `root_store?/1` to skip
+    # `mount/2` entirely. With `Code.ensure_loaded?/1` in front, the BEAM
+    # code server reloads the .beam before the predicate runs.
+    store = Arbor.Test.Fixtures.ColdVMStore
+    :code.purge(store)
+    :code.delete(store)
+    refute :erlang.module_loaded(store)
+
+    pid = start_supervised!({Server, {store, %{}, %{transport_pid: self()}}})
+    %State{root_socket: root_socket} = :sys.get_state(pid)
+
+    assert root_socket.assigns.status == "mounted"
+  end
 end
