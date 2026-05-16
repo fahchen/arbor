@@ -139,3 +139,29 @@ await connection.unmountStore("cart:current-user")
 
 Child stores are server-owned and cannot be mounted or unmounted directly by
 the client.
+
+## Live Reloading on Store Changes
+
+For dev-time auto-refresh of the generated TypeScript bundle, include your
+Arbor store directory in Phoenix's live-reload patterns and point the
+codegen output into your JS dev server's watched tree:
+
+```elixir
+# config/dev.exs
+config :my_app, MyAppWeb.Endpoint,
+  live_reload: [
+    patterns: [
+      ~r"lib/my_app/.*/stores/.*\\.ex$",
+      # ... existing patterns
+    ]
+  ]
+
+config :arbor, :ts_codegen_output_path, "ui/src/generated/arbor.d.ts"
+```
+
+The chain is: edit a store, save, `Phoenix.CodeReloader` recompiles on the
+next HTTP request, `:arbor_ts` rewrites the bundle, the JS dev server (Vite
+HMR / equivalent) picks up the file change.
+
+If you change a store in IEx without a request firing, `recompile` in the
+IEx prompt runs the same compiler chain and updates the bundle.
