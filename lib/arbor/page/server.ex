@@ -35,8 +35,8 @@ defmodule Arbor.Page.Server do
   alias Arbor.Lifecycle
   alias Arbor.Page.PatchEnvelope
   alias Arbor.Page.Server.State
-  alias Arbor.Page.StoreRegistry
-  alias Arbor.Page.StoreRegistry.Entry
+  alias Arbor.Page.StoreTable
+  alias Arbor.Page.StoreTable.Entry
   alias Arbor.Reconciler
   alias Arbor.Resolver
   alias Arbor.Socket
@@ -77,7 +77,7 @@ defmodule Arbor.Page.Server do
   This is the public entry point a transport adapter calls to execute one
   client command end-to-end. The pipeline:
 
-    1. Route `store_id` to a mounted store via `Arbor.Page.StoreRegistry.get/2`.
+    1. Route `store_id` to a mounted store via `Arbor.Page.StoreTable.get/2`.
     2. Run `:before_command` hooks root-first along the chain of sockets.
     3. Dispatch `handle_command/3` on the addressed store module.
     4. Run `:after_command` hooks root-first along the chain.
@@ -154,24 +154,24 @@ defmodule Arbor.Page.Server do
       |> normalize_root_assigns()
       |> Reconciler.init_store()
 
-    store_registry =
-      StoreRegistry.put(StoreRegistry.new(), [], %Entry{
+    store_table =
+      StoreTable.put(StoreTable.new(), [], %Entry{
         socket: root_socket,
         module: root_module
       })
 
-    {root_socket, store_registry} = run_render_cycle(root_socket, store_registry)
+    {root_socket, store_table} = run_render_cycle(root_socket, store_table)
 
-    {wire_root, store_registry} = root_wire(store_registry, root_socket)
-    {stream_ops, store_registry} = flush_all_stream_ops(store_registry)
+    {wire_root, store_table} = root_wire(store_table, root_socket)
+    {stream_ops, store_table} = flush_all_stream_ops(store_table)
 
     envelope = PatchEnvelope.initial(wire_root, stream_ops)
 
     state =
       rebuild_async_index(%State{
         root_module: root_module,
-        root_socket: root_socket(store_registry, root_socket),
-        store_registry: store_registry,
+        root_socket: root_socket(store_table, root_socket),
+        store_table: store_table,
         version: 1,
         previous_wire_root: wire_root,
         transport: transport_opts
@@ -238,7 +238,7 @@ defmodule Arbor.Page.Server do
   end
 
   def handle_call({:command_by_name, store_id, command_name, payload}, _from, %State{} = state) do
-    case resolve_command_name(state.store_registry, store_id, command_name) do
+    case resolve_command_name(state.store_table, store_id, command_name) do
       {:ok, resolved_name} -> handle_command_call(store_id, resolved_name, payload, state)
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -291,11 +291,11 @@ defmodule Arbor.Page.Server do
     end
   end
 
-  @spec resolve_command_name(StoreRegistry.t(), store_id(), String.t()) ::
+  @spec resolve_command_name(StoreTable.t(), store_id(), String.t()) ::
           {:ok, command_name()} | {:error, command_error()}
-  defp resolve_command_name(%StoreRegistry{} = registry, store_id, command_name)
+  defp resolve_command_name(%StoreTable{} = registry, store_id, command_name)
        when is_list(store_id) and is_binary(command_name) do
-    case StoreRegistry.get(registry, store_id) do
+    case StoreTable.get(registry, store_id) do
       %Entry{module: module} -> fetch_declared_command_name(module, command_name)
       nil -> {:error, :unknown_store}
     end
@@ -414,7 +414,7 @@ defmodule Arbor.Page.Server do
   @spec render_and_envelope(State.t()) :: {State.t(), PatchEnvelope.t() | nil}
   defp render_and_envelope(%State{} = state) do
     {next_root_socket, next_registry} =
-      run_render_cycle(state.root_socket, state.store_registry)
+      run_render_cycle(state.root_socket, state.store_table)
 
     {wire_root, next_registry} = root_wire(next_registry, next_root_socket)
     {stream_ops, next_registry} = flush_all_stream_ops(next_registry)
@@ -429,7 +429,7 @@ defmodule Arbor.Page.Server do
       rebuild_async_index(%{
         state
         | root_socket: root_socket(next_registry, next_root_socket),
-          store_registry: next_registry,
+          store_table: next_registry,
           version: next_version,
           previous_wire_root: wire_root
       })
@@ -440,7 +440,7 @@ defmodule Arbor.Page.Server do
   @spec run_command_pipeline(store_id(), atom(), command_payload(), State.t()) ::
           {:ok | :halted, command_reply(), State.t()}
   defp run_command_pipeline(store_id, command_name, payload, %State{} = state) do
-    addressed = lookup_or_raise!(state.store_registry, store_id)
+    addressed = lookup_or_raise!(state.store_table, store_id)
     validate_command_declared!(addressed.module, command_name)
 
     chain = store_id_chain(store_id)
@@ -480,9 +480,9 @@ defmodule Arbor.Page.Server do
     end
   end
 
-  @spec lookup_or_raise!(StoreRegistry.t(), store_id()) :: Entry.t()
+  @spec lookup_or_raise!(StoreTable.t(), store_id()) :: Entry.t()
   defp lookup_or_raise!(registry, store_id) do
-    case StoreRegistry.get(registry, store_id) do
+    case StoreTable.get(registry, store_id) do
       %Entry{} = entry ->
         entry
 
@@ -537,7 +537,7 @@ defmodule Arbor.Page.Server do
   @spec update_chain_sockets(State.t(), [store_id()], (Socket.t() -> Socket.t())) :: State.t()
   defp update_chain_sockets(state, chain, fun) do
     Enum.reduce(chain, state, fn chain_id, acc ->
-      case StoreRegistry.get(acc.store_registry, chain_id) do
+      case StoreTable.get(acc.store_table, chain_id) do
         %Entry{socket: socket} = entry ->
           next_entry = %{entry | socket: fun.(socket)}
           put_entry(acc, chain_id, next_entry)
@@ -573,7 +573,7 @@ defmodule Arbor.Page.Server do
           | {:halt, {:halt, State.t()}}
           | {:halt, {:halt_reply, command_reply(), State.t()}}
   defp run_hook_chain_step(chain_id, stage, hook_args, halt_payloads_allowed?, %State{} = acc) do
-    case StoreRegistry.get(acc.store_registry, chain_id) do
+    case StoreTable.get(acc.store_table, chain_id) do
       %Entry{socket: socket} = entry ->
         socket
         |> Lifecycle.run_hooks(stage, hook_args, halt_payloads_allowed?)
@@ -619,7 +619,7 @@ defmodule Arbor.Page.Server do
   @spec invoke_root_handle_info(term(), State.t()) :: State.t()
   defp invoke_root_handle_info(message, %State{root_module: root_module} = state) do
     if function_exported?(root_module, :handle_info, 2) do
-      %Entry{socket: socket} = entry = lookup_or_raise!(state.store_registry, [])
+      %Entry{socket: socket} = entry = lookup_or_raise!(state.store_table, [])
 
       case root_module.handle_info(message, socket) do
         {:noreply, %Socket{} = next_socket} ->
@@ -640,7 +640,7 @@ defmodule Arbor.Page.Server do
   defp dispatch_handler(store_id, command_name, payload, %State{} = state) do
     %Entry{socket: socket, module: module} =
       entry =
-      lookup_or_raise!(state.store_registry, store_id)
+      lookup_or_raise!(state.store_table, store_id)
 
     case module.handle_command(command_name, payload, socket) do
       {:noreply, %Socket{} = next_socket} ->
@@ -657,8 +657,8 @@ defmodule Arbor.Page.Server do
   end
 
   @spec put_entry(State.t(), store_id(), Entry.t()) :: State.t()
-  defp put_entry(%State{store_registry: registry} = state, store_id, %Entry{} = entry) do
-    next_registry = StoreRegistry.put(registry, store_id, entry)
+  defp put_entry(%State{store_table: registry} = state, store_id, %Entry{} = entry) do
+    next_registry = StoreTable.put(registry, store_id, entry)
 
     next_root_socket =
       if store_id == [] do
@@ -667,15 +667,15 @@ defmodule Arbor.Page.Server do
         state.root_socket
       end
 
-    %{state | store_registry: next_registry, root_socket: next_root_socket}
+    %{state | store_table: next_registry, root_socket: next_root_socket}
   end
 
   # ---------------------------------------------------------------------------
   # Render cycle (extracted from `init/1` so the command pipeline can reuse it)
   # ---------------------------------------------------------------------------
 
-  @spec run_render_cycle(Socket.t(), StoreRegistry.t()) :: {Socket.t(), StoreRegistry.t()}
-  defp run_render_cycle(%Socket{} = root_socket, %StoreRegistry{} = registry) do
+  @spec run_render_cycle(Socket.t(), StoreTable.t()) :: {Socket.t(), StoreTable.t()}
+  defp run_render_cycle(%Socket{} = root_socket, %StoreTable{} = registry) do
     started_at = System.monotonic_time()
 
     {:ok, _resolved_root, next_root_socket, next_registry} =
@@ -690,17 +690,17 @@ defmodule Arbor.Page.Server do
     {next_root_socket, next_registry}
   end
 
-  @spec root_wire(StoreRegistry.t(), Socket.t()) :: {term(), StoreRegistry.t()}
-  defp root_wire(%StoreRegistry{} = registry, %Socket{}) do
-    case StoreRegistry.get(registry, []) do
+  @spec root_wire(StoreTable.t(), Socket.t()) :: {term(), StoreTable.t()}
+  defp root_wire(%StoreTable{} = registry, %Socket{}) do
+    case StoreTable.get(registry, []) do
       %Entry{wire_state: wire_state} -> {wire_state, registry}
       nil -> {nil, registry}
     end
   end
 
-  @spec root_socket(StoreRegistry.t(), Socket.t()) :: Socket.t()
-  defp root_socket(%StoreRegistry{} = registry, %Socket{} = fallback) do
-    case StoreRegistry.get(registry, []) do
+  @spec root_socket(StoreTable.t(), Socket.t()) :: Socket.t()
+  defp root_socket(%StoreTable{} = registry, %Socket{} = fallback) do
+    case StoreTable.get(registry, []) do
       %Entry{socket: socket} -> socket
       nil -> fallback
     end
@@ -710,11 +710,11 @@ defmodule Arbor.Page.Server do
   # ops in entry-discovery order (root first, then descendants in registry-key
   # order), clearing the per-socket accumulators along the way. Pending ops
   # do not survive across handlers (see `streams/lifecycle`).
-  @spec flush_all_stream_ops(StoreRegistry.t()) :: {[Stream.op()], StoreRegistry.t()}
-  defp flush_all_stream_ops(%StoreRegistry{} = registry) do
+  @spec flush_all_stream_ops(StoreTable.t()) :: {[Stream.op()], StoreTable.t()}
+  defp flush_all_stream_ops(%StoreTable{} = registry) do
     sorted_keys =
       registry
-      |> StoreRegistry.keys()
+      |> StoreTable.keys()
       |> Enum.sort_by(&length/1)
 
     Enum.reduce(sorted_keys, {[], registry}, fn store_id, {ops_acc, reg_acc} ->
@@ -722,16 +722,16 @@ defmodule Arbor.Page.Server do
     end)
   end
 
-  @spec flush_entry(StoreRegistry.t(), StoreRegistry.identity_key(), [Stream.op()]) ::
-          {[Stream.op()], StoreRegistry.t()}
-  defp flush_entry(%StoreRegistry{} = registry, store_id, ops_acc) do
-    case StoreRegistry.get(registry, store_id) do
+  @spec flush_entry(StoreTable.t(), StoreTable.key(), [Stream.op()]) ::
+          {[Stream.op()], StoreTable.t()}
+  defp flush_entry(%StoreTable{} = registry, store_id, ops_acc) do
+    case StoreTable.get(registry, store_id) do
       %Entry{socket: socket} = entry ->
         {entry_ops, next_socket} = Stream.flush_pending_ops(socket)
         entry_ops = Enum.map(entry_ops, &Map.put(&1, :store_id, store_id))
 
         next_registry =
-          StoreRegistry.put(registry, store_id, %{entry | socket: next_socket})
+          StoreTable.put(registry, store_id, %{entry | socket: next_socket})
 
         {ops_acc ++ entry_ops, next_registry}
 
@@ -1023,14 +1023,14 @@ defmodule Arbor.Page.Server do
   end
 
   @spec fetch_entry(State.t(), store_id()) :: Entry.t() | nil
-  defp fetch_entry(%State{store_registry: registry}, store_id) when is_list(store_id) do
-    StoreRegistry.get(registry, store_id)
+  defp fetch_entry(%State{store_table: registry}, store_id) when is_list(store_id) do
+    StoreTable.get(registry, store_id)
   end
 
   @spec put_entry_by_store_id(State.t(), store_id(), Entry.t()) :: State.t()
-  defp put_entry_by_store_id(%State{store_registry: registry} = state, store_id, %Entry{} = entry)
+  defp put_entry_by_store_id(%State{store_table: registry} = state, store_id, %Entry{} = entry)
        when is_list(store_id) do
-    next_registry = StoreRegistry.put(registry, store_id, entry)
+    next_registry = StoreTable.put(registry, store_id, entry)
 
     next_root_socket =
       if store_id == [] do
@@ -1039,19 +1039,19 @@ defmodule Arbor.Page.Server do
         state.root_socket
       end
 
-    %{state | store_registry: next_registry, root_socket: next_root_socket}
+    %{state | store_table: next_registry, root_socket: next_root_socket}
   end
 
   @spec rebuild_async_index(State.t()) :: State.t()
-  defp rebuild_async_index(%State{store_registry: registry} = state) do
+  defp rebuild_async_index(%State{store_table: registry} = state) do
     index =
-      Enum.reduce(StoreRegistry.keys(registry), %{}, &collect_entry_refs(registry, &1, &2))
+      Enum.reduce(StoreTable.keys(registry), %{}, &collect_entry_refs(registry, &1, &2))
 
     %{state | async_index: index}
   end
 
   defp collect_entry_refs(registry, store_id, acc) do
-    case StoreRegistry.get(registry, store_id) do
+    case StoreTable.get(registry, store_id) do
       %Entry{socket: socket} ->
         Enum.reduce(Async.tracking(socket), acc, &put_ref(&1, store_id, &2))
 

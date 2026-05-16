@@ -13,7 +13,7 @@ defmodule Arbor.Page.ServerChildAsyncTest do
   alias Arbor.AsyncResult
   alias Arbor.Page.PatchEnvelope
   alias Arbor.Page.Server
-  alias Arbor.Page.StoreRegistry
+  alias Arbor.Page.StoreTable
 
   @async_terminal_events [
     [:arbor, :async, :stop],
@@ -260,8 +260,8 @@ defmodule Arbor.Page.ServerChildAsyncTest do
   end
 
   defp child_assign(pid, key) do
-    %{store_registry: registry} = :sys.get_state(pid)
-    entry = StoreRegistry.get(registry, ["w1"])
+    %{store_table: registry} = :sys.get_state(pid)
+    entry = StoreTable.get(registry, ["w1"])
     Map.get(entry.socket.assigns, key)
   end
 end

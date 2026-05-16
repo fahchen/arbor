@@ -3,7 +3,7 @@ defmodule Arbor.Page.ServerTest do
 
   alias Arbor.Page.Server
   alias Arbor.Page.Server.State
-  alias Arbor.Page.StoreRegistry
+  alias Arbor.Page.StoreTable
 
   setup do
     Process.flag(:trap_exit, true)
@@ -65,7 +65,7 @@ defmodule Arbor.Page.ServerTest do
     %State{
       root_module: RootStore,
       root_socket: root_socket,
-      store_registry: store_registry,
+      store_table: store_table,
       version: version,
       transport: transport
     } = :sys.get_state(pid)
@@ -84,9 +84,9 @@ defmodule Arbor.Page.ServerTest do
 
     assert_receive {:patch, %Arbor.Page.PatchEnvelope{base_version: 0, version: 1}}
 
-    assert StoreRegistry.keys(store_registry) == [[]]
+    assert StoreTable.keys(store_table) == [[]]
 
-    assert registry_entry = StoreRegistry.get(store_registry, [])
+    assert registry_entry = StoreTable.get(store_table, [])
     assert registry_entry.module == RootStore
     assert registry_entry.socket == root_socket
     assert registry_entry.resolved_state == %{status: "mounted", __arbor_store_id__: []}

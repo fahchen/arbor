@@ -1,4 +1,4 @@
-defmodule Arbor.Page.StoreRegistry.Entry do
+defmodule Arbor.Page.StoreTable.Entry do
   @moduledoc "Logical store node entry tracked inside the page server."
 
   use TypedStructor

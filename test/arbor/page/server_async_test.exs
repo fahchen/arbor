@@ -10,7 +10,7 @@ defmodule Arbor.Page.ServerAsyncTest do
   alias Arbor.AsyncResult
   alias Arbor.Page.PatchEnvelope
   alias Arbor.Page.Server
-  alias Arbor.Page.StoreRegistry
+  alias Arbor.Page.StoreTable
   alias Arbor.Stream
 
   defmodule AsyncStore do
@@ -836,7 +836,7 @@ defmodule Arbor.Page.ServerAsyncTest do
 
   defp root_socket(pid) do
     state = :sys.get_state(pid)
-    %StoreRegistry.Entry{socket: socket} = StoreRegistry.get(state.store_registry, [])
+    %StoreTable.Entry{socket: socket} = StoreTable.get(state.store_table, [])
     socket
   end
 

@@ -20,7 +20,7 @@ defmodule Arbor.Resolver do
 
   Return shape:
 
-      {:ok, resolved_root, updated_socket, updated_store_registry}
+      {:ok, resolved_root, updated_socket, updated_store_table}
 
   `resolved_root` is the Elixir-form output of the root render. The matching
   wire-form root is available via the registry root entry's `:wire_state`.
@@ -29,8 +29,8 @@ defmodule Arbor.Resolver do
   alias Arbor.AsyncResult
   alias Arbor.Child
   alias Arbor.Lifecycle
-  alias Arbor.Page.StoreRegistry
-  alias Arbor.Page.StoreRegistry.Entry
+  alias Arbor.Page.StoreTable
+  alias Arbor.Page.StoreTable.Entry
   alias Arbor.Reconciler
   alias Arbor.Socket
   alias Arbor.Stream
@@ -45,7 +45,7 @@ defmodule Arbor.Resolver do
   @type resolved_scalar() :: nil | boolean() | number() | String.t() | atom()
   @type resolved_value() ::
           resolved_scalar() | [resolved_value()] | %{optional(term()) => resolved_value()}
-  @type resolve_result() :: {:ok, resolved_value(), Socket.t(), StoreRegistry.t()}
+  @type resolve_result() :: {:ok, resolved_value(), Socket.t(), StoreTable.t()}
 
   @doc """
   Returns the reserved key name carried on every resolved store-node render output.
@@ -79,15 +79,15 @@ defmodule Arbor.Resolver do
       ...> end
       iex> socket = %Arbor.Socket{id: "", parent_path: [], module: ResolverDocRoot, assigns: %{}, private: %{}}
       iex> registry =
-      ...>   Arbor.Page.StoreRegistry.put(
-      ...>     Arbor.Page.StoreRegistry.new(),
+      ...>   Arbor.Page.StoreTable.put(
+      ...>     Arbor.Page.StoreTable.new(),
       ...>     [],
-      ...>     %Arbor.Page.StoreRegistry.Entry{socket: socket, module: ResolverDocRoot}
+      ...>     %Arbor.Page.StoreTable.Entry{socket: socket, module: ResolverDocRoot}
       ...>   )
       iex> {:ok, %{child: %{title: "Inbox", __arbor_store_id__: ["child"]}, __arbor_store_id__: []}, _socket, _registry} = Arbor.Resolver.resolve(socket, registry)
   """
-  @spec resolve(Socket.t(), StoreRegistry.t()) :: resolve_result()
-  def resolve(%Socket{} = socket, %StoreRegistry{} = registry) do
+  @spec resolve(Socket.t(), StoreTable.t()) :: resolve_result()
+  def resolve(%Socket{} = socket, %StoreTable{} = registry) do
     resolve_started_at = System.monotonic_time()
 
     {resolved_root, updated_socket, updated_registry, live_identities} =
@@ -104,7 +104,7 @@ defmodule Arbor.Resolver do
     {:ok, resolved_root, updated_socket, final_registry}
   end
 
-  defp render_store(%Socket{} = socket, %StoreRegistry{} = registry, live_identities)
+  defp render_store(%Socket{} = socket, %StoreTable{} = registry, live_identities)
        when is_map(live_identities) do
     raw_state = socket.module.render(socket)
     store_id = Socket.store_id(socket)
@@ -137,7 +137,7 @@ defmodule Arbor.Resolver do
       end
 
     next_registry =
-      StoreRegistry.put(
+      StoreTable.put(
         resolved_registry,
         store_id,
         %Entry{
@@ -379,7 +379,7 @@ defmodule Arbor.Resolver do
   defp resolve_value(
          %Child{} = child,
          %Socket{} = parent_socket,
-         %StoreRegistry{} = registry,
+         %StoreTable{} = registry,
          path,
          live
        )
@@ -387,7 +387,7 @@ defmodule Arbor.Resolver do
     resolve_child(child, parent_socket, registry, path, live)
   end
 
-  defp resolve_value(value, %Socket{} = parent_socket, %StoreRegistry{} = registry, path, live)
+  defp resolve_value(value, %Socket{} = parent_socket, %StoreTable{} = registry, path, live)
        when is_map(value) and not is_struct(value) do
     Enum.reduce(value, {%{}, registry, live}, fn {key, child_or_value},
                                                  {acc, current_registry, current_live} ->
@@ -407,7 +407,7 @@ defmodule Arbor.Resolver do
     end)
   end
 
-  defp resolve_value(value, %Socket{} = parent_socket, %StoreRegistry{} = registry, path, live)
+  defp resolve_value(value, %Socket{} = parent_socket, %StoreTable{} = registry, path, live)
        when is_list(value) do
     {resolved_list, {next_registry, next_live}} =
       Enum.map_reduce(value, {registry, live}, fn element, {current_registry, current_live} ->
@@ -427,7 +427,7 @@ defmodule Arbor.Resolver do
   defp resolve_child(
          %Child{} = child,
          %Socket{} = parent_socket,
-         %StoreRegistry{} = registry,
+         %StoreTable{} = registry,
          path,
          live
        )
@@ -437,7 +437,7 @@ defmodule Arbor.Resolver do
         ensure_unique_identity!(store_id, live)
 
         next_registry =
-          StoreRegistry.put(registry, store_id, %{entry | consumed_keys: consumed_keys})
+          StoreTable.put(registry, store_id, %{entry | consumed_keys: consumed_keys})
 
         {entry.resolved_state, next_registry, Map.put(live, store_id, true)}
 
@@ -466,10 +466,10 @@ defmodule Arbor.Resolver do
     end
   end
 
-  @spec entry_consumed_keys(StoreRegistry.t(), StoreRegistry.identity_key()) ::
+  @spec entry_consumed_keys(StoreTable.t(), StoreTable.key()) ::
           [Socket.assign_key()]
-  defp entry_consumed_keys(%StoreRegistry{} = registry, store_id) do
-    case StoreRegistry.get(registry, store_id) do
+  defp entry_consumed_keys(%StoreTable{} = registry, store_id) do
+    case StoreTable.get(registry, store_id) do
       %Entry{consumed_keys: consumed_keys} -> consumed_keys
       nil -> []
     end
@@ -486,24 +486,24 @@ defmodule Arbor.Resolver do
     :ok
   end
 
-  @spec put_consumed_keys(StoreRegistry.t(), StoreRegistry.identity_key(), [Socket.assign_key()]) ::
-          StoreRegistry.t()
-  defp put_consumed_keys(%StoreRegistry{} = registry, store_id, consumed_keys) do
-    case StoreRegistry.get(registry, store_id) do
+  @spec put_consumed_keys(StoreTable.t(), StoreTable.key(), [Socket.assign_key()]) ::
+          StoreTable.t()
+  defp put_consumed_keys(%StoreTable{} = registry, store_id, consumed_keys) do
+    case StoreTable.get(registry, store_id) do
       %Entry{} = entry ->
-        StoreRegistry.put(registry, store_id, %{entry | consumed_keys: consumed_keys})
+        StoreTable.put(registry, store_id, %{entry | consumed_keys: consumed_keys})
 
       nil ->
         registry
     end
   end
 
-  @spec next_socket_registry_socket(StoreRegistry.t(), StoreRegistry.identity_key(), Socket.t()) ::
-          StoreRegistry.t()
-  defp next_socket_registry_socket(%StoreRegistry{} = registry, store_id, socket) do
-    case StoreRegistry.get(registry, store_id) do
+  @spec next_socket_registry_socket(StoreTable.t(), StoreTable.key(), Socket.t()) ::
+          StoreTable.t()
+  defp next_socket_registry_socket(%StoreTable{} = registry, store_id, socket) do
+    case StoreTable.get(registry, store_id) do
       %Entry{} = entry ->
-        StoreRegistry.put(registry, store_id, %{entry | socket: socket})
+        StoreTable.put(registry, store_id, %{entry | socket: socket})
 
       nil ->
         registry

@@ -7,8 +7,8 @@ defmodule Arbor.ResolverTest do
 
   alias Arbor.AsyncResult
   alias Arbor.Lifecycle
-  alias Arbor.Page.StoreRegistry
-  alias Arbor.Page.StoreRegistry.Entry
+  alias Arbor.Page.StoreTable
+  alias Arbor.Page.StoreTable.Entry
   alias Arbor.Reconciler
   alias Arbor.Resolver
   alias Arbor.Socket
@@ -679,7 +679,7 @@ defmodule Arbor.ResolverTest do
       assert {:ok, %{header: %{user_name: "Alice"}}, _socket, resolved_registry} =
                Resolver.resolve(socket, registry)
 
-      assert StoreRegistry.get(resolved_registry, ["header"])
+      assert StoreTable.get(resolved_registry, ["header"])
     end
 
     test "Render output uses raw maps for nested store types" do
@@ -689,7 +689,7 @@ defmodule Arbor.ResolverTest do
       assert {:ok, %{header: %{user_name: "Alice"}}, _socket, resolved_registry} =
                Resolver.resolve(socket, registry)
 
-      assert StoreRegistry.keys(resolved_registry) == [[]]
+      assert StoreTable.keys(resolved_registry) == [[]]
     end
 
     test "Resolver evaluates child placeholders before the parent's output is finalized" do
@@ -716,7 +716,7 @@ defmodule Arbor.ResolverTest do
                __arbor_store_id__: []
              } = resolved_root
 
-      assert %Entry{wire_state: wire_state} = StoreRegistry.get(resolved_registry, [])
+      assert %Entry{wire_state: wire_state} = StoreTable.get(resolved_registry, [])
       assert %{"feed" => %{"messages" => %{"__arbor_stream__" => "messages"}}} = wire_state
       assert %{"users" => %{"__arbor_stream__" => "users"}} = wire_state
     end
@@ -736,7 +736,7 @@ defmodule Arbor.ResolverTest do
                __arbor_store_id__: []
              } = resolved_root
 
-      assert %Entry{wire_state: wire_state} = StoreRegistry.get(resolved_registry, [])
+      assert %Entry{wire_state: wire_state} = StoreTable.get(resolved_registry, [])
 
       assert %{
                "messages" => %{
@@ -844,7 +844,7 @@ defmodule Arbor.ResolverTest do
                Resolver.resolve(next_socket, registry)
 
       assert_receive :mounted_v2
-      assert %Entry{module: FilterStoreV2} = StoreRegistry.get(next_registry, ["filters"])
+      assert %Entry{module: FilterStoreV2} = StoreTable.get(next_registry, ["filters"])
     end
 
     test "Duplicate ids in a list reconcile to a hard runtime error" do
@@ -886,14 +886,14 @@ defmodule Arbor.ResolverTest do
       registry = registry(socket)
 
       assert {:ok, _resolved, socket, registry} = Resolver.resolve(socket, registry)
-      assert StoreRegistry.get(registry, ["header"])
+      assert StoreTable.get(registry, ["header"])
 
       next_socket = Socket.assign(socket, :show?, false)
 
       assert {:ok, %{child: nil}, _socket, next_registry} =
                Resolver.resolve(next_socket, registry)
 
-      refute StoreRegistry.get(next_registry, ["header"])
+      refute StoreTable.get(next_registry, ["header"])
     end
 
     test "A store may omit update/2; the default merges new_assigns into socket.assigns" do
@@ -965,7 +965,7 @@ defmodule Arbor.ResolverTest do
       assert {:ok, _resolved, dropped_socket, dropped_registry} =
                Resolver.resolve(dropped_socket, registry)
 
-      refute StoreRegistry.get(dropped_registry, ["n"])
+      refute StoreTable.get(dropped_registry, ["n"])
 
       remount_socket = Socket.assign(dropped_socket, :show?, true)
 
@@ -981,7 +981,7 @@ defmodule Arbor.ResolverTest do
       assert {:ok, %{title: "ready"}, _socket, resolved_registry} =
                Resolver.resolve(Reconciler.mount_store(socket), registry(socket))
 
-      assert StoreRegistry.keys(resolved_registry) == [[]]
+      assert StoreTable.keys(resolved_registry) == [[]]
     end
   end
 
@@ -1081,13 +1081,13 @@ defmodule Arbor.ResolverTest do
       assert %Entry{
                resolved_state: %{header: %{user_name: "Alice"}},
                wire_state: %{"header" => %{"user_name" => "Alice"}}
-             } = StoreRegistry.get(registry, [])
+             } = StoreTable.get(registry, [])
     end
   end
 
   defp registry(%Socket{} = socket) do
-    StoreRegistry.put(
-      StoreRegistry.new(),
+    StoreTable.put(
+      StoreTable.new(),
       Socket.store_id(socket),
       %Entry{
         socket: socket,
