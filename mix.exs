@@ -15,6 +15,7 @@ defmodule Arbor.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       docs: docs(),
+      package: package(),
       dialyzer: [
         plt_local_path: "priv/plts/arbor.plt",
         plt_core_path: "priv/plts/core.plt",
@@ -59,6 +60,27 @@ defmodule Arbor.MixProject do
 
   defp description do
     "Server-authoritative, page-scoped runtime library for Elixir/Phoenix applications."
+  end
+
+  # Hex package contents. Includes the JS source under `packages/*/src`
+  # so that consuming Phoenix apps can reference them via
+  # `file:../deps/arbor/packages/<name>` from their JS package.json. The
+  # consumer's bundler (Vite, esbuild) transpiles `.ts`/`.tsx` on demand.
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{"GitHub" => @source_url},
+      files: ~w(
+          lib
+          mix.exs
+          README.md
+          guides
+          packages/client/src
+          packages/client/package.json
+          packages/react/src
+          packages/react/package.json
+        )
+    ]
   end
 
   defp docs do
