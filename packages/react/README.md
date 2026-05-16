@@ -27,6 +27,7 @@ Add to `vite.config.ts`:
 
 ```ts
 import path from "node:path"
+import { defineConfig } from "vite"
 
 export default defineConfig({
   resolve: {
