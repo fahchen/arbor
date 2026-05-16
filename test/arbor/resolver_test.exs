@@ -74,7 +74,7 @@ defmodule Arbor.ResolverTest do
     use Arbor.Store
 
     state do
-      field :title, String.t() | nil
+      field :title, String.t()
     end
 
     @impl Arbor.Store
