@@ -39,8 +39,12 @@ defmodule Arbor.TestingTest do
       {:reply, %{"ok" => true}, Arbor.Socket.assign(socket, :count, socket.assigns.count + n)}
     end
 
-    def handle_command(:declare, %{"winner" => w}, socket) when w in ["p1", "p2"] do
-      {:reply, %{"ok" => true}, Arbor.Socket.assign(socket, :winner, String.to_atom(w))}
+    def handle_command(:declare, %{"winner" => "p1"}, socket) do
+      {:reply, %{"ok" => true}, Arbor.Socket.assign(socket, :winner, :p1)}
+    end
+
+    def handle_command(:declare, %{"winner" => "p2"}, socket) do
+      {:reply, %{"ok" => true}, Arbor.Socket.assign(socket, :winner, :p2)}
     end
   end
 
@@ -69,8 +73,8 @@ defmodule Arbor.TestingTest do
     test "reflects state after a command settles" do
       page = Arbor.Testing.mount(SimpleStore)
 
-      {:ok, _} = Arbor.Testing.dispatch_command(page, :bump, %{"by" => 3})
-      {:ok, _} = Arbor.Testing.dispatch_command(page, :declare, %{"winner" => "p1"})
+      {:ok, _reply} = Arbor.Testing.dispatch_command(page, :bump, %{"by" => 3})
+      {:ok, _reply} = Arbor.Testing.dispatch_command(page, :declare, %{"winner" => "p1"})
 
       assert Arbor.Testing.render(page) == %{count: 3, winner: :p1}
     end
@@ -79,7 +83,7 @@ defmodule Arbor.TestingTest do
   describe "assigns/2" do
     test "returns raw socket.assigns" do
       page = Arbor.Testing.mount(SimpleStore)
-      {:ok, _} = Arbor.Testing.dispatch_command(page, :bump, %{"by" => 5})
+      {:ok, _reply} = Arbor.Testing.dispatch_command(page, :bump, %{"by" => 5})
 
       assigns = Arbor.Testing.assigns(page)
       assert assigns.count == 5

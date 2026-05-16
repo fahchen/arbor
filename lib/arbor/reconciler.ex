@@ -151,7 +151,7 @@ defmodule Arbor.Reconciler do
         [] ->
           socket
 
-        _ ->
+        _missing ->
           raise ArgumentError,
                 "#{inspect(module)} mount returned without assigning required fields: " <>
                   "#{inspect(missing)}. Assign them in the mount/init callback, or mark " <>
@@ -169,29 +169,29 @@ defmodule Arbor.Reconciler do
   # the AST level. The whitelist catches the original pain case
   # (`field :created_at, String.t()`) with zero false positives.
   @spec primitive_value_field?(Macro.t()) :: boolean()
-  defp primitive_value_field?({:|, _, alts}), do: Enum.all?(alts, &primitive_value_field?/1)
-  defp primitive_value_field?({:string, _, []}), do: true
-  defp primitive_value_field?({:binary, _, []}), do: true
-  defp primitive_value_field?({:integer, _, []}), do: true
-  defp primitive_value_field?({:float, _, []}), do: true
-  defp primitive_value_field?({:boolean, _, []}), do: true
-  defp primitive_value_field?({:atom, _, []}), do: true
+  defp primitive_value_field?({:|, _meta, alts}), do: Enum.all?(alts, &primitive_value_field?/1)
+  defp primitive_value_field?({:string, _meta, []}), do: true
+  defp primitive_value_field?({:binary, _meta, []}), do: true
+  defp primitive_value_field?({:integer, _meta, []}), do: true
+  defp primitive_value_field?({:float, _meta, []}), do: true
+  defp primitive_value_field?({:boolean, _meta, []}), do: true
+  defp primitive_value_field?({:atom, _meta, []}), do: true
 
-  defp primitive_value_field?({{:., _, [{:__aliases__, _, [:String]}, :t]}, _, []}),
+  defp primitive_value_field?({{:., _dot, [{:__aliases__, _meta, [:String]}, :t]}, _call, []}),
     do: true
 
   defp primitive_value_field?(literal)
        when is_atom(literal) or is_binary(literal) or is_number(literal),
        do: true
 
-  defp primitive_value_field?(_), do: false
+  defp primitive_value_field?(_other), do: false
 
   @spec type_includes_nil?(Macro.t()) :: boolean()
-  defp type_includes_nil?({:|, _, alternatives}),
+  defp type_includes_nil?({:|, _meta, alternatives}),
     do: Enum.any?(alternatives, &type_includes_nil?/1)
 
   defp type_includes_nil?(nil), do: true
-  defp type_includes_nil?(_), do: false
+  defp type_includes_nil?(_other), do: false
 
   @doc """
   Runs the legacy store mount callback.
