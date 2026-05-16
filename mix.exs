@@ -134,6 +134,9 @@ defmodule Arbor.MixProject do
         ],
         Codegen: [
           Mix.Tasks.Compile.ArborTs
+        ],
+        Testing: [
+          Arbor.Testing
         ]
       ]
     ]
@@ -154,13 +157,16 @@ defmodule Arbor.MixProject do
       Arbor.Transport.Socket,
       Arbor.Transport.ConnectionChannel,
       Arbor.Transport.Channel,
-      Mix.Tasks.Compile.ArborTs
+      Mix.Tasks.Compile.ArborTs,
+      Arbor.Testing
     ]
   end
 
   defp skip_doc_reference?(reference) when is_binary(reference) do
     Enum.any?(skipped_doc_references(), &String.starts_with?(reference, &1))
   end
+
+  defp skip_doc_reference?(_other), do: false
 
   defp skipped_doc_references do
     [
