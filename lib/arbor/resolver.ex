@@ -174,16 +174,15 @@ defmodule Arbor.Resolver do
   defp stitch_wire(value, _unused_registry, _unused_own_store_id) when is_struct(value),
     do: Wire.to_wire(value)
 
-  defp stitch_wire(map, %StoreTable{} = registry, own_store_id) when is_map(map) do
-    case Map.get(map, @store_id_key) do
-      store_id when is_list(store_id) and store_id != own_store_id ->
-        cached_child_wire(registry, store_id) || Wire.to_wire(map)
+  defp stitch_wire(%{@store_id_key => store_id} = map, %StoreTable{} = registry, own_store_id)
+       when is_list(store_id) and store_id != own_store_id do
+    cached_child_wire(registry, store_id) || Wire.to_wire(map)
+  end
 
-      _not_a_child_store_boundary ->
-        Map.new(map, fn {key, value} ->
-          {Wire.Encoder.key_to_wire(key), stitch_wire(value, registry, own_store_id)}
-        end)
-    end
+  defp stitch_wire(map, %StoreTable{} = registry, own_store_id) when is_map(map) do
+    Map.new(map, fn {key, value} ->
+      {Wire.Encoder.key_to_wire(key), stitch_wire(value, registry, own_store_id)}
+    end)
   end
 
   defp stitch_wire(value, _registry, _own_store_id), do: Wire.to_wire(value)
@@ -191,15 +190,10 @@ defmodule Arbor.Resolver do
   @spec cached_child_wire(StoreTable.t(), StoreTable.key()) :: Entry.wire_state() | nil
   defp cached_child_wire(%StoreTable{} = registry, store_id) do
     case StoreTable.get(registry, store_id) do
-      %Entry{wire_state: wire_state}
-      when is_map(wire_state) or is_list(wire_state) or is_binary(wire_state) or
-             is_number(wire_state) or is_boolean(wire_state) ->
-        wire_state
+      %Entry{} = entry ->
+        entry.wire_state
 
-      %Entry{wire_state: nil} ->
-        nil
-
-      _missing_entry ->
+      nil ->
         nil
     end
   end
