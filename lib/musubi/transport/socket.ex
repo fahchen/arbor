@@ -10,7 +10,7 @@ defmodule Musubi.Transport.Socket do
   @musubi_socket_key :__musubi_socket__
 
   @doc """
-  Declares the Phoenix socket adapter for an Musubi socket.
+  Declares the Phoenix socket adapter for a Musubi socket.
 
   ## Examples
 

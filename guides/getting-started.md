@@ -79,7 +79,7 @@ serializes it for the wire.
 
 ## 3. Declare Mountable Roots
 
-An Musubi socket declares the root stores a client may mount. Application code
+A Musubi socket declares the root stores a client may mount. Application code
 implements Musubi callbacks; Phoenix socket and channel behaviours are handled
 by the adapter.
 

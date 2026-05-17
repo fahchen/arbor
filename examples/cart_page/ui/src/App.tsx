@@ -133,7 +133,7 @@ function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
           <p className="eyebrow">Musubi Storefront Runtime</p>
           <h1>Cart control room</h1>
           <p>
-            An Musubi store driving a React cart with server-owned state, command replies,
+            A Musubi store driving a React cart with server-owned state, command replies,
             persistence, and reconnect recovery.
           </p>
         </div>

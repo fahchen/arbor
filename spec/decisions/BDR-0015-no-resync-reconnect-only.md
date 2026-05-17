@@ -13,7 +13,7 @@ summary: Drop musubi:request_resync (and any subtree-resync variants). Under 1:1
 
 ## Reason
 
-Earlier discovery drafts proposed an `musubi:request_resync` system command that the client would send when it detected a version gap, prompting the server to emit a `replace` patch reseating subtree or root. Examined against the rest of the design:
+Earlier discovery drafts proposed a `musubi:request_resync` system command that the client would send when it detected a version gap, prompting the server to emit a `replace` patch reseating subtree or root. Examined against the rest of the design:
 
 - **BDR-0003** binds the page runtime 1:1 to the transport. Disconnect kills the runtime; reconnect mounts a fresh runtime and re-runs `mount/3`.
 - **Phoenix Channel** preserves order over a single channel — there is no transport-level scenario where the client falls behind on patch versions while the channel remains open.

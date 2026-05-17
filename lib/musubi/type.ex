@@ -264,8 +264,8 @@ defmodule Musubi.Type do
         raise CompileError,
           description:
             "#{inspect(host_module)}.#{field_name}: type #{Macro.to_string(type_ast)} uses " <>
-              "#{inspect(ref_module)}.state() but #{inspect(ref_module)} is not an Musubi.Store. " <>
-              "Use #{inspect(ref_module)}.t() to reference an Musubi.State, or change " <>
+              "#{inspect(ref_module)}.state() but #{inspect(ref_module)} is not a Musubi.Store. " <>
+              "Use #{inspect(ref_module)}.t() to reference a Musubi.State, or change " <>
               "#{inspect(ref_module)} to `use Musubi.Store` if it should mount as a child."
 
       true ->

@@ -414,7 +414,7 @@ defmodule Musubi.Resolver do
       {:ok, other} ->
         raise ArgumentError,
               "async_stream(#{inspect(name)}) expects socket.assigns.#{name} to be " <>
-                "an Musubi.AsyncResult, got: #{inspect(other)}"
+                "a Musubi.AsyncResult, got: #{inspect(other)}"
 
       :error ->
         AsyncResult.loading()

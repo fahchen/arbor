@@ -1,6 +1,6 @@
 defmodule Musubi.Plugin.TypeScript do
   @moduledoc """
-  TypedStructor plugin that marks an Musubi `state do` block as eligible for
+  TypedStructor plugin that marks a Musubi `state do` block as eligible for
   TypeScript codegen.
 
   The plugin injects an `@after_compile` callback pointing at

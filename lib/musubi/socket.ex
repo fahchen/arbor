@@ -78,7 +78,7 @@ defmodule Musubi.Socket do
   @typedoc "Parameters supplied when the transport socket connects."
   @type connect_params() :: map()
 
-  @typedoc "Parameters supplied when an Musubi connection joins."
+  @typedoc "Parameters supplied when a Musubi connection joins."
   @type join_params() :: map()
 
   @typedoc "Application-level denial reasons returned by socket callbacks."
@@ -96,7 +96,7 @@ defmodule Musubi.Socket do
   @callback handle_connect(params :: connect_params(), socket :: t()) :: callback_result()
 
   @doc """
-  Runs once when an Musubi connection joins.
+  Runs once when a Musubi connection joins.
 
   Use this callback for connection-level scope checks such as workspace or
   tenant authorization. It does not receive root store module or id data; those
@@ -105,7 +105,7 @@ defmodule Musubi.Socket do
   @callback handle_join(params :: join_params(), socket :: t()) :: callback_result()
 
   @doc """
-  Declares an Musubi socket module.
+  Declares a Musubi socket module.
 
   The generated module is a Phoenix socket adapter internally, but application
   code implements only Musubi callbacks.

@@ -107,7 +107,7 @@ defmodule MyAppWeb.Stores.CounterStore do
 end
 ```
 
-Expose it through an Musubi socket:
+Expose it through a Musubi socket:
 
 ```elixir
 defmodule MyAppWeb.UserSocket do

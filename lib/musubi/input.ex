@@ -67,7 +67,7 @@ defmodule Musubi.Input do
   end
 
   @doc """
-  Returns whether `module` is an Musubi input-object module.
+  Returns whether `module` is a Musubi input-object module.
 
   ## Examples
 

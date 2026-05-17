@@ -227,7 +227,7 @@ defmodule Musubi.Transport.Channel do
         {:error, "module #{inspect(module_str)} is not loadable"}
 
       not root_store?(matched) ->
-        {:error, "module #{inspect(module_str)} is not an Musubi root store"}
+        {:error, "module #{inspect(module_str)} is not a Musubi root store"}
 
       true ->
         {:ok, matched}

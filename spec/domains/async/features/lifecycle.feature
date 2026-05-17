@@ -184,7 +184,7 @@ Feature: Async Task Lifecycle
   Rule: AsyncResult serializes the status atom as a string on the wire
 
     Scenario: Wire shape uses string-coerced status
-      Given an Musubi.AsyncResult struct with fields status, result, reason
+      Given a Musubi.AsyncResult struct with fields status, result, reason
       When the runtime serializes it for the JSON Patch payload
       Then the resulting JSON object uses keys "status", "result", "reason"
       And the status atom (:loading | :ok | :failed) becomes the string ("loading" | "ok" | "failed")
@@ -211,7 +211,7 @@ Feature: Async Task Lifecycle
       And the runtime continues to process subsequent messages
       And socket.assigns is not modified for that cycle
 
-  Rule: Async telemetry is an Musubi extension over LV
+  Rule: Async telemetry is a Musubi extension over LV
 
     Scenario Outline: Lifecycle event surface
       When the runtime processes an async event

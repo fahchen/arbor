@@ -6,7 +6,7 @@
 
 ## Excluded From BDD Scope
 
-- **persistence/snapshot-roundtrip** — Surfaced and explored 2026-05-09. Decision: persistence is **not** an Musubi primitive. Applications implement snapshot save/load via the existing hook (`attach_hook(socket, :persist, :after_command, fn)`) and extension points. Musubi exposes no `Musubi.Persistence` behaviour, no bundled ETS/Postgres adapters, no `persist_now/1` helper, no `persist: :ok_only` opt-in. The pattern may be packaged as a separate companion library (`Musubi.Persistence`) outside the core runtime. Documentation of recommended hook usage lives in `docs/persistence-pattern.md` (TBD).
+- **persistence/snapshot-roundtrip** — Surfaced and explored 2026-05-09. Decision: persistence is **not** a Musubi primitive. Applications implement snapshot save/load via the existing hook (`attach_hook(socket, :persist, :after_command, fn)`) and extension points. Musubi exposes no `Musubi.Persistence` behaviour, no bundled ETS/Postgres adapters, no `persist_now/1` helper, no `persist: :ok_only` opt-in. The pattern may be packaged as a separate companion library (`Musubi.Persistence`) outside the core runtime. Documentation of recommended hook usage lives in `docs/persistence-pattern.md` (TBD).
 
 ## Open Decisions
 

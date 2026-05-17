@@ -149,7 +149,7 @@ defmodule Musubi.TypeTest do
         end
       end
 
-      assert_raise CompileError, ~r/is not an Musubi\.Store/, fn ->
+      assert_raise CompileError, ~r/is not a Musubi\.Store/, fn ->
         Type.verify_module!(Musubi.TypeTest.FakeStateRefHost)
       end
     end

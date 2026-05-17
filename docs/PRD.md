@@ -27,7 +27,7 @@ Musubi lets developers model page state as a hierarchical tree of stateful store
 | Addressable mutations | Commands route by `store_id` plus command name; the client echoes the server-rendered `__musubi_store_id__` and never constructs ids itself. Outcome via Phoenix Channel ref reply (BDR-0001). |
 | Efficient replication | RFC 6902 JSON Patch, structural minimal diff with no threshold (BDR-0014). |
 | Stream support | LiveView-parity stream API; server forgets values, client owns materialization. |
-| Async tasks | LiveView-parity `assign_async`/`start_async`/`cancel_async`/`handle_async` with `Musubi.AsyncResult`, plus an Musubi `:timeout` extension that kills overdue tasks. |
+| Async tasks | LiveView-parity `assign_async`/`start_async`/`cancel_async`/`handle_async` with `Musubi.AsyncResult`, plus a Musubi `:timeout` extension that kills overdue tasks. |
 | Recoverability | Reconnect path: 1:1 transport binding, fresh mount on disconnect, first patch envelope carries full root (BDR-0003). |
 | Type safety | Generated Elixir typespecs and TypeScript types from one source of truth (`state do` and `command do`). |
 | Observability | Telemetry events for command lifecycle, render, validation, diff, patch, async lifecycle, stream flush. |
@@ -594,7 +594,7 @@ export type ProductPageStoreCommands = {
 | M5: Async lifecycle | `assign_async`, `start_async`, `cancel_async`, `handle_async/3`, `Musubi.AsyncResult`, `Task.Supervisor`, `:timeout` extension, `:reset` (incl subset list), ref-prune races, lazy-discard, `stream_async/4`. | High | Weeks 9–10 |
 | M6: Codegen + hardening | Elixir typespec emission, TypeScript codegen for state and command schemas (incl streams, AsyncResult, variants, composite types), telemetry events, devtools, trace buffer, docs, examples, benchmarks. | Medium | Weeks 11–12 |
 
-Persistence is **not** an Musubi primitive (recorded in `spec/backlog.md`). Applications load snapshots inside their own `mount/1` body and save via `attach_hook` on `:after_command`. Valid hook stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`.
+Persistence is **not** a Musubi primitive (recorded in `spec/backlog.md`). Applications load snapshots inside their own `mount/1` body and save via `attach_hook` on `:after_command`. Valid hook stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`.
 
 ## Acceptance Criteria
 
@@ -613,7 +613,7 @@ The MVP is done when all of the following are true:
 - Diff engine emits structural minimal RFC 6902 diff with no threshold (BDR-0014). Initial state is the first patch envelope's `replace` at path `""`.
 - No application-level resync command; recovery is reconnect (BDR-0015).
 - Stream API LV-parity; stream fields are declared inside `state do`; Musubi diverges from LV only in naming `stream_delete_by_item_key/3` instead of `stream_delete_by_dom_id/3`; server forgets values; refresh via `stream(reset: true)` or `stream_async(reset: true)` (BDR-0022); stream-only cycles emit envelopes (BDR-0018).
-- Async API LV-parity plus an Musubi `:timeout` extension; `start_async` same-name overwrites + lazy-discards (BDR-0019); `handle_async/3` exceptions caught (BDR-0020); telemetry events `[:musubi, :async, :*]` cover the lifecycle.
+- Async API LV-parity plus a Musubi `:timeout` extension; `start_async` same-name overwrites + lazy-discards (BDR-0019); `handle_async/3` exceptions caught (BDR-0020); telemetry events `[:musubi, :async, :*]` cover the lifecycle.
 - `stream_async/4` matches Phoenix.LiveView 1.1+ semantics; `stream(reset: true)` and `stream_async(reset: true)` cover silent and loading-flash refresh respectively (BDR-0022).
 - The system runs without CRDTs, offline sync, event sourcing, built-in PubSub, built-in persistence, slot composition, or `move`/`copy`/`test` JSON Patch ops.
 
