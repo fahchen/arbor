@@ -1,5 +1,10 @@
 # Musubi
 
+[![Hex.pm](https://img.shields.io/hexpm/v/musubi.svg)](https://hex.pm/packages/musubi)
+[![HexDocs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/musubi)
+[![License](https://img.shields.io/hexpm/l/musubi.svg)](https://github.com/fahchen/musubi/blob/main/LICENSE)
+[![CI](https://github.com/fahchen/musubi/actions/workflows/ci.yml/badge.svg)](https://github.com/fahchen/musubi/actions/workflows/ci.yml)
+
 Musubi is a server-authoritative runtime for Elixir/Phoenix applications. A
 Phoenix socket owns one Musubi connection, and that connection can mount many
 declared root stores. Each root store runs in its own page-scoped process,
