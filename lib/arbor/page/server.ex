@@ -450,7 +450,12 @@ defmodule Arbor.Page.Server do
     {wire_root, next_registry} = root_wire(next_registry, next_root_socket)
     {stream_ops, next_registry} = flush_all_stream_ops(next_registry)
 
-    diff_ops = Diff.diff(state.previous_wire_root, wire_root)
+    diff_ops =
+      if wire_root == state.previous_wire_root do
+        []
+      else
+        Diff.diff(state.previous_wire_root, wire_root)
+      end
 
     envelope = PatchEnvelope.build(state.version, diff_ops, stream_ops)
 

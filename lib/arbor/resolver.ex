@@ -7,7 +7,8 @@ defmodule Arbor.Resolver do
   pipeline:
 
     1. `:after_render` hooks — receive the resolved Elixir term.
-    2. `Arbor.Wire.to_wire/1` — converts the resolved Elixir term to wire form.
+    2. Wire serialization — converts the resolved Elixir term to wire form while
+       stitching cached child `wire_state` at reused store boundaries.
     3. `:after_serialize` hooks — receive the wire term.
 
   Each rendered store node's resolved state map carries
@@ -46,6 +47,11 @@ defmodule Arbor.Resolver do
   @type resolved_scalar() :: nil | boolean() | number() | String.t() | atom()
   @type resolved_value() ::
           resolved_scalar() | [resolved_value()] | %{optional(term()) => resolved_value()}
+  @typep stitchable_value() ::
+           resolved_scalar()
+           | struct()
+           | [stitchable_value()]
+           | %{optional(atom() | String.t()) => stitchable_value()}
   @type resolve_result() :: {:ok, resolved_value(), Socket.t(), StoreTable.t()}
 
   @doc """
@@ -116,7 +122,7 @@ defmodule Arbor.Resolver do
     resolved_state = normalize_stream_placeholders!(resolved_state, socket)
     resolved_state = inject_store_id(resolved_state, store_id)
 
-    wire_state = Wire.to_wire(resolved_state)
+    wire_state = stitch_wire(resolved_state, resolved_registry, store_id)
     next_socket = finalize_socket(socket, resolved_state, wire_state)
 
     next_registry =
@@ -190,6 +196,38 @@ defmodule Arbor.Resolver do
   end
 
   defp inject_store_id(resolved_state, _store_id), do: resolved_state
+
+  @spec stitch_wire(stitchable_value(), StoreTable.t(), StoreTable.key()) :: Entry.wire_state()
+  defp stitch_wire(list, %StoreTable{} = registry, own_store_id) when is_list(list) do
+    Enum.map(list, &stitch_wire(&1, registry, own_store_id))
+  end
+
+  defp stitch_wire(value, _unused_registry, _unused_own_store_id) when is_struct(value),
+    do: Wire.to_wire(value)
+
+  defp stitch_wire(%{@store_id_key => store_id} = map, %StoreTable{} = registry, own_store_id)
+       when is_list(store_id) and store_id != own_store_id do
+    cached_child_wire(registry, store_id) || Wire.to_wire(map)
+  end
+
+  defp stitch_wire(map, %StoreTable{} = registry, own_store_id) when is_map(map) do
+    Map.new(map, fn {key, value} ->
+      {Wire.Encoder.key_to_wire(key), stitch_wire(value, registry, own_store_id)}
+    end)
+  end
+
+  defp stitch_wire(value, _registry, _own_store_id), do: Wire.to_wire(value)
+
+  @spec cached_child_wire(StoreTable.t(), StoreTable.key()) :: Entry.wire_state() | nil
+  defp cached_child_wire(%StoreTable{} = registry, store_id) do
+    case StoreTable.get(registry, store_id) do
+      %Entry{} = entry ->
+        entry.wire_state
+
+      nil ->
+        nil
+    end
+  end
 
   @spec normalize_stream_placeholders!(resolved_value(), Socket.t()) :: resolved_value()
   defp normalize_stream_placeholders!(resolved_state, %Socket{} = socket) do
@@ -470,7 +508,7 @@ defmodule Arbor.Resolver do
         next_registry =
           StoreTable.put(registry, store_id, %{entry | consumed_keys: consumed_keys})
 
-        {entry.resolved_state, next_registry, Map.put(live, store_id, true)}
+        {entry.resolved_state, next_registry, mark_subtree_live(registry, store_id, live)}
 
       {:mount, store_id, %Socket{} = child_socket, consumed_keys} ->
         ensure_unique_identity!(store_id, live)
@@ -527,6 +565,16 @@ defmodule Arbor.Resolver do
       nil ->
         registry
     end
+  end
+
+  @spec mark_subtree_live(StoreTable.t(), StoreTable.key(), %{optional(StoreTable.key()) => true}) ::
+          %{optional(StoreTable.key()) => true}
+  defp mark_subtree_live(%StoreTable{} = registry, store_id, live_identities)
+       when is_list(store_id) and is_map(live_identities) do
+    Enum.reduce(StoreTable.subtree_keys(registry, store_id), live_identities, fn subtree_store_id,
+                                                                                 acc ->
+      Map.put(acc, subtree_store_id, true)
+    end)
   end
 
   @spec next_socket_registry_socket(StoreTable.t(), StoreTable.key(), Socket.t()) ::
