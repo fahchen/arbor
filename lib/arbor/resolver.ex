@@ -439,7 +439,7 @@ defmodule Arbor.Resolver do
         next_registry =
           StoreTable.put(registry, store_id, %{entry | consumed_keys: consumed_keys})
 
-        {entry.resolved_state, next_registry, Map.put(live, store_id, true)}
+        {entry.resolved_state, next_registry, mark_subtree_live(registry, store_id, live)}
 
       {:mount, store_id, %Socket{} = child_socket, consumed_keys} ->
         ensure_unique_identity!(store_id, live)
@@ -496,6 +496,16 @@ defmodule Arbor.Resolver do
       nil ->
         registry
     end
+  end
+
+  @spec mark_subtree_live(StoreTable.t(), StoreTable.key(), %{optional(StoreTable.key()) => true}) ::
+          %{optional(StoreTable.key()) => true}
+  defp mark_subtree_live(%StoreTable{} = registry, store_id, live_identities)
+       when is_list(store_id) and is_map(live_identities) do
+    Enum.reduce(StoreTable.subtree_keys(registry, store_id), live_identities, fn subtree_store_id,
+                                                                                 acc ->
+      Map.put(acc, subtree_store_id, true)
+    end)
   end
 
   @spec next_socket_registry_socket(StoreTable.t(), StoreTable.key(), Socket.t()) ::

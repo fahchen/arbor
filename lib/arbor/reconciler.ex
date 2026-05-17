@@ -59,7 +59,7 @@ defmodule Arbor.Reconciler do
           # async result write, or a stream insert) since the last render. The
           # parent did not change so `update/2` does not run, but the child
           # still needs to re-render so its new state surfaces in the wire diff.
-          child_store_dirty?(entry.socket) ->
+          subtree_dirty?(registry, store_id) ->
             {:update, store_id, entry.socket, consumed_keys}
 
           true ->
@@ -83,11 +83,19 @@ defmodule Arbor.Reconciler do
     end)
   end
 
-  @spec child_store_dirty?(Socket.t()) :: boolean()
-  defp child_store_dirty?(%Socket{} = socket) do
-    Socket.any_changed?(socket) or stream_changed?(socket)
+  @spec subtree_dirty?(StoreTable.t(), identity_key()) :: boolean()
+  defp subtree_dirty?(%StoreTable{} = registry, store_id) when is_list(store_id) do
+    registry
+    |> StoreTable.subtree_keys(store_id)
+    |> Enum.any?(fn subtree_store_id ->
+      case StoreTable.get(registry, subtree_store_id) do
+        %Entry{socket: socket} -> Socket.any_changed?(socket) or stream_changed?(socket)
+        nil -> false
+      end
+    end)
   end
 
+  @spec stream_changed?(Socket.t()) :: boolean()
   defp stream_changed?(%Socket{} = socket) do
     socket
     |> Stream.changed_streams()

@@ -86,4 +86,25 @@ defmodule Arbor.Page.StoreTable do
   """
   @spec keys(t()) :: [key()]
   def keys(%__MODULE__{entries: entries}), do: Map.keys(entries)
+
+  @doc """
+  Returns every `store_id` in the subtree rooted at `prefix`, including `prefix`.
+
+  ## Examples
+
+      iex> entry = %Arbor.Page.StoreTable.Entry{socket: %Arbor.Socket{}, module: Example}
+      iex> table =
+      ...>   Arbor.Page.StoreTable.new()
+      ...>   |> Arbor.Page.StoreTable.put(["mid"], entry)
+      ...>   |> Arbor.Page.StoreTable.put(["mid", "leaf"], entry)
+      ...>   |> Arbor.Page.StoreTable.put(["other"], entry)
+      iex> Arbor.Page.StoreTable.subtree_keys(table, ["mid"]) |> Enum.sort()
+      [["mid"], ["mid", "leaf"]]
+  """
+  @spec subtree_keys(t(), key()) :: [key()]
+  def subtree_keys(%__MODULE__{} = table, prefix) when is_list(prefix) do
+    table
+    |> keys()
+    |> Enum.filter(&List.starts_with?(&1, prefix))
+  end
 end
