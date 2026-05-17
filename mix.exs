@@ -53,7 +53,6 @@ defmodule Musubi.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
-      {:ritual, github: "fahchen/ritual", only: :dev, runtime: false},
       {:benchee, "~> 1.3", only: :dev, runtime: false}
     ]
   end
