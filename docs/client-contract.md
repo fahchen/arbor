@@ -212,7 +212,7 @@ Envelope rules:
 - stream placement paths contain `WireStreamMarker` objects in `ops`
 - stream contents move through `stream_ops`
 
-See [Streams](streams.md) for declaration, render placement, and validation
+See `Musubi.Stream` for declaration, render placement, and validation
 rules.
 
 ## Async Values
