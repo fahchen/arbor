@@ -1,7 +1,7 @@
 defmodule CartPage.Stores.HeaderStore do
   @moduledoc "Renders the page header — signed-in state plus user name."
 
-  use Arbor.Store
+  use Musubi.Store
 
   attr(:current_user, %{id: String.t(), name: String.t()} | nil, default: nil)
 
@@ -10,7 +10,7 @@ defmodule CartPage.Stores.HeaderStore do
     field(:user_name, String.t() | nil)
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(socket) do
     user = socket.assigns.current_user
 
@@ -22,12 +22,12 @@ defmodule CartPage.Stores.HeaderStore do
     {:ok, socket}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(socket) do
     %{signed_in: socket.assigns.signed_in, user_name: socket.assigns.user_name}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def update(params, socket) do
     user = Map.get(params, :current_user)
 
@@ -39,7 +39,7 @@ defmodule CartPage.Stores.HeaderStore do
     {:ok, socket}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
   defp user_name(nil), do: nil

@@ -1,7 +1,7 @@
 defmodule PollAppWeb.UserSocket do
   @moduledoc false
 
-  use Arbor.Socket,
+  use Musubi.Socket,
     roots: [
       PollApp.Stores.DashboardStore,
       PollApp.Stores.PollRoomStore

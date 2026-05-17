@@ -25,7 +25,7 @@ A store may call `start_async(socket, :foo, ...)` twice in quick succession (e.g
 New start_async replaces the tracked ref. Older task runs to completion; its result message arrives, fails the ref-prune check, and is discarded. No active cancel.
 
 ### Option B: Implicit cancel of the prior task
-On second `start_async` with the same name, runtime calls `cancel_async/3` first, then spawns the new task. Predictable resource cleanup; one extra `:DOWN` message and an `[:arbor, :async, :cancel]` event.
+On second `start_async` with the same name, runtime calls `cancel_async/3` first, then spawns the new task. Predictable resource cleanup; one extra `:DOWN` message and an `[:musubi, :async, :cancel]` event.
 
 ### Option C: Allow concurrent tasks per name
 Track multiple `(ref, pid)` entries per name. `handle_async/3` is invoked once per result. Application must filter or de-dupe.

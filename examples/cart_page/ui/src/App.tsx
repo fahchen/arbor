@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react"
 import type { SubmitEvent } from "react"
-import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
-import type { StoreProxy } from "@arbor/react"
+import { useMusubiCommand, useMusubiRoot, useMusubiSnapshot } from "@musubi/react"
+import type { StoreProxy } from "@musubi/react"
 
-import { CART_PAGE_ROOT } from "./arbor"
+import { CART_PAGE_ROOT } from "./musubi"
 
-type Registry = Arbor.Stores
+type Registry = Musubi.Stores
 type RootModule = "CartPage.Stores.CartPageStore"
 
 const PRODUCT_OPTIONS = [
@@ -33,7 +33,7 @@ const PRODUCT_OPTIONS = [
 ] as const
 
 export default function App() {
-  const rootMount = useArborRoot<Registry, RootModule>(CART_PAGE_ROOT)
+  const rootMount = useMusubiRoot<Registry, RootModule>(CART_PAGE_ROOT)
 
   if (rootMount.status === "loading") {
     return <main className="shell">Connecting...</main>
@@ -47,12 +47,12 @@ export default function App() {
 }
 
 function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
-  const page = useArborSnapshot(root)
+  const page = useMusubiSnapshot(root)
 
   const cartProxy = root.cart
-  const addItem = useArborCommand(cartProxy, "add_item")
-  const removeLine = useArborCommand(cartProxy, "remove_line")
-  const checkout = useArborCommand(cartProxy, "checkout")
+  const addItem = useMusubiCommand(cartProxy, "add_item")
+  const removeLine = useMusubiCommand(cartProxy, "remove_line")
+  const checkout = useMusubiCommand(cartProxy, "checkout")
 
   const [sku, setSku] = useState<(typeof PRODUCT_OPTIONS)[number]["sku"]>("mug")
   const [feedback, setFeedback] = useState<string>("")
@@ -65,7 +65,7 @@ function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
 
   const headerLabel = useMemo(() => {
     if (!page.header) {
-      return "Connecting to Arbor..."
+      return "Connecting to Musubi..."
     }
 
     if (!page.header.signed_in) {
@@ -130,10 +130,10 @@ function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
     <main className="shell">
       <header className="hero">
         <div className="hero-copy">
-          <p className="eyebrow">Arbor Storefront Runtime</p>
+          <p className="eyebrow">Musubi Storefront Runtime</p>
           <h1>Cart control room</h1>
           <p>
-            An Arbor store driving a React cart with server-owned state, command replies,
+            A Musubi store driving a React cart with server-owned state, command replies,
             persistence, and reconnect recovery.
           </p>
         </div>
@@ -227,13 +227,13 @@ function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
           {page.cart.lines.length === 0 ? (
             <div className="empty">
               <strong>No lines yet</strong>
-              <p>Add a product to watch the store tree update through Arbor.</p>
+              <p>Add a product to watch the store tree update through Musubi.</p>
             </div>
           ) : (
             <ul className="lines">
               {cartProxy.lines.map((lineProxy) => (
                 <CartLine
-                  key={lineProxy.__arbor_store_id__.join("/")}
+                  key={lineProxy.__musubi_store_id__.join("/")}
                   lineProxy={lineProxy}
                   busy={busy}
                   onRemove={(id) => void handleRemoveLine(id)}
@@ -285,9 +285,9 @@ function CartLine({
   onRemove: (id: string) => void
   onFeedback: (message: string) => void
 }) {
-  const line = useArborSnapshot(lineProxy)
-  const incQty = useArborCommand(lineProxy, "inc_qty")
-  const decQty = useArborCommand(lineProxy, "dec_qty")
+  const line = useMusubiSnapshot(lineProxy)
+  const incQty = useMusubiCommand(lineProxy, "inc_qty")
+  const decQty = useMusubiCommand(lineProxy, "dec_qty")
   const [pending, setPending] = useState<"inc" | "dec" | null>(null)
 
   async function step(kind: "inc" | "dec") {

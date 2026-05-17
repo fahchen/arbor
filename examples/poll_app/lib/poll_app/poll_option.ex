@@ -4,7 +4,7 @@ defmodule PollApp.PollOption do
   `:options` stream slot inside `OptionsStore`.
   """
 
-  use Arbor.State
+  use Musubi.State
 
   state do
     field(:id, String.t())

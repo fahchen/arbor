@@ -3,7 +3,7 @@ defmodule PollApp.PollSummary do
   Lightweight poll card shown on the dashboard stream.
   """
 
-  use Arbor.State
+  use Musubi.State
 
   state do
     field(:id, String.t())

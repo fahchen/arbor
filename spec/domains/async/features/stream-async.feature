@@ -4,7 +4,7 @@ Feature: stream_async
   I want to launch a background task whose result populates a stream slot
   So that long, lazily-loaded collections deliver per-item ops with explicit loading-state on the wire
 
-  # Mirrors Phoenix.LiveView.stream_async/4 in LV 1.1+; Arbor retains item-key terminology.
+  # Mirrors Phoenix.LiveView.stream_async/4 in LV 1.1+; Musubi retains item-key terminology.
 
   Background:
     Given a connected client
@@ -15,9 +15,9 @@ Feature: stream_async
     Scenario: First call ensures both the AsyncResult assignment and the stream slot
       Given a store declares state do stream_async :messages, MessageState.t(), ... end
       When the application calls stream_async(socket, :messages, fn -> {:ok, items} end)
-      Then socket.assigns.messages is set to Arbor.AsyncResult.loading() synchronously
+      Then socket.assigns.messages is set to Musubi.AsyncResult.loading() synchronously
       And the stream slot named messages is initialized
-      And a task is spawned linked to the page runtime under Arbor.AsyncSupervisor
+      And a task is spawned linked to the page runtime under Musubi.AsyncSupervisor
 
   Rule: The user function returns {:ok, enumerable}, {:ok, enumerable, stream_opts}, or {:error, reason}
 
@@ -31,20 +31,20 @@ Feature: stream_async
 
     Scenario: Explicit error
       When the user fun returns {:error, :rate_limited}
-      Then socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:error, :rate_limited})
+      Then socket.assigns.messages becomes Musubi.AsyncResult.failed(prior, {:error, :rate_limited})
       And the stream slot remains untouched
 
     Scenario: Invalid return shape
       When the user fun returns [%Msg{}] without the {:ok, ...} wrapper
       Then the runtime raises ArgumentError inside the task
-      And socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, ...})
+      And socket.assigns.messages becomes Musubi.AsyncResult.failed(prior, {:exit, ...})
 
   Rule: A successful task atomically updates the AsyncResult to ok and seeds the stream
 
     Scenario: Single envelope captures both transitions
       When the task completes successfully with items [msg1, msg2]
       Then the next envelope contains JSON Patch ops at /messages/status reflecting AsyncResult transitions
-      And the value at /messages/result remains {"__arbor_stream__": "messages"}
+      And the value at /messages/result remains {"__musubi_stream__": "messages"}
       And the same envelope contains stream_ops with insert ops for each item
       And socket.assigns.messages is %AsyncResult{status: :ok, result: true, reason: nil} (status flag, not the items themselves — items live in the stream)
 
@@ -53,16 +53,16 @@ Feature: stream_async
     Scenario: Failed task on a previously-populated stream
       Given the stream messages contains 50 items from an earlier successful load
       When a fresh stream_async call returns {:error, :network_failure}
-      Then socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:error, :network_failure})
+      Then socket.assigns.messages becomes Musubi.AsyncResult.failed(prior, {:error, :network_failure})
       And the stream's previously delivered items remain on the client
 
-  Rule: :reset cancels the prior task and re-emits Arbor.AsyncResult.loading; stream contents controlled by the user fn
+  Rule: :reset cancels the prior task and re-emits Musubi.AsyncResult.loading; stream contents controlled by the user fn
 
     Scenario: Reset re-emits loading
       Given a prior stream_async task is in flight for :messages
       When the application calls stream_async(socket, :messages, fun, reset: true)
       Then the prior task is cancelled
-      And socket.assigns.messages re-emits Arbor.AsyncResult.loading()
+      And socket.assigns.messages re-emits Musubi.AsyncResult.loading()
 
     Scenario: Stream reset only when the user fn returns it
       Given a stream_async with reset: true completes successfully
@@ -84,10 +84,10 @@ Feature: stream_async
 
       Examples:
         | event                                                 | outcome                                                            |
-        | the task times out (with :timeout option)             | socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, :timeout}); stream untouched |
-        | the application calls cancel_async(socket, :messages, r) | the task is killed; socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, r))     |
-        | the task crashes                                      | socket.assigns.messages becomes Arbor.AsyncResult.failed(prior, {:exit, ...})                       |
-        | the originating store node is unmounted               | the result is lazy-discarded; [:arbor, :async, :lazy_discard] is emitted                    |
+        | the task times out (with :timeout option)             | socket.assigns.messages becomes Musubi.AsyncResult.failed(prior, {:exit, :timeout}); stream untouched |
+        | the application calls cancel_async(socket, :messages, r) | the task is killed; socket.assigns.messages becomes Musubi.AsyncResult.failed(prior, {:exit, r))     |
+        | the task crashes                                      | socket.assigns.messages becomes Musubi.AsyncResult.failed(prior, {:exit, ...})                       |
+        | the originating store node is unmounted               | the result is lazy-discarded; [:musubi, :async, :lazy_discard] is emitted                    |
         | a second stream_async is called for :messages         | the prior task is overwritten in tracking; only the latest task's result populates state    |
 
   Rule: stream_async requires a previously-declared stream slot
@@ -102,7 +102,7 @@ Feature: stream_async
     Scenario: Composite typespec
       Given a store declares state do stream_async :messages, MessageState.t(), ... end
       Then reflection exposes the field type as AsyncResult.of(stream(MessageState.t()))
-      And the runtime accepts the wire value as a three-field AsyncResult whose result is {"__arbor_stream__": "messages"}
+      And the runtime accepts the wire value as a three-field AsyncResult whose result is {"__musubi_stream__": "messages"}
       And codegen emits a TypeScript composite shape combining AsyncResult and an items array
 
   Rule: Two refresh paths, by intent

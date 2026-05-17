@@ -1,6 +1,6 @@
 # Persistence pattern (application-owned)
 
-Arbor does not ship an `Arbor.Persistence` module, behaviour, or adapter. This is a deliberate scope decision recorded in `spec/backlog.md`: persistence is an application concern, not a runtime primitive. Hook stages and the `socket` extension points already give applications everything they need.
+Musubi does not ship an `Musubi.Persistence` module, behaviour, or adapter. This is a deliberate scope decision recorded in `spec/backlog.md`: persistence is an application concern, not a runtime primitive. Hook stages and the `socket` extension points already give applications everything they need.
 
 This document is the reference for that pattern: load on `mount/1`, save on `attach_hook(:persist, :after_command, …)`.
 
@@ -13,11 +13,11 @@ This document is the reference for that pattern: load on `mount/1`, save on `att
 
 ## Save: `attach_hook(:persist, :after_command, …)`
 
-`:after_command` hooks are arity 3, called as `(command_name, payload, socket)`. Return shape is `{:cont, socket}` or `{:halt, socket}`. `use Arbor.Store` exposes `assign/2,3`, `attach_hook/4`, and the other LV-style helpers bare; the fully-qualified `Arbor.Socket.*` and `Arbor.Lifecycle.*` forms remain available when preferred.
+`:after_command` hooks are arity 3, called as `(command_name, payload, socket)`. Return shape is `{:cont, socket}` or `{:halt, socket}`. `use Musubi.Store` exposes `assign/2,3`, `attach_hook/4`, and the other LV-style helpers bare; the fully-qualified `Musubi.Socket.*` and `Musubi.Lifecycle.*` forms remain available when preferred.
 
 ```elixir
 defmodule MyApp.Stores.CartStore do
-  use Arbor.Store
+  use Musubi.Store
 
   state do
     field :items, list(CartItemState.t())
@@ -119,7 +119,7 @@ Both shapes work with the same primitives:
 - **Snapshot** — overwrite on every `:after_command` write. Simple. Higher write cost. Easy reload (single read at mount).
 - **Append-only** — write each command + payload to an event log; rebuild state at mount by replaying. More flexible. Reload cost grows with history. Use when audit/event sourcing is already part of the application.
 
-Arbor doesn't pick. Both compose with the same hook stages.
+Musubi doesn't pick. Both compose with the same hook stages.
 
 ## Reconnect = fresh mount
 

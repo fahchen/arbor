@@ -3,7 +3,7 @@ defmodule PollApp.DashboardHeader do
   Poll count summary rendered at the top of the dashboard.
   """
 
-  use Arbor.State
+  use Musubi.State
 
   state do
     field(:active_count, integer())

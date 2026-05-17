@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Arbor · A Review Companion</title>
+<title>Musubi · A Review Companion</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;0,7..72,700;1,7..72,400;1,7..72,600&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -686,7 +686,7 @@
   <!-- HERO -->
   <header class="hero" id="top">
     <div class="eyebrow"><span class="dot"></span>An Elixir runtime · v0 · review draft</div>
-    <h1 class="title">Arbor<br/>—a tree of <em>stores</em>,<br/>spoken as JSON.</h1>
+    <h1 class="title">Musubi<br/>—a tree of <em>stores</em>,<br/>spoken as JSON.</h1>
     <p class="deck">A page-scoped, server-authoritative runtime. One BEAM process owns a hierarchy of stateful stores, validates every render against a typed shape, and pushes RFC&nbsp;6902 patches to a typed client. LiveView semantics where they fit; principled deviations recorded as decisions.</p>
     <div class="byline">
       <div><strong>Stack</strong><br/>Elixir · Phoenix Channels · TypeScript</div>
@@ -698,8 +698,8 @@
 
   <!-- ============= 1. WHAT ============= -->
   <section id="what">
-    <h2><span class="num">01</span>What is Arbor</h2>
-    <p class="lede">Phoenix LiveView taught us that a page can be a single, server-owned process. Arbor takes that lesson and reshapes it for typed, headless clients: instead of a tree of HTML, a tree of <em>stores</em> — each declaring the slice of JSON it owns — speaks to whatever rendering surface the client provides.</p>
+    <h2><span class="num">01</span>What is Musubi</h2>
+    <p class="lede">Phoenix LiveView taught us that a page can be a single, server-owned process. Musubi takes that lesson and reshapes it for typed, headless clients: instead of a tree of HTML, a tree of <em>stores</em> — each declaring the slice of JSON it owns — speaks to whatever rendering surface the client provides.</p>
 
     <p>One <strong>BEAM process per connected page</strong> hosts a dynamic tree of stateful stores. Each store declares the public shape of its render output in a <em>state block</em> (<code>state do … end</code>). The runtime composes children explicitly through <code>child(...)</code> placeholders, validates every resolved render against the declared shape, computes the structural minimal RFC&nbsp;6902 diff against the prior cycle, and ships the patch to the client over a Phoenix Channel.</p>
 
@@ -722,7 +722,7 @@
     <p>A page is a <em>tree of stores</em>. Each node owns a slice of the wire shape; children are placed explicitly by the parent's <code>render/1</code>; identity is the tuple <code>(parent_path, module, id)</code>.</p>
 
     <figure class="figure">
-      <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Arbor store tree">
+      <svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Musubi store tree">
         <defs>
           <marker id="arrow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M0,0 L8,4 L0,8 z" class="fill" />
@@ -789,7 +789,7 @@
     </p>
 
     <h3>Socket fields</h3>
-    <p>Arbor's <code>socket</code> mirrors <a href="https://hexdocs.pm/phoenix/1.8.7/Phoenix.Socket.html#module-socket-fields"><code>Phoenix.Socket</code></a>'s shape so handlers, hooks, and helpers all read the same struct. The fields a store author touches most:</p>
+    <p>Musubi's <code>socket</code> mirrors <a href="https://hexdocs.pm/phoenix/1.8.7/Phoenix.Socket.html#module-socket-fields"><code>Phoenix.Socket</code></a>'s shape so handlers, hooks, and helpers all read the same struct. The fields a store author touches most:</p>
     <table>
       <thead><tr><th>Field</th><th>Type</th><th>Purpose</th></tr></thead>
       <tbody>
@@ -810,7 +810,7 @@
     <p>A complete store, exercising every primitive in the language. Read the comments inline; the rest of this page expands on each piece.</p>
 
     <pre data-lang="elixir"><code><span class="tk-kw">defmodule</span> <span class="tk-mod">MyApp.Stores.ChatRoomStore</span> <span class="tk-kw">do</span>
-  <span class="tk-kw">use</span> <span class="tk-mod">Arbor.Store</span>
+  <span class="tk-kw">use</span> <span class="tk-mod">Musubi.Store</span>
 
   <span class="tk-cmt"># Inputs from the parent (compile-time only; values flow into socket.assigns).</span>
   <span class="tk-fn">attr</span> <span class="tk-atom">:room_id</span>,      <span class="tk-mod">String</span>.t(), required: <span class="tk-atom">true</span>
@@ -1039,12 +1039,12 @@
 </code></pre>
 
     <h3>Errors crash; the client reconnects</h3>
-    <p>Arbor mirrors LiveView's let-it-crash posture for malformed or impossible commands. Unknown paths, undeclared commands, schema-failing payloads, and any other "the runtime cannot service this request" condition raise inside the runtime; the page process exits; the supervisor restarts a fresh runtime; the transport drops; the client reconnects and replays its initial state from the new mount. There is no wire enum of error categories — the runtime never produces a structured error reply for these cases.</p>
+    <p>Musubi mirrors LiveView's let-it-crash posture for malformed or impossible commands. Unknown paths, undeclared commands, schema-failing payloads, and any other "the runtime cannot service this request" condition raise inside the runtime; the page process exits; the supervisor restarts a fresh runtime; the transport drops; the client reconnects and replays its initial state from the new mount. There is no wire enum of error categories — the runtime never produces a structured error reply for these cases.</p>
 
     <p>Authorization and graceful denials live in <em>hook</em> halts, not crashes. A <code>:before_command</code> hook may return <code>{:halt, %{ok: false, reason: "unauthorized"}, socket}</code>; the transport reply carries that payload with channel status <code>:ok</code>, and the client decides how to surface it. The handler is skipped; no patch ships.</p>
 
     <p class="pull">
-      “If LiveView would crash, Arbor crashes. If the application has a graceful answer, it returns it as a hook reply. The wire stays narrow: <code>:ok</code> with a payload, or the connection drops.”
+      “If LiveView would crash, Musubi crashes. If the application has a graceful answer, it returns it as a hook reply. The wire stays narrow: <code>:ok</code> with a payload, or the connection drops.”
       <cite>— Mirrors BDR-0003 let-it-crash semantics</cite>
     </p>
   </section>
@@ -1052,7 +1052,7 @@
   <!-- ============= 5. STREAMS ============= -->
   <section id="streams">
     <h2><span class="num">05</span>Streams: the server forgets</h2>
-    <p>For long, append-mostly collections — a chat scrollback, an activity feed — Arbor mirrors LiveView's stream API exactly. The wire delivers per-item ops; the server retains only an ordered set of item keys after each flush.</p>
+    <p>For long, append-mostly collections — a chat scrollback, an activity feed — Musubi mirrors LiveView's stream API exactly. The wire delivers per-item ops; the server retains only an ordered set of item keys after each flush.</p>
 
     <figure class="figure">
       <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Stream lifecycle">
@@ -1108,7 +1108,7 @@
   <!-- ============= 6. ASYNC ============= -->
   <section id="async">
     <h2><span class="num">06</span>Async &amp; AsyncResult</h2>
-    <p>Background work flows through three primitives borrowed from LiveView, plus one Arbor extension. Every async value on the wire is an <code>AsyncResult</code> — a three-field struct keyed on a <code>status</code> enum (<code>:loading | :ok | :failed</code>); pattern-match on the status to drive the UI.</p>
+    <p>Background work flows through three primitives borrowed from LiveView, plus one Musubi extension. Every async value on the wire is an <code>AsyncResult</code> — a three-field struct keyed on a <code>status</code> enum (<code>:loading | :ok | :failed</code>); pattern-match on the status to drive the UI.</p>
 
     <figure class="figure">
       <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AsyncResult states">
@@ -1154,7 +1154,7 @@ socket |&gt; <span class="tk-fn">stream_async</span>(<span class="tk-atom">:mess
       <cite>— BDR-0019, accepted</cite>
     </p>
 
-    <p>Arbor diverges from LiveView in one notable place: a raise inside <code>handle_async/3</code> is caught and recorded as <code>[:arbor, :async, :exception]</code>; the runtime continues. The reasoning is documented in BDR-0020. A bug in async result-processing should not flap the entire page on every completion.</p>
+    <p>Musubi diverges from LiveView in one notable place: a raise inside <code>handle_async/3</code> is caught and recorded as <code>[:musubi, :async, :exception]</code>; the runtime continues. The reasoning is documented in BDR-0020. A bug in async result-processing should not flap the entire page on every completion.</p>
   </section>
 
   <!-- ============= 7. WIRE ============= -->
@@ -1237,7 +1237,7 @@ socket |&gt; <span class="tk-fn">stream_async</span>(<span class="tk-atom">:mess
   <!-- ============= 9. NON-GOALS ============= -->
   <section id="non">
     <h2><span class="num">09</span>Deliberate non-goals</h2>
-    <p>What Arbor will not do is as load-bearing as what it does. Each entry is a closed door with a known reason on the other side.</p>
+    <p>What Musubi will not do is as load-bearing as what it does. Each entry is a closed door with a known reason on the other side.</p>
     <ul>
       <li><strong>One process per child store.</strong> Mailbox ordering and merge complexity outweigh isolation gains for an MVP.</li>
       <li><strong>CRDT or offline-first sync.</strong> Out of scope; this is a server-authoritative runtime.</li>
@@ -1262,7 +1262,7 @@ socket |&gt; <span class="tk-fn">stream_async</span>(<span class="tk-atom">:mess
     <p>All comments are kept locally in your browser (localStorage). Closing the tab does not lose them. <span class="kbd">Clear all</span> resets the rail.</p>
 
     <div class="callout" data-label="Markdown export schema">
-<pre style="margin:0; background: transparent; border: 0; padding: 0; font-size: 0.78rem;"><code>## Review of Arbor (date)
+<pre style="margin:0; background: transparent; border: 0; padding: 0; font-size: 0.78rem;"><code>## Review of Musubi (date)
 
 ### 1. <em>highlighted phrase</em> — context url
 review note in markdown.
@@ -1284,7 +1284,7 @@ review note in markdown.
     <nav class="toc" aria-label="Contents">
       <div class="toc-title">Contents</div>
       <ol>
-        <li><a href="#what">What is Arbor</a></li>
+        <li><a href="#what">What is Musubi</a></li>
         <li><a href="#mental">Mental model</a></li>
         <li><a href="#dsl">The DSL, in one breath</a></li>
         <li><a href="#commands">Commands &amp; the hook pipeline</a></li>
@@ -1316,7 +1316,7 @@ review note in markdown.
 
 <script>
 (function () {
-  const STORE_KEY = "arbor.review.comments.v1";
+  const STORE_KEY = "musubi.review.comments.v1";
   const doc = document.getElementById("doc");
   const rail = document.getElementById("rail-list");
   const railEmpty = document.getElementById("rail-empty");
@@ -1595,7 +1595,7 @@ review note in markdown.
     }
     const stamp = new Date().toISOString().slice(0, 10);
     const url = location.href.split("#")[0];
-    const lines = [`## Review of Arbor — ${stamp}`, ""];
+    const lines = [`## Review of Musubi — ${stamp}`, ""];
     comments.forEach((c, i) => {
       const ts = new Date(c.ts).toLocaleString();
       lines.push(`### ${String(i + 1).padStart(2, "0")} · ${ts}`);

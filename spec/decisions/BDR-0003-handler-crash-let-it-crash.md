@@ -3,7 +3,7 @@ id: BDR-0003
 title: Handler crash terminates the page runtime; reconnect re-mounts from scratch
 status: accepted
 date: 2026-05-08
-summary: No defensive try/rescue around handlers (no error reply, no recovery, no state preservation). Page runtime dies on raise. Telemetry-instrumentation try/rescue that re-raises is allowed and used by the runtime to emit `[:arbor, :command, :exception]` events — this is the standard `:telemetry.span/3` pattern and does not contradict let-it-crash. Client reconnect mounts a fresh runtime whose mount/1 re-initializes state from scratch, mirroring Phoenix.LiveView. Snapshot persistence is not a built-in primitive (see backlog); applications that want session restoration implement it via hook-based persistence patterns.
+summary: No defensive try/rescue around handlers (no error reply, no recovery, no state preservation). Page runtime dies on raise. Telemetry-instrumentation try/rescue that re-raises is allowed and used by the runtime to emit `[:musubi, :command, :exception]` events — this is the standard `:telemetry.span/3` pattern and does not contradict let-it-crash. Client reconnect mounts a fresh runtime whose mount/1 re-initializes state from scratch, mirroring Phoenix.LiveView. Snapshot persistence is not a built-in primitive (see backlog); applications that want session restoration implement it via hook-based persistence patterns.
 ---
 
 **Feature**: domains/runtime/features/command-routing.feature
@@ -39,7 +39,7 @@ Adopt Option A. No **defensive** try/rescue (no error reply, no recovery, no sta
 
 ### Carve-out: telemetry-instrumentation try/rescue
 
-A `try/rescue` block whose **only** action is to emit a telemetry event and `reraise` is allowed. The runtime uses this in `Arbor.Page.Server.handle_call/3` to emit `[:arbor, :command, :exception]` with `kind`, `reason`, and `stacktrace` metadata before re-raising — the standard `:telemetry.span/3` pattern. This does not contradict let-it-crash: the rescue does not recover, does not synthesize an error reply, does not preserve state, and does not keep the runtime alive. The page server still dies on the re-raised exception and the supervisor still restarts.
+A `try/rescue` block whose **only** action is to emit a telemetry event and `reraise` is allowed. The runtime uses this in `Musubi.Page.Server.handle_call/3` to emit `[:musubi, :command, :exception]` with `kind`, `reason`, and `stacktrace` metadata before re-raising — the standard `:telemetry.span/3` pattern. This does not contradict let-it-crash: the rescue does not recover, does not synthesize an error reply, does not preserve state, and does not keep the runtime alive. The page server still dies on the re-raised exception and the supervisor still restarts.
 
 ## Rejected Alternatives
 

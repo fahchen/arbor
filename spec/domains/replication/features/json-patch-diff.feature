@@ -74,7 +74,7 @@ Feature: JSON Patch Diff and Replication
     Scenario: Stream-typed field appears as marker at initial delivery
       Given a store declares state do stream :messages, MessageState.t(), ... end
       When the first patch envelope is emitted
-      Then the value at /messages in the initial replace is {"__arbor_stream__": "messages"}
+      Then the value at /messages in the initial replace is {"__musubi_stream__": "messages"}
 
     Scenario: Subsequent ops never carry stream item content
       Given streams/lifecycle delivers items via stream_ops
@@ -101,7 +101,7 @@ Feature: JSON Patch Diff and Replication
       When the client wants to recover
       Then the client tears down the transport and reconnects
       And the fresh page runtime mounts and emits a first patch with replace at path ""
-      And no arbor:request_resync command is defined or expected
+      And no musubi:request_resync command is defined or expected
 
   Rule: Initial state is delivered via the first patch envelope
 

@@ -1,6 +1,6 @@
 defmodule PollApp.Stores.PollRoomStore do
   @moduledoc """
-  Single-store poll room page. Demonstrates Arbor's stream + async + PubSub
+  Single-store poll room page. Demonstrates Musubi's stream + async + PubSub
   surface for live voting:
 
     * `stream :options, PollOption.t()` slot — server forgets values after
@@ -14,7 +14,7 @@ defmodule PollApp.Stores.PollRoomStore do
       `handle_info/2` dispatch for live cross-user updates
   """
 
-  use Arbor.Store, root: true
+  use Musubi.Store, root: true
 
   alias PollApp.PollDetail
   alias PollApp.PollOption
@@ -27,7 +27,7 @@ defmodule PollApp.Stores.PollRoomStore do
   state do
     field(:poll, PollDetail.t())
     stream(:options, PollOption.t(), item_key: &"opt-#{&1.id}", limit: @stream_limit)
-    field(:user_vote, Arbor.AsyncResult.of(String.t() | nil))
+    field(:user_vote, Musubi.AsyncResult.of(String.t() | nil))
   end
 
   command :vote do
@@ -43,7 +43,7 @@ defmodule PollApp.Stores.PollRoomStore do
     reply(%{status: :active | :closed | :not_found})
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(params, socket) do
     poll_id = Map.fetch!(params, "poll_id")
     user_id = new_user_id()
@@ -66,7 +66,7 @@ defmodule PollApp.Stores.PollRoomStore do
   # Render output
   # ---------------------------------------------------------------------------
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(socket) do
     %{
       poll: socket.assigns.poll,
@@ -84,7 +84,7 @@ defmodule PollApp.Stores.PollRoomStore do
   # Commands
   # ---------------------------------------------------------------------------
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:vote, %{"option_id" => option_id}, socket) do
     poll_id = socket.assigns.poll_id
     user_id = socket.assigns.user_id
@@ -102,7 +102,7 @@ defmodule PollApp.Stores.PollRoomStore do
     end
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:reset_vote, _payload, socket) do
     poll_id = socket.assigns.poll_id
     user_id = socket.assigns.user_id
@@ -113,7 +113,7 @@ defmodule PollApp.Stores.PollRoomStore do
      end)}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:toggle_status, _payload, socket) do
     poll_id = socket.assigns.poll_id
 
@@ -130,44 +130,44 @@ defmodule PollApp.Stores.PollRoomStore do
   # Async result routing
   # ---------------------------------------------------------------------------
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_async(:vote, {:ok, {:ok, {:voted, option_id}}}, socket) do
     {:noreply,
-     assign(socket, :user_vote, Arbor.AsyncResult.ok(socket.assigns.user_vote, option_id))}
+     assign(socket, :user_vote, Musubi.AsyncResult.ok(socket.assigns.user_vote, option_id))}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_async(:vote, {:ok, {:error, reason}}, socket) do
     {:noreply,
      assign(
        socket,
        :user_vote,
-       Arbor.AsyncResult.failed(socket.assigns.user_vote, {:error, reason})
+       Musubi.AsyncResult.failed(socket.assigns.user_vote, {:error, reason})
      )}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_async(:vote, {:exit, reason}, socket) do
     {:noreply,
      assign(
        socket,
        :user_vote,
-       Arbor.AsyncResult.failed(socket.assigns.user_vote, {:exit, reason})
+       Musubi.AsyncResult.failed(socket.assigns.user_vote, {:exit, reason})
      )}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_async(:reset_vote, {:ok, {:ok, :reset}}, socket) do
-    {:noreply, assign(socket, :user_vote, Arbor.AsyncResult.ok(socket.assigns.user_vote, nil))}
+    {:noreply, assign(socket, :user_vote, Musubi.AsyncResult.ok(socket.assigns.user_vote, nil))}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_async(:reset_vote, {:exit, reason}, socket) do
     {:noreply,
      assign(
        socket,
        :user_vote,
-       Arbor.AsyncResult.failed(socket.assigns.user_vote, {:exit, reason})
+       Musubi.AsyncResult.failed(socket.assigns.user_vote, {:exit, reason})
      )}
   end
 
@@ -175,7 +175,7 @@ defmodule PollApp.Stores.PollRoomStore do
   # PubSub messages — application-owned (BDR-0005)
   # ---------------------------------------------------------------------------
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_info({:poll_updated, detail, options}, socket) do
     {:noreply,
      socket
@@ -183,7 +183,7 @@ defmodule PollApp.Stores.PollRoomStore do
      |> stream(:options, options, reset: true)}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def terminate(_reason, socket) do
     cancel_async(socket, :vote)
     cancel_async(socket, :reset_vote)

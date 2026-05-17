@@ -1,6 +1,6 @@
 # Run with: mix run bench/page_runtime_bench.exs
 #
-# Measures `Arbor.Page.Server` mailbox throughput by:
+# Measures `Musubi.Page.Server` mailbox throughput by:
 #   * starting a single page
 #   * dispatching N commands in sequence and consuming their replies
 #
@@ -11,7 +11,7 @@
 defmodule Bench.RuntimeStore do
   @moduledoc false
 
-  use Arbor.Store
+  use Musubi.Store
 
   state do
     field :counter, integer()
@@ -24,25 +24,25 @@ defmodule Bench.RuntimeStore do
     payload :note, String.t()
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(socket) do
     {:ok,
      socket
-     |> Arbor.Socket.assign(:counter, 0)
-     |> Arbor.Socket.assign(:note, "init")}
+     |> Musubi.Socket.assign(:counter, 0)
+     |> Musubi.Socket.assign(:note, "init")}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:bump, _payload, socket) do
-    {:noreply, Arbor.Socket.update(socket, :counter, &(&1 + 1))}
+    {:noreply, Musubi.Socket.update(socket, :counter, &(&1 + 1))}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:rename, %{note: note}, socket) do
-    {:noreply, Arbor.Socket.assign(socket, :note, note)}
+    {:noreply, Musubi.Socket.assign(socket, :note, note)}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(socket) do
     %{counter: socket.assigns.counter, note: socket.assigns.note}
   end
@@ -55,7 +55,7 @@ defmodule Bench.RuntimeHelpers do
     parent = self()
 
     {:ok, pid} =
-      Arbor.Page.Server.start_link(
+      Musubi.Page.Server.start_link(
         {Bench.RuntimeStore, %{}, %{transport_pid: parent}}
       )
 
@@ -85,7 +85,7 @@ defmodule Bench.RuntimeHelpers do
 
   def run_n(pid, n) do
     Enum.each(1..n, fn _ ->
-      {:ok, _reply} = Arbor.Page.Server.command(pid, [], :bump, %{})
+      {:ok, _reply} = Musubi.Page.Server.command(pid, [], :bump, %{})
       drain()
     end)
 
@@ -99,7 +99,7 @@ Benchee.run(
   %{
     "single command (round-trip)" => {
       fn pid ->
-        {:ok, _reply} = Arbor.Page.Server.command(pid, [], :bump, %{})
+        {:ok, _reply} = Musubi.Page.Server.command(pid, [], :bump, %{})
         H.drain()
         pid
       end,

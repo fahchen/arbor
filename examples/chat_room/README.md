@@ -1,6 +1,6 @@
 # chat_room
 
-A real-time chat room example built as a single Arbor store. It demonstrates
+A real-time chat room example built as a single Musubi store. It demonstrates
 async-seeded message streams (`stream_async`), Agent-backed online users via
 `assign_async`, PubSub delivery, and `start_async` send handling over the
 Phoenix Channel transport. Messages and presence are kept in

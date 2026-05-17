@@ -23,10 +23,10 @@ importers:
 
   examples/cart_page/ui:
     dependencies:
-      '@arbor/client':
+      '@musubi/client':
         specifier: workspace:*
         version: link:../../../packages/client
-      '@arbor/react':
+      '@musubi/react':
         specifier: workspace:*
         version: link:../../../packages/react
       phoenix:
@@ -60,10 +60,10 @@ importers:
 
   examples/chat_room/ui:
     dependencies:
-      '@arbor/client':
+      '@musubi/client':
         specifier: workspace:*
         version: link:../../../packages/client
-      '@arbor/react':
+      '@musubi/react':
         specifier: workspace:*
         version: link:../../../packages/react
       phoenix:
@@ -97,10 +97,10 @@ importers:
 
   examples/poll_app/ui:
     dependencies:
-      '@arbor/client':
+      '@musubi/client':
         specifier: workspace:*
         version: link:../../../packages/client
-      '@arbor/react':
+      '@musubi/react':
         specifier: workspace:*
         version: link:../../../packages/react
       phoenix:
@@ -143,7 +143,7 @@ importers:
 
   packages/react:
     dependencies:
-      '@arbor/client':
+      '@musubi/client':
         specifier: workspace:*
         version: link:../client
       use-sync-external-store:

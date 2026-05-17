@@ -3,7 +3,7 @@ id: BDR-0004
 title: All cross-cutting and per-node concerns use LV-style attach_hook; no separate middleware macro
 status: accepted
 date: 2026-05-09
-summary: Arbor exposes one extension primitive — `attach_hook(socket, id, stage, fun)` mirroring `Phoenix.LiveView.attach_hook/4`. There is no `middleware` macro for declarative per-store concerns. Authors attach all hooks (auth, validation, logging, feature flags, etc.) inside `mount/1` (or other handlers) on the store node that should host them.
+summary: Musubi exposes one extension primitive — `attach_hook(socket, id, stage, fun)` mirroring `Phoenix.LiveView.attach_hook/4`. There is no `middleware` macro for declarative per-store concerns. Authors attach all hooks (auth, validation, logging, feature flags, etc.) inside `mount/1` (or other handlers) on the store node that should host them.
 ---
 
 **Feature**: domains/runtime/features/command-routing.feature
@@ -12,9 +12,9 @@ summary: Arbor exposes one extension primitive — `attach_hook(socket, id, stag
 
 ## Context
 
-Arbor's earliest drafts proposed two extension primitives — a `middleware Module` macro for declarative per-store concerns (auth, validation, logging) and `attach_hook` for runtime / cross-cutting concerns. Both ran in declaration / attachment order, with the same halt/cont protocol. The pair felt natural in Phoenix terms (Plug pipelines + LiveView attach_hook), but on examination it offered no functional capability that `attach_hook` alone did not, and forced authors to learn two near-identical mechanisms.
+Musubi's earliest drafts proposed two extension primitives — a `middleware Module` macro for declarative per-store concerns (auth, validation, logging) and `attach_hook` for runtime / cross-cutting concerns. Both ran in declaration / attachment order, with the same halt/cont protocol. The pair felt natural in Phoenix terms (Plug pipelines + LiveView attach_hook), but on examination it offered no functional capability that `attach_hook` alone did not, and forced authors to learn two near-identical mechanisms.
 
-`Phoenix.LiveView` itself does not expose a `middleware` macro: LiveComponent has no equivalent at all, and the root LV uses `attach_hook` + `on_mount` only. Adopting LV-pure extension semantics in Arbor removes a concept the LV-aligned audience would otherwise have to learn for no behavior gain.
+`Phoenix.LiveView` itself does not expose a `middleware` macro: LiveComponent has no equivalent at all, and the root LV uses `attach_hook` + `on_mount` only. Adopting LV-pure extension semantics in Musubi removes a concept the LV-aligned audience would otherwise have to learn for no behavior gain.
 
 ## Behaviours Considered
 

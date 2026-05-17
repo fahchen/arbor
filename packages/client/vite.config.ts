@@ -1,6 +1,6 @@
 import { defineConfig } from "vite"
 
-// No `build` block — `@arbor/client` ships TypeScript source directly via
+// No `build` block — `@musubi/client` ships TypeScript source directly via
 // the package.json `exports` map. Consumers (always bundler-based here)
 // transpile on demand. This file only configures Vitest.
 export default defineConfig({

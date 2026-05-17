@@ -21,7 +21,7 @@ export interface MountStoreOptions<
   params?: Record<string, unknown>
 }
 
-export interface ArborConnection {
+export interface MusubiConnection {
   readonly topic: string
   mountStore<R, M extends StoreModule<R> = StoreModule<R>>(
     options: MountStoreOptions<R, M>
@@ -31,7 +31,7 @@ export interface ArborConnection {
 }
 
 /**
- * Opens one Arbor connection over `socket`.
+ * Opens one Musubi connection over `socket`.
  *
  * Usage:
  *
@@ -48,7 +48,7 @@ export interface ArborConnection {
 export async function connect(
   socket: SocketLike,
   options: ConnectOptions = {}
-): Promise<ArborConnection> {
+): Promise<MusubiConnection> {
   const { connection, ready } = openConnectionState(socket, options)
   await ready
 
@@ -59,24 +59,24 @@ export async function mountStore<
   R,
   M extends StoreModule<R> = StoreModule<R>
 >(
-  connection: ArborConnection,
+  connection: MusubiConnection,
   options: MountStoreOptions<R, M>
 ): Promise<StoreProxy<R, M>> {
   return connection.mountStore<R, M>(options)
 }
 
 export async function unmountStore(
-  connection: ArborConnection,
+  connection: MusubiConnection,
   rootId: string
 ): Promise<void> {
   await connection.unmountStore(rootId)
 }
 
-export function disconnect(connection: ArborConnection): void {
+export function disconnect(connection: MusubiConnection): void {
   connection.disconnect()
 }
 
-function buildConnectionApi(connectionState: ConnectionState): ArborConnection {
+function buildConnectionApi(connectionState: ConnectionState): MusubiConnection {
   return {
     topic: connectionState.topic,
 

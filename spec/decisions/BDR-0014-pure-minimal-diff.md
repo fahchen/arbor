@@ -18,7 +18,7 @@ JSON Patch (RFC 6902) without `move` op produces verbose diffs for array reorder
 - **Hybrid per-element / whole-array** based on whether positions shifted — better in many cases but adds branchy logic and edge cases.
 - **Pure minimal diff** — emit whatever the structural diff produces with no special cases.
 
-The Arbor wire payload is typed JSON, not HTML; the diff is comparatively cheap to compute server-side, and clients applying RFC 6902 ops scale linearly in op count. Most production state changes are small (single-field edits dominate); the pathological case (massive reorders) is rare and can be handled by future optimization once measured.
+The Musubi wire payload is typed JSON, not HTML; the diff is comparatively cheap to compute server-side, and clients applying RFC 6902 ops scale linearly in op count. Most production state changes are small (single-field edits dominate); the pathological case (massive reorders) is rare and can be handled by future optimization once measured.
 
 ## Behaviours Considered
 

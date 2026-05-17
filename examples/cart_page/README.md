@@ -1,6 +1,6 @@
 # cart_page
 
-A command-driven shopping cart example built as a small Arbor store tree. It
+A command-driven shopping cart example built as a small Musubi store tree. It
 demonstrates child store composition, command routing to a nested cart store
 and to per-line child stores (BDR-0010 function attrs for parent callbacks),
 lifecycle hooks for auth/audit, shared cart storage, cross-tab synchronization,

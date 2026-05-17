@@ -13,7 +13,7 @@ summary: The resolver reuses cached root raw output on child-only cycles, skippi
 
 ## Context
 
-Today `Arbor.Resolver.render_store/3` calls `socket.module.render(socket)` unconditionally for every store node, including the root (`lib/arbor/resolver.ex:109` at the time of writing). Child nodes already have a reuse gate in `Arbor.Reconciler.reconcile_child/4`: when the parent did not change the child's consumed assigns, the child has no internal socket mutations, and the child has no pending stream changes, the runtime reuses the child's cached `resolved_state` instead of invoking `update/2` and `render/1` again.
+Today `Musubi.Resolver.render_store/3` calls `socket.module.render(socket)` unconditionally for every store node, including the root (`lib/musubi/resolver.ex:109` at the time of writing). Child nodes already have a reuse gate in `Musubi.Reconciler.reconcile_child/4`: when the parent did not change the child's consumed assigns, the child has no internal socket mutations, and the child has no pending stream changes, the runtime reuses the child's cached `resolved_state` instead of invoking `update/2` and `render/1` again.
 
 The root has no parent boundary to provide that gate. As a result, every render cycle recomputes the root output tree even when the root socket is clean and only a descendant mutated. For expensive roots this means repeated work on every child-only update:
 
@@ -57,7 +57,7 @@ This decision adds a `raw_state` cache field to the store-table entry so the res
 
 The root render-stage hooks observe the final resolved output, not just whether `render/1` itself ran. Even on a cached root cycle, descendants may have changed, so the resolved root output and wire output for the current cycle can differ from the prior cycle. Running `:after_render` and `:after_serialize` on the current outputs preserves hook contracts such as render-output validation while still avoiding the redundant root callback invocation.
 
-The trade-off is intentional: Arbor skips only the redundant root callback invocation while preserving the rest of the render lifecycle for the actual current output tree. This is similar in spirit to Phoenix LiveView's change tracking, where redundant callback work can be avoided without suppressing downstream processing that still depends on the current rendered tree.
+The trade-off is intentional: Musubi skips only the redundant root callback invocation while preserving the rest of the render lifecycle for the actual current output tree. This is similar in spirit to Phoenix LiveView's change tracking, where redundant callback work can be avoided without suppressing downstream processing that still depends on the current rendered tree.
 
 This safety claim assumes `render/1` obeys the existing contract that it is free of observable side effects and is a deterministic function of socket state. A root `render/1` that reads wall clock time, random values, process dictionary state, or other hidden inputs is already outside the contract; caching does not attempt to preserve behaviour for such implementations.
 
@@ -73,7 +73,7 @@ Rejected because it avoids only the final serialization step. The expensive root
 
 ### Per-field render output memoization
 
-Rejected because it is much more invasive. It would require finer-grained template or field dependency analysis similar to LiveView's compile-time render tracking, which Arbor does not currently have.
+Rejected because it is much more invasive. It would require finer-grained template or field dependency analysis similar to LiveView's compile-time render tracking, which Musubi does not currently have.
 
 ## Migration
 

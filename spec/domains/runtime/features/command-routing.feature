@@ -28,7 +28,7 @@ Feature: Command Routing
       Then the runtime dispatches the command to the matching product card store's handler
 
     Scenario: The client echoes a server-rendered store_id verbatim
-      Given the resolved render output for the filters child carries __arbor_store_id__ = ["filters"]
+      Given the resolved render output for the filters child carries __musubi_store_id__ = ["filters"]
       When the client issues a command targeting that store
       Then the client puts the same array on the wire as the command's store_id
       And the runtime resolves the addressed node directly from that array
@@ -172,12 +172,12 @@ Feature: Command Routing
   Rule: System commands occupy a reserved name prefix and share the main pipeline
 
     Scenario: System command flows through the standard pipeline
-      When the client sends a command named "arbor:request_stream_reload"
+      When the client sends a command named "musubi:request_stream_reload"
       Then the runtime routes, validates, and authorizes the command using the same pipeline as user commands
       And user-attached hooks observe the system command
 
     Scenario: User-defined command using the reserved prefix is rejected at compile time
-      Given a store declares a command named "arbor:something"
+      Given a store declares a command named "musubi:something"
       When the project compiles
       Then the compiler reports an error about the reserved namespace
 
@@ -281,13 +281,13 @@ Feature: Command Routing
       Then the call returns the unchanged socket
       And no error is raised
 
-  Rule: Arbor does not define a built-in pub/sub layer
+  Rule: Musubi does not define a built-in pub/sub layer
 
     Scenario: Stores subscribe to external message sources directly
       When a store wants to receive cross-page or external updates
       Then the store calls the application's pub/sub subscribe API directly inside its mount callback
       And the store handles inbound messages via handle_info(msg, socket)
-      And the runtime exposes no Arbor-specific subscribe macro or broadcast helper
+      And the runtime exposes no Musubi-specific subscribe macro or broadcast helper
 
   Rule: handle_info messages share the runtime's processing queue with commands
 

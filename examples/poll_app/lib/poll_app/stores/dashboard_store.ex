@@ -4,7 +4,7 @@ defmodule PollApp.Stores.DashboardStore do
   Demonstrates a stream-driven list page backed by PubSub refreshes.
   """
 
-  use Arbor.Store, root: true
+  use Musubi.Store, root: true
 
   alias PollApp.DashboardHeader
   alias PollApp.Polls
@@ -15,14 +15,14 @@ defmodule PollApp.Stores.DashboardStore do
     stream(:polls, PollSummary.t(), item_key: &"poll-#{&1.id}", limit: -20)
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(_params, socket) do
     Phoenix.PubSub.subscribe(PollApp.PubSub, "dashboard")
 
     {:ok, stream(socket, :polls, Polls.list_summaries(), reset: true)}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(_socket) do
     polls = Polls.list_summaries()
     active = Enum.count(polls, &(&1.status == :active))
@@ -38,10 +38,10 @@ defmodule PollApp.Stores.DashboardStore do
     }
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_info({:dashboard_updated, polls}, socket) do
     {:noreply, stream(socket, :polls, polls, reset: true)}
   end

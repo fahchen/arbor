@@ -1,29 +1,29 @@
 import { createContext, useContext } from "react"
 import type { ReactNode } from "react"
 
-import type { ArborConnection } from "@arbor/client"
+import type { MusubiConnection } from "@musubi/client"
 
-const ArborConnectionContext = createContext<ArborConnection | null>(null)
+const MusubiConnectionContext = createContext<MusubiConnection | null>(null)
 
-export function ArborProvider({
+export function MusubiProvider({
   connection,
   children
 }: {
-  connection: ArborConnection
+  connection: MusubiConnection
   children: ReactNode
 }) {
   return (
-    <ArborConnectionContext.Provider value={connection}>
+    <MusubiConnectionContext.Provider value={connection}>
       {children}
-    </ArborConnectionContext.Provider>
+    </MusubiConnectionContext.Provider>
   )
 }
 
-export function useArborConnection(): ArborConnection {
-  const connection = useContext(ArborConnectionContext)
+export function useMusubiConnection(): MusubiConnection {
+  const connection = useContext(MusubiConnectionContext)
 
   if (!connection) {
-    throw new Error("useArborConnection must be used inside <ArborProvider>")
+    throw new Error("useMusubiConnection must be used inside <MusubiProvider>")
   }
 
   return connection

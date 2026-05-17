@@ -1,52 +1,52 @@
 @async @lifecycle
 Feature: Async Task Lifecycle
   As a store author
-  I want to launch background tasks whose results integrate with socket.assigns and the wire shape via Arbor.AsyncResult
+  I want to launch background tasks whose results integrate with socket.assigns and the wire shape via Musubi.AsyncResult
   So that long-running work runs off the runtime mailbox and clients can pattern-match on a status enum (:loading | :ok | :failed)
 
   Background:
     Given a connected client
     And a page runtime mounted on the client's transport session
 
-  Rule: Arbor.AsyncResult is a three-field struct keyed on a status enum
+  Rule: Musubi.AsyncResult is a three-field struct keyed on a status enum
 
     Scenario: Loading default
-      When code calls Arbor.AsyncResult.loading()
+      When code calls Musubi.AsyncResult.loading()
       Then the struct is %{status: :loading, result: nil, reason: nil}
 
     Scenario: Loading preserves the prior result for stale-while-loading UX
       Given a prior result of %AsyncResult{status: :ok, result: "snapshot"}
-      When code calls Arbor.AsyncResult.loading(prior)
+      When code calls Musubi.AsyncResult.loading(prior)
       Then the struct is %{status: :loading, result: "snapshot", reason: nil}
 
     Scenario: Ok with a value
-      When code calls Arbor.AsyncResult.ok(prior, value)
+      When code calls Musubi.AsyncResult.ok(prior, value)
       Then the struct is %{status: :ok, result: value, reason: nil}
 
     Scenario: Failed preserves the prior result for stale-while-failed UX
       Given a prior result of "snapshot"
-      When code calls Arbor.AsyncResult.failed(prior, {:error, reason})
+      When code calls Musubi.AsyncResult.failed(prior, {:error, reason})
       Then the struct is %{status: :failed, result: "snapshot", reason: {:error, reason}}
 
   Rule: assign_async writes loading synchronously and resolves to ok or failed when the task completes
 
     Scenario: Single key happy path
       When the application calls assign_async(socket, :profile, fn -> {:ok, %{profile: data}} end)
-      Then socket.assigns.profile is set to Arbor.AsyncResult.loading() immediately
-      And on task completion socket.assigns.profile becomes Arbor.AsyncResult.ok(prior, data)
+      Then socket.assigns.profile is set to Musubi.AsyncResult.loading() immediately
+      And on task completion socket.assigns.profile becomes Musubi.AsyncResult.ok(prior, data)
 
     Scenario: Multi-key atomic write
       When the application calls assign_async(socket, [:user, :org], fn -> {:ok, %{user: u, org: o}} end)
-      Then both keys are set to Arbor.AsyncResult.loading() immediately
+      Then both keys are set to Musubi.AsyncResult.loading() immediately
       And on task completion both keys are updated atomically
 
     Scenario: User function returns invalid shape
       When the user function returns {:invalid, :shape}
-      Then the runtime raises ArgumentError inside the task and writes Arbor.AsyncResult.failed(prior, {:exit, ...})
+      Then the runtime raises ArgumentError inside the task and writes Musubi.AsyncResult.failed(prior, {:exit, ...})
 
     Scenario: User function returns explicit error
       When the user function returns {:error, :unauthorized}
-      Then socket.assigns.<key> becomes Arbor.AsyncResult.failed(prior, {:error, :unauthorized})
+      Then socket.assigns.<key> becomes Musubi.AsyncResult.failed(prior, {:error, :unauthorized})
 
   Rule: start_async routes results to handle_async; AsyncResult is not auto-written
 
@@ -75,13 +75,13 @@ Feature: Async Task Lifecycle
 
     Scenario: Cancel by AsyncResult sets failed before killing the task
       When the application calls cancel_async(socket, %AsyncResult{status: :loading} = ar, :user_navigated_away)
-      Then socket.assigns.profile is updated to Arbor.AsyncResult.failed(ar, {:exit, :user_navigated_away})
+      Then socket.assigns.profile is updated to Musubi.AsyncResult.failed(ar, {:exit, :user_navigated_away})
       And the runtime kills the associated task pid
 
     Scenario: Cancel by key kills the task and lets DOWN drive the failed write
       When the application calls cancel_async(socket, :profile, :user_navigated_away)
       Then the runtime kills the associated task pid
-      And the resulting :DOWN message triggers socket.assigns.profile = Arbor.AsyncResult.failed(prior, {:exit, :user_navigated_away})
+      And the resulting :DOWN message triggers socket.assigns.profile = Musubi.AsyncResult.failed(prior, {:exit, :user_navigated_away})
 
   Rule: assign_async :reset cancels the prior task before re-emitting loading
 
@@ -89,13 +89,13 @@ Feature: Async Task Lifecycle
       Given the prior assign_async for [:user, :org] is still in flight
       When the application calls assign_async(socket, [:user, :org], fun, reset: true)
       Then the prior task is cancelled
-      And both keys re-emit Arbor.AsyncResult.loading()
+      And both keys re-emit Musubi.AsyncResult.loading()
 
     Scenario: Reset subset of keys
       Given the prior assign_async for [:user, :org] is still in flight
       When the application calls assign_async(socket, [:user, :org], fun, reset: [:user])
       Then the prior task is cancelled
-      And :user re-emits Arbor.AsyncResult.loading(); :org preserves its prior loading state unchanged
+      And :user re-emits Musubi.AsyncResult.loading(); :org preserves its prior loading state unchanged
 
     Scenario: No reset preserves prior result during reload
       Given socket.assigns.profile is %AsyncResult{status: :ok, result: prior_data}
@@ -103,7 +103,7 @@ Feature: Async Task Lifecycle
       Then socket.assigns.profile becomes %AsyncResult{status: :loading, result: prior_data, reason: nil}
       And the prior result stays visible to the client until the new task completes
 
-  Rule: Tasks are linked to the page runtime; runtime exit kills tasks; default supervisor is Arbor.AsyncSupervisor
+  Rule: Tasks are linked to the page runtime; runtime exit kills tasks; default supervisor is Musubi.AsyncSupervisor
 
     Scenario: Runtime exits
       Given async tasks are running
@@ -113,7 +113,7 @@ Feature: Async Task Lifecycle
 
     Scenario: Custom supervisor
       When the application passes :supervisor to assign_async or start_async
-      Then the task starts under that supervisor instead of Arbor.AsyncSupervisor
+      Then the task starts under that supervisor instead of Musubi.AsyncSupervisor
 
   Rule: A second start_async with the same name silently overwrites the prior tracked ref
 
@@ -142,7 +142,7 @@ Feature: Async Task Lifecycle
       When the application calls assign_async(socket, :profile, fun, timeout: 5_000)
       And the task does not complete within 5 seconds
       Then the runtime kills the task pid
-      And socket.assigns.profile becomes Arbor.AsyncResult.failed(prior, {:exit, :timeout})
+      And socket.assigns.profile becomes Musubi.AsyncResult.failed(prior, {:exit, :timeout})
 
     Scenario: Task completes before timer fires
       When a task with timeout: 5_000 completes in 2 seconds
@@ -172,19 +172,19 @@ Feature: Async Task Lifecycle
       When the parent's next render no longer includes the child
       Then the child's task continues running
       And on completion the runtime checks the registry
-      And finding the originating node absent, the runtime emits [:arbor, :async, :lazy_discard] and writes nothing to assigns
+      And finding the originating node absent, the runtime emits [:musubi, :async, :lazy_discard] and writes nothing to assigns
 
   Rule: AsyncResult.of(T) is a compile-time typespec marker
 
     Scenario: Field declaration
       When a store declares field :profile, AsyncResult.of(UserProfileState.t())
       Then codegen emits a discriminated-union TypeScript shape keyed on status (:loading | :ok | :failed)
-      And the runtime validator accepts %Arbor.AsyncResult{} or structurally-equivalent maps
+      And the runtime validator accepts %Musubi.AsyncResult{} or structurally-equivalent maps
 
   Rule: AsyncResult serializes the status atom as a string on the wire
 
     Scenario: Wire shape uses string-coerced status
-      Given an Arbor.AsyncResult struct with fields status, result, reason
+      Given a Musubi.AsyncResult struct with fields status, result, reason
       When the runtime serializes it for the JSON Patch payload
       Then the resulting JSON object uses keys "status", "result", "reason"
       And the status atom (:loading | :ok | :failed) becomes the string ("loading" | "ok" | "failed")
@@ -207,11 +207,11 @@ Feature: Async Task Lifecycle
     Scenario: handle_async raises
       Given handle_async(:foo, {:ok, val}, socket) raises a KeyError
       Then the runtime catches the exception
-      And emits [:arbor, :async, :exception] with kind, reason, stacktrace
+      And emits [:musubi, :async, :exception] with kind, reason, stacktrace
       And the runtime continues to process subsequent messages
       And socket.assigns is not modified for that cycle
 
-  Rule: Async telemetry is an Arbor extension over LV
+  Rule: Async telemetry is a Musubi extension over LV
 
     Scenario Outline: Lifecycle event surface
       When the runtime processes an async event
@@ -220,11 +220,11 @@ Feature: Async Task Lifecycle
 
       Examples:
         | event                        |
-        | [:arbor, :async, :start]     |
-        | [:arbor, :async, :stop]      |
-        | [:arbor, :async, :exception] |
-        | [:arbor, :async, :cancel]    |
-        | [:arbor, :async, :lazy_discard] |
+        | [:musubi, :async, :start]     |
+        | [:musubi, :async, :stop]      |
+        | [:musubi, :async, :exception] |
+        | [:musubi, :async, :cancel]    |
+        | [:musubi, :async, :lazy_discard] |
 
   Rule: Mount-time assign_async produces loading state in the first envelope
 

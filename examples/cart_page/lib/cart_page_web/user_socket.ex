@@ -1,7 +1,7 @@
 defmodule CartPageWeb.UserSocket do
   @moduledoc false
 
-  use Arbor.Socket,
+  use Musubi.Socket,
     roots: [
       CartPage.Stores.CartPageStore
     ]

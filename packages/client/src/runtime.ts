@@ -85,7 +85,7 @@ export interface SharedRuntime {
 }
 
 const RUNTIMES: WeakMap<SocketLike, SharedRuntime> = new WeakMap()
-const DEFAULT_CONNECTION_TOPIC = "arbor:connection"
+const DEFAULT_CONNECTION_TOPIC = "musubi:connection"
 
 export function getSharedRuntime(socket: SocketLike): SharedRuntime {
   const existing = RUNTIMES.get(socket)

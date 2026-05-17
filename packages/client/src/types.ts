@@ -1,10 +1,10 @@
-// Public types for `@arbor/client`. Consumers thread their generated
-// `<Root>.Stores` type (emitted by `mix compile.arbor_ts` into an ambient
+// Public types for `@musubi/client`. Consumers thread their generated
+// `<Root>.Stores` type (emitted by `mix compile.musubi_ts` into an ambient
 // `.d.ts` bundle) through `connection.mountStore` and friends as the `Registry`
 // generic — every other helper (`ShapeOf`, `CommandsOf`, `StoreSnapshot`,
 // `StoreProxy`, …) derives from it.
 //
-// This package does not declare `Arbor.Stores` in the global namespace; the
+// This package does not declare `Musubi.Stores` in the global namespace; the
 // generated bundle owns those declarations and is auto-loaded by tsc as an
 // ambient module.
 
@@ -128,7 +128,7 @@ export type SnapshotValue<R, T> =
             : T
 
 export type StoreSnapshot<R, M extends StoreModule<R>> = {
-  readonly __arbor_store_id__: StoreId
+  readonly __musubi_store_id__: StoreId
 } & {
   [K in keyof ShapeOf<R, M>]: SnapshotValue<R, ShapeOf<R, M>[K]>
 }
@@ -151,7 +151,7 @@ export type ProxyValue<R, T> =
             : T
 
 export interface StoreRuntime<R, M extends StoreModule<R>> {
-  readonly __arbor_store_id__: StoreId
+  readonly __musubi_store_id__: StoreId
   dispatchCommand<K extends CommandName<R, M>>(
     name: K,
     payload: CommandPayload<R, M, K>
@@ -174,7 +174,7 @@ export type StreamEntry<T> = {
 }
 
 export type WireStreamMarker = {
-  __arbor_stream__: string
+  __musubi_stream__: string
 }
 
 export type JsonPatchOp =
@@ -219,16 +219,16 @@ export type WireAsyncError =
   | { kind: "exit"; value: unknown }
 
 export type WireAsyncResult<T = unknown> =
-  | { __arbor_async__: true; status: "loading"; result: T | null; reason: null }
-  | { __arbor_async__: true; status: "ok"; result: T; reason: null }
-  | { __arbor_async__: true; status: "failed"; result: T | null; reason: WireAsyncError | unknown }
+  | { __musubi_async__: true; status: "loading"; result: T | null; reason: null }
+  | { __musubi_async__: true; status: "ok"; result: T; reason: null }
+  | { __musubi_async__: true; status: "failed"; result: T | null; reason: WireAsyncError | unknown }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-export const STORE_ID_KEY = "__arbor_store_id__" as const
-export const STREAM_MARKER_KEY = "__arbor_stream__" as const
+export const STORE_ID_KEY = "__musubi_store_id__" as const
+export const STREAM_MARKER_KEY = "__musubi_stream__" as const
 
 export function storeIdKey(storeId: StoreId): string {
   return JSON.stringify(storeId)

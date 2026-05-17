@@ -6,7 +6,7 @@ defmodule CartPage.Stores.CartStore do
   Demonstrates the full attach_hook surface:
 
     * `:authz` on `:before_command` — only `:checkout` requires a signed-in
-      user; halt-with-reply emits `[:arbor, :auth, :deny]` (BDR-0008)
+      user; halt-with-reply emits `[:musubi, :auth, :deny]` (BDR-0008)
     * `:audit` on `:after_command` — writes a structured log entry per command
     * storage writes through `CartPage.Persistence` — every mutation uses the
       latest shared snapshot and broadcasts it to other tabs
@@ -16,7 +16,7 @@ defmodule CartPage.Stores.CartStore do
   keeping already-open tabs synchronized.
   """
 
-  use Arbor.Store
+  use Musubi.Store
 
   require Logger
 
@@ -64,7 +64,7 @@ defmodule CartPage.Stores.CartStore do
 
   command(:checkout)
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(socket) do
     socket =
       socket
@@ -77,7 +77,7 @@ defmodule CartPage.Stores.CartStore do
     {:ok, socket}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def update(params, socket) do
     socket =
       socket
@@ -88,7 +88,7 @@ defmodule CartPage.Stores.CartStore do
     {:ok, socket}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(socket) do
     %{
       lines:
@@ -129,7 +129,7 @@ defmodule CartPage.Stores.CartStore do
     end
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:add_item, %{"sku" => sku}, socket) do
     case Catalog.fetch(sku) do
       {:ok, product} ->
@@ -150,7 +150,7 @@ defmodule CartPage.Stores.CartStore do
     end
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:remove_line, %{"id" => id}, socket) do
     next_lines =
       Persistence.update_cart(socket.assigns.cart_id, fn lines ->
@@ -160,7 +160,7 @@ defmodule CartPage.Stores.CartStore do
     {:noreply, assign(socket, :lines, next_lines)}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:checkout, _payload, socket) do
     order_id = "order-" <> Integer.to_string(System.unique_integer([:positive]))
 

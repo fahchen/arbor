@@ -146,9 +146,9 @@ describe("snapshot cache invalidation", () => {
             op: "replace",
             path: "/a",
             value: {
-              __arbor_store_id__: ["a"],
+              __musubi_store_id__: ["a"],
               v: 2,
-              items: { __arbor_stream__: "items" }
+              items: { __musubi_stream__: "items" }
             }
           }
         ],
@@ -159,7 +159,7 @@ describe("snapshot cache invalidation", () => {
     const child2 = snapshotStore(connection, ["a", "child"])
 
     expect(Object.is(child1, child2)).toBe(false)
-    expect(child2).toEqual({ __arbor_store_id__: ["a", "child"] })
+    expect(child2).toEqual({ __musubi_store_id__: ["a", "child"] })
   })
 
   test("invalidates stream owner snapshots and their ancestors", async () => {
@@ -273,20 +273,20 @@ function connectionEnvelope(
 
 function rootState(): Record<string, unknown> {
   return {
-    __arbor_store_id__: [],
+    __musubi_store_id__: [],
     a: {
-      __arbor_store_id__: ["a"],
+      __musubi_store_id__: ["a"],
       v: 1,
       child: {
-        __arbor_store_id__: ["a", "child"],
+        __musubi_store_id__: ["a", "child"],
         v: 1
       },
       items: {
-        __arbor_stream__: "items"
+        __musubi_stream__: "items"
       }
     },
     b: {
-      __arbor_store_id__: ["b"],
+      __musubi_store_id__: ["b"],
       v: 1
     }
   }

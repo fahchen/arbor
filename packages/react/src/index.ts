@@ -1,10 +1,10 @@
-export { ArborProvider, useArborConnection } from "./provider"
+export { MusubiProvider, useMusubiConnection } from "./provider"
 export { shallowEqual } from "./shallow"
-export { useArborSnapshot, useArborCommand, useArborRoot } from "./hooks"
-export type { ArborRootMount, UseArborRootOptions } from "./hooks"
+export { useMusubiSnapshot, useMusubiCommand, useMusubiRoot } from "./hooks"
+export type { MusubiRootMount, UseMusubiRootOptions } from "./hooks"
 
 export type {
-  ArborConnection,
+  MusubiConnection,
   AsyncResult,
   CommandName,
   CommandPayload,
@@ -18,4 +18,4 @@ export type {
   StoreSnapshot,
   StreamEntry,
   StreamOp
-} from "@arbor/client"
+} from "@musubi/client"
