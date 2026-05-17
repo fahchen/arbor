@@ -1,7 +1,7 @@
 defmodule ChatRoomWeb.UserSocket do
   @moduledoc false
 
-  use Arbor.Socket,
+  use Musubi.Socket,
     roots: [
       ChatRoom.Stores.ChatRoomStore
     ]

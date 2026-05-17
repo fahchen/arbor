@@ -1,6 +1,6 @@
 # VoteCast
 
-A real-time live polling app built with Arbor. Demonstrates multi-page
+A real-time live polling app built with Musubi. Demonstrates multi-page
 architecture with typed render state, streamed options, async vote casting,
 PubSub-driven cross-user updates, and polling status gating.
 

@@ -4,7 +4,7 @@ defmodule CartPage.Stores.CartPageStore do
   business state of its own — every cart mutation routes to `["cart"]`.
   """
 
-  use Arbor.Store, root: true
+  use Musubi.Store, root: true
 
   alias CartPage.Persistence
   alias CartPage.Stores.CartStore
@@ -18,7 +18,7 @@ defmodule CartPage.Stores.CartPageStore do
     field(:cart, CartStore.state())
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(params, socket) do
     cart_id = Map.fetch!(params, "cart_id")
     current_user = Map.get(params, "current_user")
@@ -34,7 +34,7 @@ defmodule CartPage.Stores.CartPageStore do
     {:ok, socket}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(socket) do
     %{
       header:
@@ -52,10 +52,10 @@ defmodule CartPage.Stores.CartPageStore do
     }
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_info({:cart_snapshot, cart_id, lines}, socket)
       when is_binary(cart_id) and is_list(lines) do
     if cart_id == socket.assigns.cart_id do

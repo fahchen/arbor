@@ -17,7 +17,7 @@ defmodule CartPage.Stores.CartLineStore do
       `(parent_path, CartPage.Stores.CartLineStore, line.id)` keeps appearing.
   """
 
-  use Arbor.Store
+  use Musubi.Store
 
   attr(:line, map(), required: true)
   attr(:on_qty_change, (String.t(), integer() -> :ok), required: true)
@@ -38,10 +38,10 @@ defmodule CartPage.Stores.CartLineStore do
     reply(%{qty: integer()})
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(socket), do: {:ok, mirror_line(socket, socket.assigns.line)}
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(socket) do
     %{
       id: socket.assigns.id,
@@ -52,16 +52,16 @@ defmodule CartPage.Stores.CartLineStore do
     }
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def update(params, socket), do: {:ok, mirror_line(socket, params.line)}
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:inc_qty, _payload, socket), do: bump_qty(socket, +1)
   def handle_command(:dec_qty, _payload, socket), do: bump_qty(socket, -1)
 
   defp bump_qty(socket, delta) do
     next_qty = max(socket.assigns.qty + delta, 1)
-    socket = Arbor.Socket.assign(socket, :qty, next_qty)
+    socket = Musubi.Socket.assign(socket, :qty, next_qty)
     :ok = socket.assigns.on_qty_change.(socket.assigns.id, next_qty)
     {:reply, %{"qty" => next_qty}, socket}
   end

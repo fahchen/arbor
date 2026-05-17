@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react"
 import type { SubmitEvent } from "react"
-import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
-import type { StoreProxy } from "@arbor/react"
+import { useMusubiCommand, useMusubiRoot, useMusubiSnapshot } from "@musubi/react"
+import type { StoreProxy } from "@musubi/react"
 
-import { CHAT_ROOM_ROOT } from "./arbor"
+import { CHAT_ROOM_ROOT } from "./musubi"
 
-type Registry = Arbor.Stores
+type Registry = Musubi.Stores
 type RootModule = "ChatRoom.Stores.ChatRoomStore"
 
 export default function App() {
-  const rootMount = useArborRoot<Registry, RootModule>(CHAT_ROOM_ROOT)
+  const rootMount = useMusubiRoot<Registry, RootModule>(CHAT_ROOM_ROOT)
 
   if (rootMount.status === "loading") {
     return <main className="chat-shell">Connecting...</main>
@@ -24,10 +24,10 @@ export default function App() {
 }
 
 function ChatRoom({ root }: { root: StoreProxy<Registry, RootModule> }) {
-  const room = useArborSnapshot(root)
+  const room = useMusubiSnapshot(root)
 
-  const setName = useArborCommand(root, "set_name")
-  const sendMessage = useArborCommand(root, "send_message")
+  const setName = useMusubiCommand(root, "set_name")
+  const sendMessage = useMusubiCommand(root, "send_message")
 
   const [nameDraft, setNameDraft] = useState("")
   const [body, setBody] = useState("")

@@ -1,9 +1,9 @@
 import { Socket } from "phoenix"
-import { connect } from "@arbor/client"
-import type { MountStoreOptions } from "@arbor/client"
+import { connect } from "@musubi/client"
+import type { MountStoreOptions } from "@musubi/client"
 
-// The generated `arbor.d.ts` is ambient — tsc auto-loads it from
-// `src/generated/arbor.d.ts` via the project's `include` glob.
+// The generated `musubi.d.ts` is ambient — tsc auto-loads it from
+// `src/generated/musubi.d.ts` via the project's `include` glob.
 
 // In dev the Vite WebSocket proxy has issues, so connect directly to the
 // Phoenix backend. In production the built assets are served by Phoenix and
@@ -22,7 +22,7 @@ export const DASHBOARD_ROOT = {
 
 export function pollRoomRoot(
   pollId: string
-): MountStoreOptions<Arbor.Stores, "PollApp.Stores.PollRoomStore"> {
+): MountStoreOptions<Musubi.Stores, "PollApp.Stores.PollRoomStore"> {
   return {
     module: "PollApp.Stores.PollRoomStore",
     id: pollId,
@@ -30,6 +30,6 @@ export function pollRoomRoot(
   }
 }
 
-export function connectArbor() {
+export function connectMusubi() {
   return connect(socket)
 }

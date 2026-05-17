@@ -3,7 +3,7 @@ defmodule PollApp.PollDetail do
   Full poll metadata carried as a plain field on the poll room page.
   """
 
-  use Arbor.State
+  use Musubi.State
 
   state do
     field(:id, String.t())

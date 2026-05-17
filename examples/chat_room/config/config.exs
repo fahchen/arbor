@@ -2,7 +2,7 @@ import Config
 
 config :phoenix, :json_library, Jason
 
-config :arbor, :ts_codegen_output_path, "ui/src/generated/arbor.d.ts"
+config :musubi, :ts_codegen_output_path, "ui/src/generated/musubi.d.ts"
 
 config :chat_room, ChatRoomWeb.Endpoint,
   adapter: Bandit.PhoenixAdapter,

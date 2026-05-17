@@ -1,5 +1,5 @@
 {
-  "name": "arbor-clients",
+  "name": "musubi-clients",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.9",

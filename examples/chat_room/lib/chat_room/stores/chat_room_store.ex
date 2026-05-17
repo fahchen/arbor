@@ -1,6 +1,6 @@
 defmodule ChatRoom.Stores.ChatRoomStore do
   @moduledoc """
-  Single-store chat-room page. Demonstrates Arbor's full async + stream +
+  Single-store chat-room page. Demonstrates Musubi's full async + stream +
   PubSub surface in one module:
 
     * `stream_async :messages, MessageState.t()` slot — async-seeded stream.
@@ -20,7 +20,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
       application-owned PubSub) and `handle_info/2` dispatch
   """
 
-  use Arbor.Store, root: true
+  use Musubi.Store, root: true
 
   alias ChatRoom.Chat
   alias ChatRoom.MessageState
@@ -43,7 +43,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   state do
     stream_async(:messages, MessageState.t(), item_key: &"msg-#{&1.id}", limit: @stream_limit)
     field(:current_user, OnlineUser.t())
-    field(:online_users, Arbor.AsyncResult.of(list(OnlineUser.t())))
+    field(:online_users, Musubi.AsyncResult.of(list(OnlineUser.t())))
 
     field(
       :last_send_status,
@@ -61,7 +61,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
     reply(%{queued: boolean()})
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(params, socket) do
     room_id = Map.fetch!(params, "room_id")
     user_id = new_user_id()
@@ -89,7 +89,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   # Render output
   # ---------------------------------------------------------------------------
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(socket) do
     %{
       messages: async_stream(:messages),
@@ -111,7 +111,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   # Commands
   # ---------------------------------------------------------------------------
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:set_name, %{"name" => name}, socket) do
     room_id = socket.assigns.room_id
     user_id = socket.assigns.user_id
@@ -128,7 +128,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   # `start_async/3` kicks off a fire-and-forget send. The result routes to
   # `handle_async/3` below — `socket.assigns` is NOT mutated by start_async
   # itself, only by what handle_async writes.
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:send_message, %{"body" => body}, socket) do
     room_id = socket.assigns.room_id
     sender = socket.assigns.current_user.name
@@ -147,9 +147,9 @@ defmodule ChatRoom.Stores.ChatRoomStore do
     end
   end
 
-  @spec put_online_users(Arbor.Socket.t(), [OnlineUser.t()]) :: Arbor.Socket.t()
+  @spec put_online_users(Musubi.Socket.t(), [OnlineUser.t()]) :: Musubi.Socket.t()
   defp put_online_users(socket, users) when is_list(users) do
-    assign(socket, :online_users, Arbor.AsyncResult.ok(socket.assigns.online_users, users))
+    assign(socket, :online_users, Musubi.AsyncResult.ok(socket.assigns.online_users, users))
   end
 
   # ---------------------------------------------------------------------------
@@ -158,23 +158,23 @@ defmodule ChatRoom.Stores.ChatRoomStore do
 
   # `:ok` and `:error` are application-level outcomes the task fun returned.
   # `:exit` is the task-exit path (task crashed / killed) — the runtime
-  # delivers it to `handle_async/3` and emits `[:arbor, :async, :stop]` with
-  # `status: :failed`. BDR-0020 (`[:arbor, :async, :exception]`) covers a
+  # delivers it to `handle_async/3` and emits `[:musubi, :async, :stop]` with
+  # `status: :failed`. BDR-0020 (`[:musubi, :async, :exception]`) covers a
   # different case: the `handle_async/3` clause itself raising — the runtime
   # catches that and the page survives. This example does not raise from
   # `handle_async/3`.
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_async(:send_message, {:ok, {:ok, %MessageState{id: id}}}, socket) do
     {:noreply, assign(socket, :last_send_status, %{type: :ok, id: id})}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_async(:send_message, {:ok, {:error, reason}}, socket) do
     status = %{type: :failed, reason: Atom.to_string(reason)}
     {:noreply, assign(socket, :last_send_status, status)}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_async(:send_message, {:exit, reason}, socket) do
     status = %{type: :failed, reason: inspect(reason)}
     {:noreply, assign(socket, :last_send_status, status)}
@@ -184,12 +184,12 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   # PubSub messages — application-owned (BDR-0005)
   # ---------------------------------------------------------------------------
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_info({:message_received, %MessageState{} = msg}, socket) do
     {:noreply, stream_insert(socket, :messages, msg, at: 0, limit: @stream_limit)}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_info({:presence_changed, users}, socket) when is_list(users) do
     {:noreply, put_online_users(socket, users)}
   end
@@ -197,7 +197,7 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   # Cancel any in-flight send when the page goes down so the task does not
   # outlive the runtime. `cancel_async/2` is a no-op when the name is not
   # tracked.
-  @impl Arbor.Store
+  @impl Musubi.Store
   def terminate(_reason, socket) do
     Presence.leave(socket.assigns.room_id, socket.assigns.user_id)
 

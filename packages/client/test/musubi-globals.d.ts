@@ -1,11 +1,11 @@
-// Stand-in for the generated codegen bundle's `declare global { namespace Arbor }`
+// Stand-in for the generated codegen bundle's `declare global { namespace Musubi }`
 // block. The client package never declares these in global scope; the
 // generated bundle does. Tests load this ambient declaration so
-// `Arbor.StoreDef` / `Arbor.StoreField` / `Arbor.StreamField` /
-// `Arbor.AsyncField` resolve without a codegen pass.
+// `Musubi.StoreDef` / `Musubi.StoreField` / `Musubi.StreamField` /
+// `Musubi.AsyncField` resolve without a codegen pass.
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Arbor {
+  namespace Musubi {
     declare const Type: unique symbol
 
     interface StoreDef<Module extends string, Shape, Commands> {

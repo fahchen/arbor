@@ -1,7 +1,7 @@
 import { cleanup } from "@testing-library/react"
 import { afterEach } from "vitest"
 
-import type { StoreModule, StoreProxy, StoreSnapshot } from "@arbor/client"
+import type { StoreModule, StoreProxy, StoreSnapshot } from "@musubi/client"
 
 afterEach(() => {
   cleanup()
@@ -14,7 +14,7 @@ afterEach(() => {
  * snapshot values, not on bracket-style field reads through the proxy.
  */
 export class FakeStoreProxy<R, M extends StoreModule<R>> {
-  readonly __arbor_store_id__: string[] = []
+  readonly __musubi_store_id__: string[] = []
 
   private snapshotValue: StoreSnapshot<R, M>
   private readonly subscribers = new Set<() => void>()

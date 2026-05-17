@@ -1,8 +1,8 @@
 import { Socket } from "phoenix"
-import { connect } from "@arbor/client"
+import { connect } from "@musubi/client"
 
-// The generated `arbor.d.ts` is ambient — tsc auto-loads it from
-// `src/generated/arbor.d.ts` via the project's `include` glob, so no
+// The generated `musubi.d.ts` is ambient — tsc auto-loads it from
+// `src/generated/musubi.d.ts` via the project's `include` glob, so no
 // side-effect import is required.
 
 export const socket = new Socket("/socket", {})
@@ -18,6 +18,6 @@ export const CART_PAGE_ROOT = {
   }
 } as const
 
-export function connectArbor() {
+export function connectMusubi() {
   return connect(socket)
 }

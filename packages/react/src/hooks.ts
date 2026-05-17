@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useState } from "react"
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector"
 
-import { useArborConnection } from "./provider"
+import { useMusubiConnection } from "./provider"
 
 import type {
   CommandName,
   CommandPayload,
   CommandReply,
   MountStoreOptions,
-  ArborConnection,
+  MusubiConnection,
   StoreModule,
   StoreProxy,
   StoreSnapshot
-} from "@arbor/client"
+} from "@musubi/client"
 
 const identitySelector = <S>(value: S): S => value
-const pendingRootMounts: WeakMap<ArborConnection, Map<string, SharedRootMount>> =
+const pendingRootMounts: WeakMap<MusubiConnection, Map<string, SharedRootMount>> =
   new WeakMap()
 
 type SharedRootMount = {
@@ -26,12 +26,12 @@ type SharedRootMount = {
   cleanupTimer: ReturnType<typeof setTimeout> | null
 }
 
-export type ArborRootMount<R, M extends StoreModule<R>> =
+export type MusubiRootMount<R, M extends StoreModule<R>> =
   | { status: "loading"; store: null; error: null }
   | { status: "ready"; store: StoreProxy<R, M>; error: null }
   | { status: "error"; store: null; error: Error }
 
-export type UseArborRootOptions<
+export type UseMusubiRootOptions<
   R = Record<string, unknown>,
   M extends StoreModule<R> = StoreModule<R>
 > = MountStoreOptions<R, M> & {
@@ -39,13 +39,13 @@ export type UseArborRootOptions<
 }
 
 /**
- * Mounts a declared root store through the nearest Arbor connection.
+ * Mounts a declared root store through the nearest Musubi connection.
  */
-export function useArborRoot<R, M extends StoreModule<R> = StoreModule<R>>(
-  options: UseArborRootOptions<R, M>
-): ArborRootMount<R, M> {
-  const connection = useArborConnection()
-  const [state, setState] = useState<ArborRootMount<R, M>>({
+export function useMusubiRoot<R, M extends StoreModule<R> = StoreModule<R>>(
+  options: UseMusubiRootOptions<R, M>
+): MusubiRootMount<R, M> {
+  const connection = useMusubiConnection()
+  const [state, setState] = useState<MusubiRootMount<R, M>>({
     status: "loading",
     store: null,
     error: null
@@ -93,7 +93,7 @@ export function useArborRoot<R, M extends StoreModule<R> = StoreModule<R>>(
 }
 
 function acquireRootMount<R, M extends StoreModule<R>>(
-  connection: ArborConnection,
+  connection: MusubiConnection,
   options: MountStoreOptions<R, M>
 ): SharedRootMount & { key: string } {
   const key = rootMountKey(options)
@@ -131,7 +131,7 @@ function acquireRootMount<R, M extends StoreModule<R>>(
 }
 
 function releaseRootMount(
-  connection: ArborConnection,
+  connection: MusubiConnection,
   key: string,
   unmountOnCleanup: boolean
 ): void {
@@ -166,7 +166,7 @@ function releaseRootMount(
   }, 0)
 }
 
-function rootMountsFor(connection: ArborConnection): Map<string, SharedRootMount> {
+function rootMountsFor(connection: MusubiConnection): Map<string, SharedRootMount> {
   const existing = pendingRootMounts.get(connection)
 
   if (existing) {
@@ -189,15 +189,15 @@ function rootMountKey<R, M extends StoreModule<R>>(
  * fire only when the underlying store node changes (per
  * `proxy.subscribe(...)` semantics).
  */
-export function useArborSnapshot<R, M extends StoreModule<R>>(
+export function useMusubiSnapshot<R, M extends StoreModule<R>>(
   proxy: StoreProxy<R, M>
 ): StoreSnapshot<R, M>
-export function useArborSnapshot<R, M extends StoreModule<R>, Selected>(
+export function useMusubiSnapshot<R, M extends StoreModule<R>, Selected>(
   proxy: StoreProxy<R, M>,
   selector: (snapshot: StoreSnapshot<R, M>) => Selected,
   equalityFn?: (a: Selected, b: Selected) => boolean
 ): Selected
-export function useArborSnapshot<R, M extends StoreModule<R>, Selected = StoreSnapshot<R, M>>(
+export function useMusubiSnapshot<R, M extends StoreModule<R>, Selected = StoreSnapshot<R, M>>(
   proxy: StoreProxy<R, M>,
   selector?: (snapshot: StoreSnapshot<R, M>) => Selected,
   equalityFn?: (a: Selected, b: Selected) => boolean
@@ -219,7 +219,7 @@ export function useArborSnapshot<R, M extends StoreModule<R>, Selected = StoreSn
 /**
  * Returns a bound dispatcher for a single command on the supplied proxy.
  */
-export function useArborCommand<
+export function useMusubiCommand<
   R,
   M extends StoreModule<R>,
   K extends CommandName<R, M>

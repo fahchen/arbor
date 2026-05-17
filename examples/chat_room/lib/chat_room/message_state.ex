@@ -1,10 +1,10 @@
 defmodule ChatRoom.MessageState do
   @moduledoc """
-  Reusable Arbor.State module describing one chat message. Used as the
+  Reusable Musubi.State module describing one chat message. Used as the
   per-item type of the `:messages` stream slot.
   """
 
-  use Arbor.State
+  use Musubi.State
 
   state do
     field(:id, String.t())

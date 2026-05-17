@@ -126,20 +126,20 @@ vi.mock("phoenix", () => ({
 }))
 
 type TestStores = {
-  "Test.Store": Arbor.StoreDef<
+  "Test.Store": Musubi.StoreDef<
     "Test.Store",
     {
       title: string
-      child: Arbor.StoreField<"Test.Child">
+      child: Musubi.StoreField<"Test.Child">
       counter: number
       feed: {
-        messages: Arbor.StreamField<{ body: string }>
+        messages: Musubi.StreamField<{ body: string }>
       }
-      async_messages: Arbor.AsyncField<Arbor.StreamField<{ id: string; body: string }>>
+      async_messages: Musubi.AsyncField<Musubi.StreamField<{ id: string; body: string }>>
       metadata: {
         messages: string
       }
-      users: Arbor.StreamField<{ id: string; name: string }>
+      users: Musubi.StreamField<{ id: string; name: string }>
     },
     {
       rename: {
@@ -149,7 +149,7 @@ type TestStores = {
     }
   >
 
-  "Test.Child": Arbor.StoreDef<
+  "Test.Child": Musubi.StoreDef<
     "Test.Child",
     {
       count: number
@@ -180,7 +180,7 @@ describe("connect", () => {
     vi.resetModules()
   })
 
-  test("joins one Arbor connection channel", async () => {
+  test("joins one Musubi connection channel", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
     const connectionPromise = connect(socket)
@@ -192,7 +192,7 @@ describe("connect", () => {
     channel.resolveJoin()
 
     const connection = await connectionPromise
-    expect(connection.topic).toBe("arbor:connection")
+    expect(connection.topic).toBe("musubi:connection")
   })
 
   test("mountStore resolves only after the root initial envelope is applied", async () => {
@@ -232,7 +232,7 @@ describe("connect", () => {
     const proxy = await proxyPromise
     expect(proxy.title).toBe("Inbox")
     expect(proxy.counter).toBe(1)
-    expect(proxy.__arbor_store_id__).toEqual([])
+    expect(proxy.__musubi_store_id__).toEqual([])
   })
 
   test("nested store field returns a stable child proxy", async () => {
@@ -386,14 +386,14 @@ describe("connect", () => {
     const snapshot = proxy.snapshot()
 
     expect(snapshot).toEqual({
-      __arbor_store_id__: [],
+      __musubi_store_id__: [],
       title: "Inbox",
       counter: 1,
       feed: { messages: [] },
       async_messages: { status: "loading", data: [], error: null },
       metadata: { messages: "literal" },
       users: [],
-      child: { __arbor_store_id__: ["child"], count: 1 }
+      child: { __musubi_store_id__: ["child"], count: 1 }
     })
   })
 
@@ -572,21 +572,21 @@ function rootState(title = "Inbox"): Record<string, unknown> {
     counter: 1,
     child: {
       count: 1,
-      __arbor_store_id__: ["child"]
+      __musubi_store_id__: ["child"]
     },
     feed: {
-      messages: { __arbor_stream__: "messages" }
+      messages: { __musubi_stream__: "messages" }
     },
     async_messages: {
-      __arbor_async__: true,
+      __musubi_async__: true,
       status: "loading",
-      result: { __arbor_stream__: "async_messages" },
+      result: { __musubi_stream__: "async_messages" },
       reason: null
     },
     metadata: {
       messages: "literal"
     },
-    users: { __arbor_stream__: "users" },
-    __arbor_store_id__: []
+    users: { __musubi_stream__: "users" },
+    __musubi_store_id__: []
   }
 }

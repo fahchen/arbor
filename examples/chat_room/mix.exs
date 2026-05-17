@@ -7,7 +7,7 @@ defmodule ChatRoom.MixProject do
       version: "0.1.0",
       elixir: "~> 1.19",
       start_permanent: false,
-      compilers: Mix.compilers() ++ [:arbor_ts],
+      compilers: Mix.compilers() ++ [:musubi_ts],
       aliases: aliases(),
       deps: deps()
     ]
@@ -22,7 +22,7 @@ defmodule ChatRoom.MixProject do
 
   defp deps do
     [
-      {:arbor, path: "../.."},
+      {:musubi, path: "../.."},
       {:phoenix, "~> 1.8"},
       {:phoenix_pubsub, "~> 2.1"},
       {:bandit, "~> 1.0"},

@@ -1,5 +1,5 @@
 {
-  "name": "@arbor/client",
+  "name": "@musubi/client",
   "version": "0.0.1",
   "type": "module",
   "exports": {

@@ -1,21 +1,21 @@
-# @arbor/react
+# @musubi/react
 
-React bindings for Arbor stores. Provides `ArborProvider`, `useArborRoot`,
-`useArborSnapshot`, and `useArborCommand` on top of `@arbor/client`.
+React bindings for Musubi stores. Provides `MusubiProvider`, `useMusubiRoot`,
+`useMusubiSnapshot`, and `useMusubiCommand` on top of `@musubi/client`.
 
 ## Install
 
-`@arbor/react` ships inside the Arbor Hex package under
-`deps/arbor/packages/react`. After `mix deps.get` populates `deps/arbor/`,
+`@musubi/react` ships inside the Musubi Hex package under
+`deps/musubi/packages/react`. After `mix deps.get` populates `deps/musubi/`,
 reference both packages by local path from the frontend project's
 `package.json` (adjust the relative path so it points at
-`deps/arbor/packages/<name>` from the JS app root):
+`deps/musubi/packages/<name>` from the JS app root):
 
 ```json
 {
   "dependencies": {
-    "@arbor/client": "file:../deps/arbor/packages/client",
-    "@arbor/react": "file:../deps/arbor/packages/react"
+    "@musubi/client": "file:../deps/musubi/packages/client",
+    "@musubi/react": "file:../deps/musubi/packages/react"
   }
 }
 ```
@@ -29,18 +29,18 @@ pnpm install   # or npm install / yarn install
 `react` and `react-dom` are peer dependencies — install them in the
 consumer app, not inside this package.
 
-Both `@arbor/client` and `@arbor/react` ship TypeScript source directly;
+Both `@musubi/client` and `@musubi/react` ship TypeScript source directly;
 the consumer bundler (Vite, Phoenix esbuild) transpiles on demand — no
 build step required.
 
 ## Avoiding Duplicate React Copies
 
 When the consumer's package manager copies the linked package into
-`node_modules/@arbor/react/`, it may also bring along a second copy of
+`node_modules/@musubi/react/`, it may also bring along a second copy of
 `react` via the package's own dependency tree. The symptom is
 `Invalid hook call. Hooks can only be called inside of the body of a
-function component` with a stack pointing deep into `@arbor/react`
-internals — the bug is the dual install, not Arbor.
+function component` with a stack pointing deep into `@musubi/react`
+internals — the bug is the dual install, not Musubi.
 
 ### Vite
 

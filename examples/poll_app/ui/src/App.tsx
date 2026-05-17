@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react"
 import type { SubmitEvent } from "react"
-import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
-import type { StoreProxy } from "@arbor/react"
+import { useMusubiCommand, useMusubiRoot, useMusubiSnapshot } from "@musubi/react"
+import type { StoreProxy } from "@musubi/react"
 
-import { DASHBOARD_ROOT, pollRoomRoot } from "./arbor"
+import { DASHBOARD_ROOT, pollRoomRoot } from "./musubi"
 
-type Registry = Arbor.Stores
+type Registry = Musubi.Stores
 
 // ---------------------------------------------------------------------------
 // Root shell — connects the Phoenix socket once, then switches between pages
@@ -41,7 +41,7 @@ export default function App() {
 // ---------------------------------------------------------------------------
 
 function DashboardPage({ onEnterPoll }: { onEnterPoll: (pollId: string) => void }) {
-  const root = useArborRoot<Registry, "PollApp.Stores.DashboardStore">(DASHBOARD_ROOT)
+  const root = useMusubiRoot<Registry, "PollApp.Stores.DashboardStore">(DASHBOARD_ROOT)
 
   if (root.status === "error") return <ConnectionError error={root.error.message} />
   if (root.status === "loading") return <LoadingShell />
@@ -56,7 +56,7 @@ function DashboardView({
   root: StoreProxy<Registry, "PollApp.Stores.DashboardStore">
   onEnterPoll: (pollId: string) => void
 }) {
-  const page = useArborSnapshot(root)
+  const page = useMusubiSnapshot(root)
 
   const header = page.header
   const polls = page.polls ?? []
@@ -65,7 +65,7 @@ function DashboardView({
     <main className="dashboard-shell">
       <header className="dash-hero">
         <div className="dash-hero-copy">
-          <p className="eyebrow">Arbor Live Polling</p>
+          <p className="eyebrow">Musubi Live Polling</p>
           <h1>VoteCast</h1>
           <p>Real-time polls with server-authoritative state. <span className="live-dot">Live</span> Open a second browser tab to see cross-user updates.</p>
         </div>
@@ -128,7 +128,7 @@ function MetricBadge({ label, value, tone }: { label: string; value: number; ton
 
 function PollRoomPage({ pollId, onBack }: { pollId: string; onBack: () => void }) {
   const rootOptions = useMemo(() => pollRoomRoot(pollId), [pollId])
-  const root = useArborRoot<Registry, "PollApp.Stores.PollRoomStore">(rootOptions)
+  const root = useMusubiRoot<Registry, "PollApp.Stores.PollRoomStore">(rootOptions)
 
   if (root.status === "error") return <ConnectionError error={root.error.message} />
   if (root.status === "loading") return <LoadingShell />
@@ -145,11 +145,11 @@ function PollRoomView({
   pollId: string
   onBack: () => void
 }) {
-  const page = useArborSnapshot(root)
+  const page = useMusubiSnapshot(root)
 
-  const voteCmd = useArborCommand(root, "vote")
-  const resetVoteCmd = useArborCommand(root, "reset_vote")
-  const toggleStatusCmd = useArborCommand(root, "toggle_status")
+  const voteCmd = useMusubiCommand(root, "vote")
+  const resetVoteCmd = useMusubiCommand(root, "reset_vote")
+  const toggleStatusCmd = useMusubiCommand(root, "toggle_status")
 
   const [feedback, setFeedback] = useState("")
   const [busy, setBusy] = useState(false)

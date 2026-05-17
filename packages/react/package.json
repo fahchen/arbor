@@ -1,5 +1,5 @@
 {
-  "name": "@arbor/react",
+  "name": "@musubi/react",
   "version": "0.0.1",
   "type": "module",
   "exports": {
@@ -12,7 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@arbor/client": "workspace:*",
+    "@musubi/client": "workspace:*",
     "use-sync-external-store": "^1.4.0"
   },
   "peerDependencies": {

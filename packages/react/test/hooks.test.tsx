@@ -3,21 +3,21 @@ import * as React from "react"
 import { describe, expect, test, vi } from "vitest"
 
 import {
-  ArborProvider,
-  useArborCommand,
-  useArborRoot,
-  useArborConnection,
-  useArborSnapshot
+  MusubiProvider,
+  useMusubiCommand,
+  useMusubiRoot,
+  useMusubiConnection,
+  useMusubiSnapshot
 } from "../src"
 
 import { FakeStoreProxy } from "./setup"
 
-import type { ArborConnection, MountStoreOptions, StoreModule, StoreProxy } from "../src"
+import type { MusubiConnection, MountStoreOptions, StoreModule, StoreProxy } from "../src"
 
 void React
 
 type ReactTestStores = {
-  "React.Test.Root": Arbor.StoreDef<
+  "React.Test.Root": Musubi.StoreDef<
     "React.Test.Root",
     {
       title: string
@@ -33,34 +33,34 @@ type Root = "React.Test.Root"
 
 function buildProxy(title = "Inbox", counter = 0): FakeStoreProxy<ReactTestStores, Root> {
   return new FakeStoreProxy<ReactTestStores, Root>({
-    __arbor_store_id__: [],
+    __musubi_store_id__: [],
     title,
     counter
   })
 }
 
-describe("ArborProvider + useArborRoot", () => {
-  test("exposes the Arbor connection to descendants", () => {
+describe("MusubiProvider + useMusubiRoot", () => {
+  test("exposes the Musubi connection to descendants", () => {
     const fake = buildProxy()
-    const connection = new FakeArborConnection(fake.asProxy())
+    const connection = new FakeMusubiConnection(fake.asProxy())
 
     function Reader() {
-      const arborConnection = useArborConnection()
-      return <span>{arborConnection.topic}</span>
+      const musubiConnection = useMusubiConnection()
+      return <span>{musubiConnection.topic}</span>
     }
 
     render(
-      <ArborProvider connection={connection}>
+      <MusubiProvider connection={connection}>
         <Reader />
-      </ArborProvider>
+      </MusubiProvider>
     )
 
-    expect(screen.getByText("arbor:connection")).toBeTruthy()
+    expect(screen.getByText("musubi:connection")).toBeTruthy()
   })
 
-  test("useArborConnection throws outside a provider", () => {
+  test("useMusubiConnection throws outside a provider", () => {
     function Reader() {
-      useArborConnection()
+      useMusubiConnection()
       return null
     }
 
@@ -68,7 +68,7 @@ describe("ArborProvider + useArborRoot", () => {
     const preventExpectedError = (event: ErrorEvent) => {
       if (
         event.error instanceof Error &&
-        event.error.message === "useArborConnection must be used inside <ArborProvider>"
+        event.error.message === "useMusubiConnection must be used inside <MusubiProvider>"
       ) {
         event.preventDefault()
       }
@@ -85,7 +85,7 @@ describe("ArborProvider + useArborRoot", () => {
       )
 
       expect(
-        screen.getByText("useArborConnection must be used inside <ArborProvider>")
+        screen.getByText("useMusubiConnection must be used inside <MusubiProvider>")
       ).toBeTruthy()
     } finally {
       window.removeEventListener("error", preventExpectedError)
@@ -93,13 +93,13 @@ describe("ArborProvider + useArborRoot", () => {
     }
   })
 
-  test("useArborRoot mounts and unmounts a root store", async () => {
+  test("useMusubiRoot mounts and unmounts a root store", async () => {
     const fake = buildProxy()
-    const connection = new FakeArborConnection(fake.asProxy())
+    const connection = new FakeMusubiConnection(fake.asProxy())
     const params = { filter: "active" }
 
     function Reader() {
-      const root = useArborRoot<ReactTestStores, Root>({
+      const root = useMusubiRoot<ReactTestStores, Root>({
         module: "React.Test.Root",
         id: "dashboard-1",
         params
@@ -113,9 +113,9 @@ describe("ArborProvider + useArborRoot", () => {
     }
 
     const result = render(
-      <ArborProvider connection={connection}>
+      <MusubiProvider connection={connection}>
         <Reader />
-      </ArborProvider>
+      </MusubiProvider>
     )
 
     expect(screen.getByText("loading")).toBeTruthy()
@@ -133,14 +133,14 @@ describe("ArborProvider + useArborRoot", () => {
     expect(connection.unmounts).toEqual(["dashboard-1"])
   })
 
-  test("useArborRoot reuses a pending mount during StrictMode effect replay", async () => {
+  test("useMusubiRoot reuses a pending mount during StrictMode effect replay", async () => {
     const fake = buildProxy()
-    const connection = new FakeArborConnection(fake.asProxy())
+    const connection = new FakeMusubiConnection(fake.asProxy())
     const mount = deferred<StoreProxy<unknown, never>>()
     connection.mountResult = mount.promise
 
     function Reader() {
-      const root = useArborRoot<ReactTestStores, Root>({
+      const root = useMusubiRoot<ReactTestStores, Root>({
         module: "React.Test.Root",
         id: "dashboard-1"
       })
@@ -154,9 +154,9 @@ describe("ArborProvider + useArborRoot", () => {
 
     const result = render(
       <React.StrictMode>
-        <ArborProvider connection={connection}>
+        <MusubiProvider connection={connection}>
           <Reader />
-        </ArborProvider>
+        </MusubiProvider>
       </React.StrictMode>
     )
 
@@ -180,13 +180,13 @@ describe("ArborProvider + useArborRoot", () => {
     expect(connection.unmounts).toEqual(["dashboard-1"])
   })
 
-  test("useArborRoot does not unmount another root when mount fails", async () => {
+  test("useMusubiRoot does not unmount another root when mount fails", async () => {
     const fake = buildProxy()
-    const connection = new FakeArborConnection(fake.asProxy())
+    const connection = new FakeMusubiConnection(fake.asProxy())
     connection.mountError = new Error("Root id is already mounted: dashboard-1")
 
     function Reader() {
-      const root = useArborRoot<ReactTestStores, Root>({
+      const root = useMusubiRoot<ReactTestStores, Root>({
         module: "React.Test.Root",
         id: "dashboard-1"
       })
@@ -199,9 +199,9 @@ describe("ArborProvider + useArborRoot", () => {
     }
 
     const result = render(
-      <ArborProvider connection={connection}>
+      <MusubiProvider connection={connection}>
         <Reader />
-      </ArborProvider>
+      </MusubiProvider>
     )
 
     expect(await screen.findByText("Root id is already mounted: dashboard-1")).toBeTruthy()
@@ -212,14 +212,14 @@ describe("ArborProvider + useArborRoot", () => {
   })
 })
 
-describe("useArborSnapshot", () => {
+describe("useMusubiSnapshot", () => {
   test("re-renders on snapshot updates", () => {
     const fake = buildProxy("Inbox", 0)
     let renders = 0
 
     function Reader() {
       renders += 1
-      const snapshot = useArborSnapshot(fake.asProxy())
+      const snapshot = useMusubiSnapshot(fake.asProxy())
       return <span>{snapshot.counter}</span>
     }
 
@@ -228,7 +228,7 @@ describe("useArborSnapshot", () => {
     expect(renders).toBe(1)
 
     act(() => {
-      fake.setSnapshot({ __arbor_store_id__: [], title: "Inbox", counter: 1 })
+      fake.setSnapshot({ __musubi_store_id__: [], title: "Inbox", counter: 1 })
     })
 
     expect(screen.getByText("1")).toBeTruthy()
@@ -241,7 +241,7 @@ describe("useArborSnapshot", () => {
 
     function Reader() {
       renders += 1
-      const title = useArborSnapshot(fake.asProxy(), (s) => s.title)
+      const title = useMusubiSnapshot(fake.asProxy(), (s) => s.title)
       return <span>{title}</span>
     }
 
@@ -249,7 +249,7 @@ describe("useArborSnapshot", () => {
     expect(renders).toBe(1)
 
     act(() => {
-      fake.setSnapshot({ __arbor_store_id__: [], title: "Inbox", counter: 5 })
+      fake.setSnapshot({ __musubi_store_id__: [], title: "Inbox", counter: 5 })
     })
 
     expect(screen.getByText("Inbox")).toBeTruthy()
@@ -257,7 +257,7 @@ describe("useArborSnapshot", () => {
   })
 })
 
-describe("useArborCommand", () => {
+describe("useMusubiCommand", () => {
   test("returns a stable dispatcher bound to the proxy", async () => {
     const fake = buildProxy()
     const handler = vi.fn(async () => ({ ok: true as const }))
@@ -266,7 +266,7 @@ describe("useArborCommand", () => {
     let dispatcher: ((payload: { title: string }) => Promise<unknown>) | undefined
 
     function Reader() {
-      dispatcher = useArborCommand(fake.asProxy(), "rename")
+      dispatcher = useMusubiCommand(fake.asProxy(), "rename")
       return null
     }
 
@@ -279,8 +279,8 @@ describe("useArborCommand", () => {
   })
 })
 
-class FakeArborConnection implements ArborConnection {
-  readonly topic = "arbor:connection"
+class FakeMusubiConnection implements MusubiConnection {
+  readonly topic = "musubi:connection"
   readonly mounts: MountStoreOptions[] = []
   readonly unmounts: string[] = []
   disconnected = false
