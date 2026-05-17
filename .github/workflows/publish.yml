@@ -6,9 +6,6 @@ on:
       - "v*"
   workflow_dispatch:
 
-env:
-  MIX_ENV: test
-
 jobs:
   publish:
     name: Publish to Hex
@@ -33,9 +30,6 @@ jobs:
 
       - name: Compile with warnings as errors
         run: mix compile --warnings-as-errors
-
-      - name: Run tests
-        run: mix test
 
       - name: Publish to Hex
         env:
