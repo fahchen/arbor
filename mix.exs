@@ -98,6 +98,7 @@ defmodule Arbor.MixProject do
         "guides/getting-started.md",
         "guides/phoenix-setup.md",
         "guides/client-and-react.md",
+        "guides/testing.md",
         "docs/client-contract.md",
         "docs/persistence-pattern.md"
       ],
@@ -105,7 +106,8 @@ defmodule Arbor.MixProject do
         Tutorials: [
           "guides/getting-started.md",
           "guides/phoenix-setup.md",
-          "guides/client-and-react.md"
+          "guides/client-and-react.md",
+          "guides/testing.md"
         ],
         Reference: [
           "docs/client-contract.md",

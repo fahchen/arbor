@@ -218,4 +218,5 @@ the conversion happens on the way out through `Arbor.Wire.to_wire/1`.
 
 - Read `Phoenix Setup` for connection/session details.
 - Read `Client and React` for React hooks and root cleanup.
+- Read `Testing` for the `Arbor.Testing` store-test harness.
 - Read `Client Contract` for the wire and proxy model.
