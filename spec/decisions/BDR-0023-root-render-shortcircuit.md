@@ -1,9 +1,9 @@
 ---
 id: BDR-0023
 title: Root render/1 short-circuits when the root socket is unchanged
-status: proposed
+status: accepted
 date: 2026-05-17
-summary: The resolver reuses cached root raw/resolved output on child-only cycles, skipping root `render/1` and its render-stage hooks when the root socket and root streams are unchanged.
+summary: The resolver reuses cached root raw output on child-only cycles, skipping root `render/1` while still resolving descendants and running render-stage hooks on the current root output when the root socket is otherwise unchanged.
 ---
 
 ## Scope
@@ -21,7 +21,7 @@ The root has no parent boundary to provide that gate. As a result, every render 
 - the identical root output is serialized to wire form again
 - the diff engine compares an equivalent root tree again
 
-This is observable because short-circuiting the root also changes hook behaviour. If the root render is skipped, the root socket's `:after_render` and `:after_serialize` hooks will not fire for that cycle. `Stream.drain_and_prune/1` and `Socket.reset_changed/1` still need to run each cycle as runtime cleanup invariants.
+This is observable because short-circuiting the root changes only the callback boundary, not the rest of the render pipeline. The runtime still resolves the current root output tree, converts it to wire form, and runs the root socket's render-stage hooks on that current output. `Stream.drain_and_prune/1` and `Socket.reset_changed/1` still need to run each cycle as runtime cleanup invariants.
 
 ## Decision
 
@@ -39,8 +39,9 @@ The cached value used for reuse is the root entry's `raw_state` — the Elixir-s
 On such a cached root cycle:
 
 - the root's `render/1` is not invoked
-- the root's `:after_render` hooks do not fire
-- the root's `:after_serialize` hooks do not fire
+- the resolver still resolves descendants from the cached root `raw_state`
+- the root's `:after_render` hooks still fire on the newly resolved root output
+- the root's `:after_serialize` hooks still fire on the current wire output
 - `Stream.drain_and_prune/1` still runs on the root socket
 - `Socket.reset_changed/1` still runs on the root socket
 
@@ -54,9 +55,9 @@ This decision adds a `raw_state` cache field to the store-table entry so the res
 
 ## Why This Is Safe
 
-The root render-stage hooks observe the render output. If the root socket is clean and the root has no pending stream changes, the root's own `render/1` result is contractually identical to the prior cycle's result. Re-firing `:after_render` or `:after_serialize` would therefore repeat an identical observation, not expose new root information.
+The root render-stage hooks observe the final resolved output, not just whether `render/1` itself ran. Even on a cached root cycle, descendants may have changed, so the resolved root output and wire output for the current cycle can differ from the prior cycle. Running `:after_render` and `:after_serialize` on the current outputs preserves hook contracts such as render-output validation while still avoiding the redundant root callback invocation.
 
-The trade-off is intentional: Arbor prioritizes skipping redundant root work over preserving per-cycle render-stage hook invocation on unchanged root state. This is similar in spirit to Phoenix LiveView's change tracking, where user callbacks still run for the message that mutated state, but rendering work is skipped when assigns are unchanged. Arbor differs in naming and lifecycle shape, but the same boundary applies here: message-stage hooks remain per-message, render-stage hooks remain tied to actual rendering.
+The trade-off is intentional: Arbor skips only the redundant root callback invocation while preserving the rest of the render lifecycle for the actual current output tree. This is similar in spirit to Phoenix LiveView's change tracking, where redundant callback work can be avoided without suppressing downstream processing that still depends on the current rendered tree.
 
 This safety claim assumes `render/1` obeys the existing contract that it is free of observable side effects and is a deterministic function of socket state. A root `render/1` that reads wall clock time, random values, process dictionary state, or other hidden inputs is already outside the contract; caching does not attempt to preserve behaviour for such implementations.
 
@@ -76,10 +77,4 @@ Rejected because it is much more invasive. It would require finer-grained templa
 
 ## Migration
 
-Existing root-level `:after_render` or `:after_serialize` hooks that rely on firing once per render cycle must move to a message-stage hook instead:
-
-- `:after_command`
-- `:handle_async`
-- `:handle_info`
-
-Those hooks still fire when their corresponding message/callback runs, even if the root render is short-circuited afterward.
+No migration is required for existing root-level `:after_render` or `:after_serialize` hooks. They still fire once per render cycle; the short-circuit affects only whether the root callback `render/1` itself is re-invoked.

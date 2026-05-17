@@ -192,8 +192,8 @@ Feature: Render Contract
       And the root socket's __changed__ map is empty
       When the runtime walks the tree
       Then the root's render/1 is not invoked
-      And the root's after_render and after_serialize hooks do not fire
-      And the cached root resolved_state is reused for child resolution
+      And the cached root raw_state is reused to resolve the current child subtree
+      And the root's after_render and after_serialize hooks still run on the current root output
 
   Rule: A disappeared child is unmounted; reappearance is a fresh mount with no preserved assigns
 
