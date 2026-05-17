@@ -477,6 +477,7 @@ function acceptEnvelope(
   envelope: PatchEnvelope,
   isInitial: boolean
 ): void {
+  const previousRoot = connection.root
   const previousStoreIndex = connection.storeIndex
   const previousStreams = connection.streams
   const streamTouched = touchedStoreKeys(envelope.stream_ops)
@@ -492,10 +493,11 @@ function acceptEnvelope(
   connection.root = nextRoot
   connection.storeIndex = nextStoreIndex
   connection.streams = nextStreams
-  connection.snapshotCache = invalidateSnapshotsForOps(
+  invalidateSnapshotsForOps(
     connection.snapshotCache,
     envelope.ops,
     envelope.stream_ops,
+    previousRoot,
     nextRoot
   )
   connection.version = envelope.version
@@ -631,52 +633,47 @@ function invalidateSnapshotsForOps(
   snapshotCache: Map<string, unknown>,
   ops: readonly JsonPatchOp[],
   streamOps: readonly StreamOp[],
+  previousRoot: unknown,
   root: unknown
-): Map<string, unknown> {
+): void {
   if (ops.some((op) => op.path === "")) {
-    return new Map()
+    snapshotCache.clear()
+    return
   }
-
-  const touched = touchedSnapshotStoreKeys(root, ops, streamOps)
-
-  if (touched.size === 0) {
-    return snapshotCache
-  }
-
-  const nextCache = new Map(snapshotCache)
-
-  for (const key of touched) {
-    nextCache.delete(key)
-  }
-
-  return nextCache
-}
-
-function touchedSnapshotStoreKeys(
-  root: unknown,
-  ops: readonly JsonPatchOp[],
-  streamOps: readonly StreamOp[]
-): Set<string> {
-  const touched = new Set<string>()
 
   for (const op of ops) {
-    for (const key of storeIdsAlongPath(root, op.path)) {
-      touched.add(key)
-    }
+    invalidateStoreIdsAlongPath(snapshotCache, previousRoot, op.path)
+    invalidateStoreIdsAlongPath(snapshotCache, root, op.path)
+    invalidateSnapshotSubtreesForOp(snapshotCache, previousRoot, op)
   }
 
   for (const op of streamOps) {
-    touched.add(storeIdKey(op.store_id))
+    invalidateStoreIdAncestors(snapshotCache, op.store_id)
   }
-
-  return touched
 }
 
-function storeIdsAlongPath(root: unknown, pointerPath: string): string[] {
-  const touched: string[] = []
+function invalidateSnapshotSubtreesForOp(
+  snapshotCache: Map<string, unknown>,
+  previousRoot: unknown,
+  op: JsonPatchOp
+): void {
+  if (op.op !== "add") {
+    invalidateStoreIdsInSubtree(snapshotCache, getPointerValue(previousRoot, op.path))
+  }
+
+  if (op.op !== "remove") {
+    invalidateStoreIdsInSubtree(snapshotCache, op.value)
+  }
+}
+
+function invalidateStoreIdsAlongPath(
+  snapshotCache: Map<string, unknown>,
+  root: unknown,
+  pointerPath: string
+): void {
   let current: unknown = root
 
-  addStoreKeyIfPresent(touched, current)
+  invalidateStoreKeyIfPresent(snapshotCache, current)
 
   for (const segment of parsePointer(pointerPath)) {
     current = getPointerChild(current, segment)
@@ -685,13 +682,60 @@ function storeIdsAlongPath(root: unknown, pointerPath: string): string[] {
       break
     }
 
-    addStoreKeyIfPresent(touched, current)
+    invalidateStoreKeyIfPresent(snapshotCache, current)
   }
-
-  return touched
 }
 
-function addStoreKeyIfPresent(touched: string[], value: unknown): void {
+function invalidateStoreIdAncestors(
+  snapshotCache: Map<string, unknown>,
+  storeId: StoreId
+): void {
+  for (let depth = 0; depth <= storeId.length; depth += 1) {
+    snapshotCache.delete(storeIdKey(storeId.slice(0, depth)))
+  }
+}
+
+function invalidateStoreIdsInSubtree(
+  snapshotCache: Map<string, unknown>,
+  value: unknown
+): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      invalidateStoreIdsInSubtree(snapshotCache, entry)
+    }
+
+    return
+  }
+
+  if (!isRecord(value)) {
+    return
+  }
+
+  invalidateStoreKeyIfPresent(snapshotCache, value)
+
+  for (const child of Object.values(value)) {
+    invalidateStoreIdsInSubtree(snapshotCache, child)
+  }
+}
+
+function getPointerValue(root: unknown, pointerPath: string): unknown {
+  let current: unknown = root
+
+  for (const segment of parsePointer(pointerPath)) {
+    current = getPointerChild(current, segment)
+
+    if (current === undefined) {
+      return undefined
+    }
+  }
+
+  return current
+}
+
+function invalidateStoreKeyIfPresent(
+  snapshotCache: Map<string, unknown>,
+  value: unknown
+): void {
   if (!isRecord(value)) {
     return
   }
@@ -699,7 +743,7 @@ function addStoreKeyIfPresent(touched: string[], value: unknown): void {
   const maybeStoreId = value[STORE_ID_KEY]
 
   if (isStoreIdValue(maybeStoreId)) {
-    touched.push(storeIdKey(maybeStoreId))
+    snapshotCache.delete(storeIdKey(maybeStoreId))
   }
 }
 

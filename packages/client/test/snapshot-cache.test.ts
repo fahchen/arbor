@@ -87,23 +87,7 @@ class MockSocket {
 
 describe("snapshot cache invalidation", () => {
   test("preserves unrelated store snapshots across patch envelopes", async () => {
-    const socket = new MockSocket()
-    const { connection: connectionState, ready: connectionReady } = openConnectionState(socket)
-    const channel = lastChannel(socket)
-    channel.resolveJoin()
-    await connectionReady
-
-    const { connection, ready } = mountConnectionRoot(connectionState, {
-      module: "Test.Root",
-      id: "root"
-    })
-
-    await Promise.resolve()
-
-    const mountPush = lastPush(channel)
-    mountPush.push.resolve("ok", { root_id: "root" })
-    channel.emit("patch", initialConnectionEnvelope("root", rootState()))
-    await ready
+    const { channel, connection } = await mountTestRoot()
 
     const snapA1 = snapshotStore(connection, ["a"])
 
@@ -122,7 +106,122 @@ describe("snapshot cache invalidation", () => {
 
     expect(Object.is(snapA1, snapA2)).toBe(true)
   })
+
+  test("invalidates touched store snapshots and their ancestors", async () => {
+    const { channel, connection } = await mountTestRoot()
+    const root1 = snapshotStore(connection, [])
+    const snapA1 = snapshotStore(connection, ["a"])
+
+    channel.emit(
+      "patch",
+      connectionEnvelope(
+        "root",
+        1,
+        2,
+        [{ op: "replace", path: "/a/v", value: 2 }],
+        []
+      )
+    )
+
+    const root2 = snapshotStore(connection, [])
+    const snapA2 = snapshotStore(connection, ["a"])
+
+    expect(Object.is(root1, root2)).toBe(false)
+    expect(Object.is(snapA1, snapA2)).toBe(false)
+    expect(snapA2).toMatchObject({ v: 2 })
+  })
+
+  test("invalidates removed subtree snapshots", async () => {
+    const { channel, connection } = await mountTestRoot()
+    const child1 = snapshotStore(connection, ["a", "child"])
+
+    channel.emit(
+      "patch",
+      connectionEnvelope(
+        "root",
+        1,
+        2,
+        [
+          {
+            op: "replace",
+            path: "/a",
+            value: {
+              __arbor_store_id__: ["a"],
+              v: 2,
+              items: { __arbor_stream__: "items" }
+            }
+          }
+        ],
+        []
+      )
+    )
+
+    const child2 = snapshotStore(connection, ["a", "child"])
+
+    expect(Object.is(child1, child2)).toBe(false)
+    expect(child2).toEqual({ __arbor_store_id__: ["a", "child"] })
+  })
+
+  test("invalidates stream owner snapshots and their ancestors", async () => {
+    const { channel, connection } = await mountTestRoot()
+    const root1 = snapshotStore(connection, [])
+    const snapA1 = snapshotStore(connection, ["a"])
+
+    channel.emit(
+      "patch",
+      connectionEnvelope(
+        "root",
+        1,
+        2,
+        [],
+        [
+          {
+            op: "insert",
+            stream: "items",
+            ref: "1",
+            store_id: ["a"],
+            item_key: "item-1",
+            at: -1,
+            item: { id: "1", label: "fresh" },
+            limit: null
+          }
+        ]
+      )
+    )
+
+    const root2 = snapshotStore(connection, [])
+    const snapA2 = snapshotStore(connection, ["a"])
+
+    expect(Object.is(root1, root2)).toBe(false)
+    expect(Object.is(snapA1, snapA2)).toBe(false)
+    expect(snapA2).toMatchObject({ items: [{ id: "1", label: "fresh" }] })
+  })
 })
+
+async function mountTestRoot(): Promise<{
+  channel: MockChannel
+  connection: ReturnType<typeof mountConnectionRoot>["connection"]
+}> {
+  const socket = new MockSocket()
+  const { connection: connectionState, ready: connectionReady } = openConnectionState(socket)
+  const channel = lastChannel(socket)
+  channel.resolveJoin()
+  await connectionReady
+
+  const { connection, ready } = mountConnectionRoot(connectionState, {
+    module: "Test.Root",
+    id: "root"
+  })
+
+  await Promise.resolve()
+
+  const mountPush = lastPush(channel)
+  mountPush.push.resolve("ok", { root_id: "root" })
+  channel.emit("patch", initialConnectionEnvelope("root", rootState()))
+  await ready
+
+  return { channel, connection }
+}
 
 function lastChannel(socket: MockSocket): MockChannel {
   const channel = socket.channels.at(-1)
@@ -177,7 +276,14 @@ function rootState(): Record<string, unknown> {
     __arbor_store_id__: [],
     a: {
       __arbor_store_id__: ["a"],
-      v: 1
+      v: 1,
+      child: {
+        __arbor_store_id__: ["a", "child"],
+        v: 1
+      },
+      items: {
+        __arbor_stream__: "items"
+      }
     },
     b: {
       __arbor_store_id__: ["b"],
