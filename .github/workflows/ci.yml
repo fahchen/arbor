@@ -6,12 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
 env:
   MIX_ENV: test
 
 jobs:
   test:
-    name: CI (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
+    name: CI (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} / Phoenix ${{ matrix.phoenix }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -19,9 +23,21 @@ jobs:
       matrix:
         include:
           - elixir: "1.19.5"
-            otp: "27.3"
+            otp: "28.3"
+            phoenix: "~> 1.8.0"
+            lint: lint
           - elixir: "1.19.5"
             otp: "28.3"
+            phoenix: "~> 1.7.0"
+          - elixir: "1.19.5"
+            otp: "27.3"
+            phoenix: "~> 1.8.0"
+          - elixir: "1.19.5"
+            otp: "27.3"
+            phoenix: "~> 1.7.0"
+
+    env:
+      PHOENIX_VERSION: ${{ matrix.phoenix }}
 
     steps:
       - name: Checkout
@@ -33,51 +49,57 @@ jobs:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
 
-      - name: Restore deps cache
+      - name: Restore deps + build cache
         uses: actions/cache@v5
         with:
-          path: deps
-          key: deps-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-phoenix-${{ matrix.phoenix }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-
+            ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-phoenix-${{ matrix.phoenix }}-
 
-      - name: Restore build cache
-        uses: actions/cache@v5
-        with:
-          path: _build
-          key: build-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            build-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-
+      - name: Unlock phoenix
+        run: mix deps.unlock phoenix
 
       - name: Fetch deps
         run: mix deps.get
 
+      - name: Compile deps
+        run: mix deps.compile
+
       - name: Check unused dependencies
+        if: ${{ matrix.lint }}
         run: mix deps.unlock --check-unused
 
       - name: Check formatting
+        if: ${{ matrix.lint }}
         run: mix format --check-formatted
 
       - name: Compile with warnings as errors
+        if: ${{ matrix.lint }}
         run: mix compile --warnings-as-errors
 
       - name: Credo
+        if: ${{ matrix.lint }}
         run: mix credo --strict
 
       - name: Restore PLT cache
+        if: ${{ matrix.lint }}
         id: plt-cache
         uses: actions/cache@v5
         with:
           path: priv/plts
-          key: plt-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+          key: plt-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            plt-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-
+            plt-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
 
       - name: Create PLTs
-        if: steps.plt-cache.outputs.cache-hit != 'true'
+        if: ${{ matrix.lint && steps.plt-cache.outputs.cache-hit != 'true' }}
         run: mix dialyzer --plt
 
       - name: Dialyzer
+        if: ${{ matrix.lint }}
         run: mix dialyzer
 
       - name: Run tests
