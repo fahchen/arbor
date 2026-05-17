@@ -1,11 +1,18 @@
-import { applyPatch } from "./patch"
+import { applyPatch, parsePointer } from "./patch"
 import {
   applyStreamOps,
   hasStreamKeyForStore,
   pruneStreams,
   touchedStoreKeys
 } from "./streams"
-import type { ConnectionPatchEnvelope, PatchEnvelope, StoreId, StreamEntry } from "./types"
+import type {
+  ConnectionPatchEnvelope,
+  JsonPatchOp,
+  PatchEnvelope,
+  StoreId,
+  StreamEntry,
+  StreamOp
+} from "./types"
 import { STORE_ID_KEY, storeIdKey } from "./types"
 
 type PushStatus = "ok" | "error" | "timeout"
@@ -485,7 +492,12 @@ function acceptEnvelope(
   connection.root = nextRoot
   connection.storeIndex = nextStoreIndex
   connection.streams = nextStreams
-  connection.snapshotCache.clear()
+  connection.snapshotCache = invalidateSnapshotsForOps(
+    connection.snapshotCache,
+    envelope.ops,
+    envelope.stream_ops,
+    nextRoot
+  )
   connection.version = envelope.version
 
   // Drop proxy entries whose store_id no longer exists in the tree. New
@@ -613,6 +625,98 @@ function resetConnectionState(connection: RootConnection): void {
   connection.streams = new Map()
   connection.proxyCache = new Map()
   connection.snapshotCache = new Map()
+}
+
+function invalidateSnapshotsForOps(
+  snapshotCache: Map<string, unknown>,
+  ops: readonly JsonPatchOp[],
+  streamOps: readonly StreamOp[],
+  root: unknown
+): Map<string, unknown> {
+  if (ops.some((op) => op.path === "")) {
+    return new Map()
+  }
+
+  const touched = touchedSnapshotStoreKeys(root, ops, streamOps)
+
+  if (touched.size === 0) {
+    return snapshotCache
+  }
+
+  const nextCache = new Map(snapshotCache)
+
+  for (const key of touched) {
+    nextCache.delete(key)
+  }
+
+  return nextCache
+}
+
+function touchedSnapshotStoreKeys(
+  root: unknown,
+  ops: readonly JsonPatchOp[],
+  streamOps: readonly StreamOp[]
+): Set<string> {
+  const touched = new Set<string>()
+
+  for (const op of ops) {
+    for (const key of storeIdsAlongPath(root, op.path)) {
+      touched.add(key)
+    }
+  }
+
+  for (const op of streamOps) {
+    touched.add(storeIdKey(op.store_id))
+  }
+
+  return touched
+}
+
+function storeIdsAlongPath(root: unknown, pointerPath: string): string[] {
+  const touched: string[] = []
+  let current: unknown = root
+
+  addStoreKeyIfPresent(touched, current)
+
+  for (const segment of parsePointer(pointerPath)) {
+    current = getPointerChild(current, segment)
+
+    if (current === undefined) {
+      break
+    }
+
+    addStoreKeyIfPresent(touched, current)
+  }
+
+  return touched
+}
+
+function addStoreKeyIfPresent(touched: string[], value: unknown): void {
+  if (!isRecord(value)) {
+    return
+  }
+
+  const maybeStoreId = value[STORE_ID_KEY]
+
+  if (isStoreIdValue(maybeStoreId)) {
+    touched.push(storeIdKey(maybeStoreId))
+  }
+}
+
+function getPointerChild(value: unknown, segment: string): unknown {
+  if (Array.isArray(value)) {
+    if (!/^(0|[1-9]\d*)$/.test(segment)) {
+      return undefined
+    }
+
+    return value[Number.parseInt(segment, 10)]
+  }
+
+  if (isRecord(value)) {
+    return value[segment]
+  }
+
+  return undefined
 }
 
 function buildStoreIndex(root: unknown): Map<string, unknown> {
