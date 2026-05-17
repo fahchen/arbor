@@ -51,11 +51,6 @@ defmodule Arbor.Reconciler do
             next_socket = update_store(entry.socket, assigns)
             {:update, store_id, next_socket, consumed_keys}
 
-          Socket.consumed_keys_changed?(parent_socket, consumed_keys) and
-              Enum.any?(consumed_keys, fn key -> not Map.has_key?(entry.socket.assigns, key) end) ->
-            next_socket = update_store(entry.socket, assigns)
-            {:update, store_id, next_socket, consumed_keys}
-
           # Child has internal mutations queued (from a command handler, an
           # async result write, or a stream insert) since the last render. The
           # parent did not change so `update/2` does not run, but the child
