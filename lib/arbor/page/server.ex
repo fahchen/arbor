@@ -450,7 +450,6 @@ defmodule Arbor.Page.Server do
     {wire_root, next_registry} = root_wire(next_registry, next_root_socket)
     {stream_ops, next_registry} = flush_all_stream_ops(next_registry)
 
-    # BDR-0018: idle cycles should skip Jsonpatch work when the wire root is unchanged.
     diff_ops =
       if wire_root == state.previous_wire_root do
         []
