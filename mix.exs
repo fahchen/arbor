@@ -1,12 +1,12 @@
-defmodule Arbor.MixProject do
+defmodule Musubi.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/fahchen/arbor"
+  @source_url "https://github.com/fahchen/musubi"
 
   def project do
     [
-      app: :arbor,
+      app: :musubi,
       version: @version,
       description: description(),
       elixir: "~> 1.19",
@@ -17,7 +17,7 @@ defmodule Arbor.MixProject do
       docs: docs(),
       package: package(),
       dialyzer: [
-        plt_local_path: "priv/plts/arbor.plt",
+        plt_local_path: "priv/plts/musubi.plt",
         plt_core_path: "priv/plts/core.plt",
         plt_add_apps: [:ex_unit, :mix],
         ignore_warnings: ".dialyzer_ignore.exs"
@@ -30,7 +30,7 @@ defmodule Arbor.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Arbor.Application, []}
+      mod: {Musubi.Application, []}
     ]
   end
 
@@ -64,7 +64,7 @@ defmodule Arbor.MixProject do
 
   # Hex package contents. Includes the JS source under `packages/*/src`
   # so that consuming Phoenix apps can reference them via
-  # `file:../deps/arbor/packages/<name>` from their JS package.json. The
+  # `file:../deps/musubi/packages/<name>` from their JS package.json. The
   # consumer's bundler (Vite, esbuild) transpiles `.ts`/`.tsx` on demand.
   defp package do
     [
@@ -116,29 +116,29 @@ defmodule Arbor.MixProject do
       ],
       groups_for_modules: [
         "Store Authoring": [
-          Arbor.Store,
-          Arbor.State,
-          Arbor.Input,
-          Arbor.Socket,
-          Arbor.Child
+          Musubi.Store,
+          Musubi.State,
+          Musubi.Input,
+          Musubi.Socket,
+          Musubi.Child
         ],
         Runtime: [
-          Arbor.Async,
-          Arbor.AsyncResult,
-          Arbor.Lifecycle,
-          Arbor.Stream,
-          Arbor.Telemetry
+          Musubi.Async,
+          Musubi.AsyncResult,
+          Musubi.Lifecycle,
+          Musubi.Stream,
+          Musubi.Telemetry
         ],
         Transport: [
-          Arbor.Transport.Socket,
-          Arbor.Transport.ConnectionChannel,
-          Arbor.Transport.Channel
+          Musubi.Transport.Socket,
+          Musubi.Transport.ConnectionChannel,
+          Musubi.Transport.Channel
         ],
         Codegen: [
-          Mix.Tasks.Compile.ArborTs
+          Mix.Tasks.Compile.MusubiTs
         ],
         Testing: [
-          Arbor.Testing
+          Musubi.Testing
         ]
       ]
     ]
@@ -146,21 +146,21 @@ defmodule Arbor.MixProject do
 
   defp docs_modules do
     [
-      Arbor.Store,
-      Arbor.State,
-      Arbor.Input,
-      Arbor.Socket,
-      Arbor.Child,
-      Arbor.Async,
-      Arbor.AsyncResult,
-      Arbor.Lifecycle,
-      Arbor.Stream,
-      Arbor.Telemetry,
-      Arbor.Transport.Socket,
-      Arbor.Transport.ConnectionChannel,
-      Arbor.Transport.Channel,
-      Mix.Tasks.Compile.ArborTs,
-      Arbor.Testing
+      Musubi.Store,
+      Musubi.State,
+      Musubi.Input,
+      Musubi.Socket,
+      Musubi.Child,
+      Musubi.Async,
+      Musubi.AsyncResult,
+      Musubi.Lifecycle,
+      Musubi.Stream,
+      Musubi.Telemetry,
+      Musubi.Transport.Socket,
+      Musubi.Transport.ConnectionChannel,
+      Musubi.Transport.Channel,
+      Mix.Tasks.Compile.MusubiTs,
+      Musubi.Testing
     ]
   end
 
@@ -172,23 +172,23 @@ defmodule Arbor.MixProject do
 
   defp skipped_doc_references do
     [
-      "Arbor.Application",
-      "Arbor.Async.Telemetry",
-      "Arbor.AsyncSupervisor",
-      "Arbor.Codegen.TypeScript.Manifest",
-      "Arbor.DSL.",
-      "Arbor.Hooks.",
-      "Arbor.Page.",
-      "Arbor.Plugin.",
-      "Arbor.Resolver",
-      "Arbor.Socket.handle_join/2",
-      "Arbor.State.__using__/1",
-      "Arbor.Store.__using__/1",
-      "Arbor.Stream.Slot",
-      "Arbor.Type",
-      "Arbor.Wire",
+      "Musubi.Application",
+      "Musubi.Async.Telemetry",
+      "Musubi.AsyncSupervisor",
+      "Musubi.Codegen.TypeScript.Manifest",
+      "Musubi.DSL.",
+      "Musubi.Hooks.",
+      "Musubi.Page.",
+      "Musubi.Plugin.",
+      "Musubi.Resolver",
+      "Musubi.Socket.handle_join/2",
+      "Musubi.State.__using__/1",
+      "Musubi.Store.__using__/1",
+      "Musubi.Stream.Slot",
+      "Musubi.Type",
+      "Musubi.Wire",
       "Resolver",
-      "Module.__arbor_validate_state__/1"
+      "Module.__musubi_validate_state__/1"
     ]
   end
 
@@ -199,7 +199,7 @@ defmodule Arbor.MixProject do
         "deps.unlock --unused",
         "format",
         "credo --strict",
-        "compile.arbor_ts --check",
+        "compile.musubi_ts --check",
         "dialyzer",
         "test"
       ],

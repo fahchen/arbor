@@ -91,7 +91,7 @@ exclude_test_files = {:files, %{excluded: ["test/"]}}
           {Credo.Check.Refactor.RejectReject, []},
           {Credo.Check.Refactor.RedundantWithClauseResult, []},
           {Credo.Check.Refactor.AppendSingleItem, []},
-          {Arbor.CredoChecks.DoubleReverse, []},
+          {Musubi.CredoChecks.DoubleReverse, []},
           {Credo.Check.Refactor.DoubleBooleanNegation, []},
           {Credo.Check.Refactor.FilterReject, []},
           {Credo.Check.Refactor.IoPuts, []},

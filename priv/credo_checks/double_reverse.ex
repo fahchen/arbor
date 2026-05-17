@@ -1,4 +1,4 @@
-defmodule Arbor.CredoChecks.DoubleReverse do
+defmodule Musubi.CredoChecks.DoubleReverse do
   @moduledoc false
 
   use Credo.Check,
