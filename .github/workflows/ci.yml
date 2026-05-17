@@ -8,19 +8,50 @@ on:
 
 env:
   MIX_ENV: test
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   test:
-    name: CI
+    name: CI (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: "1.19.5"
+            otp: "27.3"
+          - elixir: "1.19.5"
+            otp: "28.3"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup environment
-        id: setup
-        uses: ./.github/workflows/actions/setup
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+
+      - name: Restore deps cache
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            deps-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: _build
+          key: build-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            build-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-
+
+      - name: Fetch deps
+        run: mix deps.get
 
       - name: Check unused dependencies
         run: mix deps.unlock --check-unused
@@ -39,9 +70,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: priv/plts
-          key: plt-${{ runner.os }}-${{ steps.setup.outputs.erlang-version }}-${{ steps.setup.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          key: plt-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            plt-${{ runner.os }}-${{ steps.setup.outputs.erlang-version }}-${{ steps.setup.outputs.elixir-version }}-
+            plt-${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-
 
       - name: Create PLTs
         if: steps.plt-cache.outputs.cache-hit != 'true'
