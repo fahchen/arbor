@@ -65,8 +65,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-phoenix-${{ matrix.phoenix }}-
 
-      - name: Unlock phoenix
-        run: mix deps.unlock phoenix
+      - name: Unlock all deps for matrix resolution
+        run: mix deps.unlock --all
 
       - name: Fetch deps
         run: mix deps.get
