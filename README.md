@@ -51,11 +51,30 @@ Configure the generated `.d.ts` output path:
 config :arbor, :ts_codegen_output_path, "assets/src/generated/arbor.d.ts"
 ```
 
-Install the client packages in the frontend project:
+The JavaScript client packages ship inside the Arbor Hex package under
+`deps/arbor/packages/`. Reference them by local path from the frontend
+project's `package.json` (adjust the relative path so it points at
+`deps/arbor/packages/<name>` from the JS app root):
+
+```json
+{
+  "dependencies": {
+    "@arbor/client": "file:../deps/arbor/packages/client",
+    "@arbor/react": "file:../deps/arbor/packages/react",
+    "phoenix": "file:../deps/phoenix"
+  }
+}
+```
+
+Then run the package manager once after `mix deps.get`:
 
 ```sh
-pnpm add @arbor/client @arbor/react phoenix
+pnpm install   # or npm install / yarn install
 ```
+
+`@arbor/client` and `@arbor/react` ship TypeScript source directly; the
+consumer bundler (Vite, Phoenix esbuild) transpiles on demand — no build
+step required.
 
 ## Minimal Example
 

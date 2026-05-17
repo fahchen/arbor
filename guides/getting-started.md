@@ -131,10 +131,24 @@ Stores can then read it with `Arbor.Socket.session(socket)`.
 
 ## 5. Mount From TypeScript
 
-Install the client packages:
+`@arbor/client` ships inside the Arbor Hex package under
+`deps/arbor/packages/client`. Reference it by local path from the
+frontend project's `package.json` (adjust the relative path so it points
+at `deps/arbor/packages/client` from the JS app root):
+
+```json
+{
+  "dependencies": {
+    "@arbor/client": "file:../deps/arbor/packages/client",
+    "phoenix": "file:../deps/phoenix"
+  }
+}
+```
+
+Then install once after `mix deps.get`:
 
 ```sh
-pnpm add @arbor/client phoenix
+pnpm install   # or npm install / yarn install
 ```
 
 Open one connection, then mount one or more declared root stores by module
