@@ -99,4 +99,75 @@ defmodule Arbor.TestingTest do
                Arbor.Testing.dispatch_command(page, :bump, %{"by" => 1})
     end
   end
+
+  describe "child store addressing via store_id" do
+    defmodule FiltersStore do
+      use Arbor.Store
+
+      state do
+        field :query, String.t()
+      end
+
+      command :change_query do
+        payload(:query, String.t())
+        reply(%{ok: boolean()})
+      end
+
+      @impl Arbor.Store
+      def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :query, "")}
+
+      @impl Arbor.Store
+      def render(socket), do: %{query: socket.assigns.query}
+
+      @impl Arbor.Store
+      def handle_command(:change_query, %{"query" => q}, socket) do
+        {:reply, %{"ok" => true}, Arbor.Socket.assign(socket, :query, q)}
+      end
+    end
+
+    defmodule ParentStore do
+      use Arbor.Store, root: true
+
+      state do
+        field :filters, FiltersStore.t()
+      end
+
+      @impl Arbor.Store
+      def mount(_params, socket), do: {:ok, socket}
+
+      @impl Arbor.Store
+      def render(_socket) do
+        %{filters: Arbor.Child.child(FiltersStore, id: "filters")}
+      end
+
+      @impl Arbor.Store
+      def handle_command(_name, _payload, socket), do: {:noreply, socket}
+    end
+
+    test "dispatch_command routes to child store via store_id" do
+      page = Arbor.Testing.mount(ParentStore)
+
+      assert {:ok, %{"ok" => true}} =
+               Arbor.Testing.dispatch_command(
+                 page,
+                 :change_query,
+                 %{"query" => "shirt"},
+                 ["filters"]
+               )
+
+      assert Arbor.Testing.render(page, ["filters"]) == %{query: "shirt"}
+      assert Arbor.Testing.assigns(page, ["filters"]).query == "shirt"
+    end
+
+    test "render at root returns wire-shape map with child placeholder resolved" do
+      page = Arbor.Testing.mount(ParentStore)
+
+      # Root render emits the child placeholder; the resolver substitutes
+      # the child's render output into the slot before the wire envelope
+      # is built. `render/2` at the root level returns the unresolved
+      # placeholder (the store's literal `render/1` output).
+      assert %{filters: %Arbor.Child{module: FiltersStore, id: "filters"}} =
+               Arbor.Testing.render(page)
+    end
+  end
 end

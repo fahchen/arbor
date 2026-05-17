@@ -97,23 +97,98 @@ assert wire == %{"hp" => %{"p1" => 100, "p2" => 0}, "winner" => "p1"}
 ## Addressing child stores
 
 `render/2`, `dispatch_command/4`, and `assigns/2` all accept an optional
-`store_id` — the path from the root to the addressed node. The default
-`[]` addresses the root.
+`store_id` — the path from the root to the addressed node, matching the
+shape of `Arbor.Socket.store_id/1`. The default `[]` addresses the root.
+
+| `store_id`           | Addresses                              |
+| :------------------- | :------------------------------------- |
+| `[]`                 | root                                   |
+| `["filters"]`        | root → child mounted with `id: "filters"` |
+| `["cart", "i-42"]`   | root → cart child → its child `"i-42"` |
+
+Each segment matches the `:id` passed to `Arbor.Child.child(Module, id: "...")`
+inside the parent's `render/1` output. Segments are strings.
+
+### Worked example
+
+Parent + child store:
 
 ```elixir
-{:ok, _reply} =
-  Arbor.Testing.dispatch_command(
-    page,
-    :select,
-    %{"id" => "shirt"},
-    ["filters"]
-  )
+defmodule MyApp.Stores.FiltersStore do
+  use Arbor.Store
 
-assert Arbor.Testing.render(page, ["filters"]) == %{query: "shirt"}
+  state do
+    field :query, String.t()
+  end
+
+  command :change_query do
+    payload :query, String.t()
+    reply %{ok: boolean()}
+  end
+
+  @impl Arbor.Store
+  def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :query, "")}
+
+  @impl Arbor.Store
+  def render(socket), do: %{query: socket.assigns.query}
+
+  @impl Arbor.Store
+  def handle_command(:change_query, %{"query" => q}, socket) do
+    {:reply, %{"ok" => true}, Arbor.Socket.assign(socket, :query, q)}
+  end
+end
+
+defmodule MyApp.Stores.RootStore do
+  use Arbor.Store, root: true
+
+  state do
+    field :filters, MyApp.Stores.FiltersStore.t()
+  end
+
+  @impl Arbor.Store
+  def mount(_params, socket), do: {:ok, socket}
+
+  @impl Arbor.Store
+  def render(_socket) do
+    %{filters: Arbor.Child.child(MyApp.Stores.FiltersStore, id: "filters")}
+  end
+
+  @impl Arbor.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
+end
 ```
 
-The store_id matches `Arbor.Socket.store_id/1` — a list of local ids
-from the root.
+Test that dispatches to the child and asserts on its rendered output:
+
+```elixir
+test "filter query updates through the child store" do
+  page = Arbor.Testing.mount(MyApp.Stores.RootStore)
+
+  {:ok, %{"ok" => true}} =
+    Arbor.Testing.dispatch_command(
+      page,
+      :change_query,
+      %{"query" => "shirt"},
+      ["filters"]
+    )
+
+  assert Arbor.Testing.render(page, ["filters"]) == %{query: "shirt"}
+end
+```
+
+### Lifecycle notes
+
+- The child is mounted lazily by the resolver during the first render
+  cycle, triggered automatically by `Arbor.Testing.mount/3`. By the
+  time `dispatch_command/4` runs, the child is in the store table.
+- Calling `dispatch_command/4` with a `store_id` for a child that was
+  never rendered raises — the lookup fails fast.
+- `Arbor.Testing.render(page)` at the root returns the raw `render/1`
+  output, including the `%Arbor.Child{...}` placeholder. The
+  placeholder is substituted with the child's rendered output later in
+  the wire pipeline before the patch envelope ships to the client. Use
+  `render(page, ["filters"])` to assert on the child's own output, or
+  pipe through `Arbor.Wire.to_wire/1` to see the resolved wire shape.
 
 ## Push patches: handled automatically
 
