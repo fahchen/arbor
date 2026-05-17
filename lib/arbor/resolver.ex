@@ -16,8 +16,9 @@ defmodule Arbor.Resolver do
   echoes verbatim when issuing commands.
 
   After the pipeline, `socket.assigns.__changed__` is reset and the registry
-  entry stores both `resolved_state` (Elixir form, used for memoization) and
-  `wire_state` (wire form, consumed by the M4 diff engine).
+  entry stores `raw_state` (pre-resolution Elixir form), `resolved_state`
+  (resolved Elixir form, used for memoization), and `wire_state` (wire form,
+  consumed by the M4 diff engine).
 
   Return shape:
 
@@ -112,8 +113,8 @@ defmodule Arbor.Resolver do
 
   defp render_store(%Socket{} = socket, %StoreTable{} = registry, live_identities)
        when is_map(live_identities) do
-    raw_state = socket.module.render(socket)
     store_id = Socket.store_id(socket)
+    raw_state = render_input(socket, registry, store_id)
 
     {resolved_state, resolved_registry, resolved_live_identities} =
       resolve_value(raw_state, socket, registry, store_id, live_identities)
@@ -121,26 +122,8 @@ defmodule Arbor.Resolver do
     resolved_state = normalize_stream_placeholders!(resolved_state, socket)
     resolved_state = inject_store_id(resolved_state, store_id)
 
-    after_render_socket =
-      case Lifecycle.run_hooks(socket, :after_render, [resolved_state], false) do
-        {:cont, %Socket{} = hooked_socket} -> hooked_socket
-        {:halt, %Socket{} = hooked_socket} -> hooked_socket
-      end
-
     wire_state = stitch_wire(resolved_state, resolved_registry, store_id)
-
-    next_socket =
-      case Lifecycle.run_hooks(after_render_socket, :after_serialize, [wire_state], false) do
-        {:cont, %Socket{} = hooked_socket} ->
-          hooked_socket
-          |> Stream.drain_and_prune()
-          |> Socket.reset_changed()
-
-        {:halt, %Socket{} = hooked_socket} ->
-          hooked_socket
-          |> Stream.drain_and_prune()
-          |> Socket.reset_changed()
-      end
+    next_socket = finalize_socket(socket, resolved_state, wire_state)
 
     next_registry =
       StoreTable.put(
@@ -149,6 +132,7 @@ defmodule Arbor.Resolver do
         %Entry{
           socket: next_socket,
           module: next_socket.module,
+          raw_state: raw_state,
           resolved_state: resolved_state,
           wire_state: wire_state,
           consumed_keys: entry_consumed_keys(registry, store_id)
@@ -158,6 +142,53 @@ defmodule Arbor.Resolver do
     next_live_identities = Map.put(resolved_live_identities, store_id, true)
 
     {resolved_state, next_socket, next_registry, next_live_identities}
+  end
+
+  @spec render_input(Socket.t(), StoreTable.t(), StoreTable.key()) :: Entry.raw_state()
+  defp render_input(%Socket{} = socket, %StoreTable{} = registry, []) do
+    case StoreTable.get(registry, []) do
+      %Entry{raw_state: raw_state} ->
+        if not Socket.any_changed?(socket) and raw_state != :not_rendered and
+             not has_changed_streams?(socket) do
+          raw_state
+        else
+          socket.module.render(socket)
+        end
+
+      _entry ->
+        socket.module.render(socket)
+    end
+  end
+
+  defp render_input(%Socket{} = socket, %StoreTable{}, _store_id),
+    do: socket.module.render(socket)
+
+  @spec finalize_socket(Socket.t(), resolved_value(), Entry.wire_state() | nil) :: Socket.t()
+  defp finalize_socket(%Socket{} = socket, resolved_state, wire_state) do
+    after_render_socket =
+      case Lifecycle.run_hooks(socket, :after_render, [resolved_state], false) do
+        {:cont, %Socket{} = hooked_socket} -> hooked_socket
+        {:halt, %Socket{} = hooked_socket} -> hooked_socket
+      end
+
+    case Lifecycle.run_hooks(after_render_socket, :after_serialize, [wire_state], false) do
+      {:cont, %Socket{} = hooked_socket} ->
+        hooked_socket
+        |> Stream.drain_and_prune()
+        |> Socket.reset_changed()
+
+      {:halt, %Socket{} = hooked_socket} ->
+        hooked_socket
+        |> Stream.drain_and_prune()
+        |> Socket.reset_changed()
+    end
+  end
+
+  @spec has_changed_streams?(Socket.t()) :: boolean()
+  defp has_changed_streams?(%Socket{} = socket) do
+    socket
+    |> Stream.changed_streams()
+    |> MapSet.size() > 0
   end
 
   defp inject_store_id(resolved_state, store_id) when is_map(resolved_state) do

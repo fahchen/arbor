@@ -185,6 +185,16 @@ Feature: Render Contract
       When the render cycle completes and the patch envelope is emitted
       Then the runtime resets socket.assigns.__changed__ to %{} for the next message
 
+  Rule: A root with no own changes short-circuits its render/1
+
+    Scenario: Child-only update does not re-invoke root render/1
+      Given a child store mutates its own socket
+      And the root socket's __changed__ map is empty
+      When the runtime walks the tree
+      Then the root's render/1 is not invoked
+      And the cached root raw_state is reused to resolve the current child subtree
+      And the root's after_render and after_serialize hooks still run on the current root output
+
   Rule: A disappeared child is unmounted; reappearance is a fresh mount with no preserved assigns
 
     Scenario: Toggling :if=false then :if=true on the same identity remounts

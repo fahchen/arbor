@@ -3,7 +3,11 @@ defmodule Arbor.Page.StoreTable.Entry do
 
   use TypedStructor
 
+  alias Arbor.Child
   alias Arbor.Socket
+  alias Arbor.Stream.AsyncPlaceholder
+  alias Arbor.Stream.Marker
+  alias Arbor.Stream.Placeholder
 
   @type resolved_state() ::
           nil
@@ -13,6 +17,21 @@ defmodule Arbor.Page.StoreTable.Entry do
           | atom()
           | [resolved_state()]
           | %{optional(term()) => resolved_state()}
+
+  @type raw_state_value() ::
+          nil
+          | boolean()
+          | number()
+          | String.t()
+          | atom()
+          | Child.t()
+          | Placeholder.t()
+          | AsyncPlaceholder.t()
+          | Marker.marker()
+          | [raw_state_value()]
+          | %{optional(term()) => raw_state_value()}
+
+  @type raw_state() :: :not_rendered | raw_state_value()
 
   @type wire_state() ::
           nil
@@ -36,6 +55,11 @@ defmodule Arbor.Page.StoreTable.Entry do
       default: nil,
       doc:
         "Last resolved render output (Elixir form) for this node. Reused when memoization skips `update/2` and `render/1` (BDR-0013)."
+
+    field :raw_state, raw_state(),
+      default: :not_rendered,
+      doc:
+        "Last pre-resolution `render/1` return value (Elixir form before child resolution, stream normalization, store-id injection, or serialization). Reused by the root render short-circuit to re-walk descendants without re-invoking the root render callback."
 
     field :wire_state, wire_state() | nil,
       default: nil,
