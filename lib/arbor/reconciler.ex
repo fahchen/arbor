@@ -47,11 +47,12 @@ defmodule Arbor.Reconciler do
     case StoreTable.get(registry, store_id) do
       %Entry{module: existing_module} = entry when existing_module == child.module ->
         cond do
-          Socket.consumed_keys_changed?(parent_socket, consumed_keys) ->
+          parent_assign_values_changed?(entry.socket, assigns, consumed_keys) ->
             next_socket = update_store(entry.socket, assigns)
             {:update, store_id, next_socket, consumed_keys}
 
-          parent_assign_values_changed?(entry.socket, assigns, consumed_keys) ->
+          Socket.consumed_keys_changed?(parent_socket, consumed_keys) and
+              Enum.any?(consumed_keys, fn key -> not Map.has_key?(entry.socket.assigns, key) end) ->
             next_socket = update_store(entry.socket, assigns)
             {:update, store_id, next_socket, consumed_keys}
 
