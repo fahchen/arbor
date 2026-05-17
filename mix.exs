@@ -9,7 +9,7 @@ defmodule Musubi.MixProject do
       app: :musubi,
       version: @version,
       description: description(),
-      elixir: "~> 1.19",
+      elixir: "~> 1.17",
       elixirc_paths: elixirc_paths(Mix.env()),
       consolidate_protocols: Mix.env() != :test,
       start_permanent: Mix.env() == :prod,
