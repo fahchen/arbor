@@ -1,6 +1,6 @@
-# Arbor client contract
+# Musubi client contract
 
-This document summarizes the current client-facing Arbor contract. The
+This document summarizes the current client-facing Musubi contract. The
 authoritative runtime behavior still lives in `spec/` and the BDR records;
 this file describes how the generated TypeScript surface and client packages
 fit that contract.
@@ -9,8 +9,8 @@ fit that contract.
 
 The settled direction is:
 
-- clients open one Arbor connection, then mount declared roots by `{module, id}`
-- one physical `Phoenix.Socket` carries many logical Arbor roots
+- clients open one Musubi connection, then mount declared roots by `{module, id}`
+- one physical `Phoenix.Socket` carries many logical Musubi roots
 - the server owns the store tree and sends patch envelopes
 - the TypeScript client materializes the tree, streams, async values, and
   store proxies
@@ -20,13 +20,13 @@ The settled direction is:
   data
 
 Runtime keys are deliberately stable. In particular, keep
-`__arbor_store_id__` as the reserved field on rendered store nodes.
+`__musubi_store_id__` as the reserved field on rendered store nodes.
 
 ## Public Client Shape
 
-Applications create one Phoenix socket, open one Arbor connection, and mount
+Applications create one Phoenix socket, open one Musubi connection, and mount
 declared roots through that connection.
-The generated `Arbor.Stores` registry type is threaded into the client API;
+The generated `Musubi.Stores` registry type is threaded into the client API;
 the `module` string literal selects the concrete store type and is validated
 against roots declared by the backend socket module.
 
@@ -38,7 +38,7 @@ const phx = new Phoenix.Socket("/socket", {
 const connection = await connect(phx)
 
 const cart = await connection.mountStore<
-  Arbor.Stores,
+  Musubi.Stores,
   "MyApp.Stores.CartPageStore"
 >({
   module: "MyApp.Stores.CartPageStore",
@@ -54,22 +54,22 @@ const reply = await cart.dispatchCommand("checkout", {})
 ```
 
 The backend socket module declares the root-store allowlist and implements only
-Arbor callbacks. Phoenix socket and channel behaviours are adapter details.
+Musubi callbacks. Phoenix socket and channel behaviours are adapter details.
 
 ```elixir
 defmodule MyAppWeb.UserSocket do
-  use Arbor.Socket,
+  use Musubi.Socket,
     roots: [
       MyApp.Stores.CartPageStore,
       MyApp.Stores.DashboardStore
     ]
 
-  @impl Arbor.Socket
+  @impl Musubi.Socket
   def handle_connect(%{"token" => token}, socket) do
-    {:ok, Arbor.Socket.assign(socket, :token, token)}
+    {:ok, Musubi.Socket.assign(socket, :token, token)}
   end
 
-  @impl Arbor.Socket
+  @impl Musubi.Socket
   def handle_join(_params, socket), do: {:ok, socket}
 end
 ```
@@ -86,7 +86,7 @@ Public rules:
 
 ## Identity
 
-Arbor connection identity is the Phoenix channel topic:
+Musubi connection identity is the Phoenix channel topic:
 
 ```ts
 type Connect = {
@@ -94,7 +94,7 @@ type Connect = {
 }
 ```
 
-The default topic is `"arbor:connection"`. The client sends an empty channel join
+The default topic is `"musubi:connection"`. The client sends an empty channel join
 payload for the connection. Auth and transport-level data should come from
 Phoenix socket params/connect_info; root business params belong to `mountStore`.
 
@@ -128,7 +128,7 @@ Every rendered store node carries:
 
 ```ts
 type StoreNodeRef = {
-  __arbor_store_id__: StoreId
+  __musubi_store_id__: StoreId
 }
 ```
 
@@ -193,7 +193,7 @@ type PatchEnvelope = {
 }
 
 type WireStreamMarker = {
-  __arbor_stream__: string
+  __musubi_stream__: string
 }
 
 type ConnectionPatchEnvelope = PatchEnvelope & {
@@ -217,7 +217,7 @@ rules.
 
 ## Async Values
 
-The wire shape mirrors `Arbor.AsyncResult` serialization:
+The wire shape mirrors `Musubi.AsyncResult` serialization:
 
 ```ts
 type WireAsyncError =
@@ -254,11 +254,11 @@ Normalization rules:
 
 ## Generated TypeScript
 
-`mix compile.arbor_ts` emits an ambient `.d.ts` bundle. It owns the generated
-`Arbor.Stores` interface and the marker types used by `@arbor/client`.
+`mix compile.musubi_ts` emits an ambient `.d.ts` bundle. It owns the generated
+`Musubi.Stores` interface and the marker types used by `@musubi/client`.
 
 ```ts
-declare namespace Arbor {
+declare namespace Musubi {
   type StoreId = string[]
 
   const Type: unique symbol
@@ -308,7 +308,7 @@ Marker rules:
 - markers are type-only
 - marker properties never appear on the wire
 - the runtime never reads marker properties
-- symbol branding prevents ordinary user objects from matching Arbor marker
+- symbol branding prevents ordinary user objects from matching Musubi marker
   types by accident
 
 ## Client Projection
@@ -321,13 +321,13 @@ type StoreModule<R> = Extract<keyof R, string>
 type DefOf<R, M extends StoreModule<R>> = R[M & keyof R]
 
 type StoreSnapshot<R, M extends StoreModule<R>> = {
-  readonly __arbor_store_id__: StoreId
+  readonly __musubi_store_id__: StoreId
 } & {
   [K in keyof ShapeOf<R, M>]: SnapshotValue<R, ShapeOf<R, M>[K]>
 }
 
 interface StoreRuntime<R, M extends StoreModule<R>> {
-  readonly __arbor_store_id__: StoreId
+  readonly __musubi_store_id__: StoreId
   dispatchCommand<K extends CommandName<R, M>>(
     name: K,
     payload: CommandPayload<R, M, K>
@@ -344,7 +344,7 @@ type StoreProxy<R, M extends StoreModule<R>> =
 
 Reserved runtime member names on every store proxy:
 
-- `__arbor_store_id__`
+- `__musubi_store_id__`
 - `dispatchCommand`
 - `subscribe`
 - `snapshot`
@@ -362,8 +362,8 @@ For each connected root, the TypeScript runtime maintains:
 Property resolution on a proxy follows the live wire shape:
 
 1. reserved runtime members return runtime implementations
-2. wire values carrying `__arbor_store_id__` return cached nested proxies
-3. wire values carrying `__arbor_stream__` return materialized arrays
+2. wire values carrying `__musubi_store_id__` return cached nested proxies
+3. wire values carrying `__musubi_stream__` return materialized arrays
 4. async values return normalized `AsyncResult<T>`
 5. async streams return normalized `AsyncResult<T[]>`
 6. plain objects recurse through the same resolution rules
@@ -379,7 +379,7 @@ Server/codegen owns:
 - the declared store shape
 - command payload and reply types
 - type-only markers for store, stream, and async fields
-- the generated `Arbor.Stores` registry
+- the generated `Musubi.Stores` registry
 
 Client runtime owns:
 

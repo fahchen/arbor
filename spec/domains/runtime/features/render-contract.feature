@@ -60,19 +60,19 @@ Feature: Render Contract
       When a single render output contains child(ModuleA, id: "static") and child(ModuleB, id: "static") under the same parent
       Then the runtime raises during reconcile with the conflicting store_id
 
-  Rule: Each resolved store-node render output carries __arbor_store_id__
+  Rule: Each resolved store-node render output carries __musubi_store_id__
 
     Scenario: Root output exposes its store_id
       When the runtime resolves the root render output
-      Then the output map contains "__arbor_store_id__" set to []
+      Then the output map contains "__musubi_store_id__" set to []
 
     Scenario: Child output exposes its store_id
       Given the root renders child(FilterStore, id: "filters") under field "filters"
       When the runtime resolves the child render output
-      Then the child output map contains "__arbor_store_id__" set to ["filters"]
+      Then the child output map contains "__musubi_store_id__" set to ["filters"]
 
-    Scenario: __arbor_* prefix is reserved in state declarations
-      Given a store declares field :__arbor_custom, String.t() inside state do
+    Scenario: __musubi_* prefix is reserved in state declarations
+      Given a store declares field :__musubi_custom, String.t() inside state do
       Then the compile-time check rejects the declaration
       And points the author at the reserved prefix rule
 
@@ -105,7 +105,7 @@ Feature: Render Contract
       When the parent's next render output no longer includes that child(...)
       Then the node is dropped without invoking any callback
       And any async tasks the node had spawned continue running
-      And their results, when they arrive, are lazy-discarded with [:arbor, :async, :lazy_discard] telemetry
+      And their results, when they arrive, are lazy-discarded with [:musubi, :async, :lazy_discard] telemetry
 
   Rule: The root page store may define terminate(reason, socket)
 
@@ -226,7 +226,7 @@ Feature: Render Contract
   Rule: Render-output validation is default-on in dev/test, telemetry-only in prod
 
     Scenario: Validation behaviour depends on environment
-      Given the page runtime's :after_serialize hook list configures Arbor.Hooks.ValidateRender for dev/test
+      Given the page runtime's :after_serialize hook list configures Musubi.Hooks.ValidateRender for dev/test
       When validation finds a shape mismatch in dev
       Then the runtime raises
       And in prod the same misshape is recorded as telemetry without raising
@@ -239,10 +239,10 @@ Feature: Render Contract
       And the supervisor restarts a fresh runtime
       And the next reconnect re-runs mount/1 from scratch
 
-  Rule: Arbor.State modules declare reusable output types only
+  Rule: Musubi.State modules declare reusable output types only
 
     Scenario: A state module is not a store
-      Given MoneyState is defined as use Arbor.State with state do field :amount, integer() end
+      Given MoneyState is defined as use Musubi.State with state do field :amount, integer() end
       Then MoneyState has no commands, no attr, no lifecycle, no runtime identity
       And child(MoneyState, id: ...) is rejected
 

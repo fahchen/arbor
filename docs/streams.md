@@ -1,7 +1,7 @@
 # Streams
 
 Streams are for collections whose item values should not remain in server
-memory after delivery. Arbor keeps stream configuration and pending delta ops
+memory after delivery. Musubi keeps stream configuration and pending delta ops
 on the server, while the client owns the materialized list.
 
 ## State Declaration
@@ -24,7 +24,7 @@ state do
 end
 ```
 
-Top-level streams can use a named Arbor state module, a map type, or an inline
+Top-level streams can use a named Musubi state module, a map type, or an inline
 block. Nested inline blocks are useful when the item shape belongs only to that
 store output.
 
@@ -43,7 +43,7 @@ def render(socket) do
 end
 ```
 
-For async streams, use `async_stream(:name)`. Arbor reads the current
+For async streams, use `async_stream(:name)`. Musubi reads the current
 `AsyncResult` from `socket.assigns.name`, or renders `loading()` before the
 task has started:
 
@@ -55,7 +55,7 @@ def render(socket) do
 end
 ```
 
-The old placeholder shape, such as `messages: []`, is invalid. Arbor also
+The old placeholder shape, such as `messages: []`, is invalid. Musubi also
 rejects hand-written stream marker maps, undeclared streams, missing stream
 placements, duplicate placements, and placements at the wrong state path.
 
@@ -67,10 +67,10 @@ The state tree carries only a marker at the stream path:
 {
   "title": "Inbox",
   "feed": {
-    "messages": { "__arbor_stream__": "messages" }
+    "messages": { "__musubi_stream__": "messages" }
   },
-  "users": { "__arbor_stream__": "users" },
-  "__arbor_store_id__": []
+  "users": { "__musubi_stream__": "users" },
+  "__musubi_store_id__": []
 }
 ```
 
@@ -79,9 +79,9 @@ For async streams, the marker is nested under `result`:
 ```json
 {
   "older_messages": {
-    "__arbor_async__": true,
+    "__musubi_async__": true,
     "status": "loading",
-    "result": { "__arbor_stream__": "older_messages" },
+    "result": { "__musubi_stream__": "older_messages" },
     "reason": null
   }
 }
@@ -96,7 +96,7 @@ The marker needs only the stream name. Ownership and ordering metadata stay in
   "base_version": 0,
   "version": 1,
   "ops": [
-    { "op": "replace", "path": "", "value": { "feed": { "messages": { "__arbor_stream__": "messages" } } } }
+    { "op": "replace", "path": "", "value": { "feed": { "messages": { "__musubi_stream__": "messages" } } } }
   ],
   "stream_ops": [
     {
@@ -149,9 +149,9 @@ the wire `result` as the stream marker so the client can expose
 
 ## Client Surface
 
-Generated TypeScript exposes stream fields as `Arbor.StreamField<Item>` for
+Generated TypeScript exposes stream fields as `Musubi.StreamField<Item>` for
 type inference. At runtime, the client recursively resolves
-`{ "__arbor_stream__": "name" }` markers into arrays:
+`{ "__musubi_stream__": "name" }` markers into arrays:
 
 ```ts
 root.feed.messages // Array<{ id: string; body: string }>

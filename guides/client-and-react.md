@@ -2,17 +2,17 @@
 
 The TypeScript packages mirror the backend connection model:
 
-- `@arbor/client` owns Phoenix channel interaction, patch application, streams,
+- `@musubi/client` owns Phoenix channel interaction, patch application, streams,
   async result normalization, command dispatch, and store proxies.
-- `@arbor/react` provides React context and hooks over an `ArborConnection`.
+- `@musubi/react` provides React context and hooks over an `MusubiConnection`.
 
 ## Plain TypeScript
 
-Create one Phoenix socket and one Arbor connection:
+Create one Phoenix socket and one Musubi connection:
 
 ```ts
 import { Socket } from "phoenix"
-import { connect } from "@arbor/client"
+import { connect } from "@musubi/client"
 
 const socket = new Socket("/socket", {
   params: { token: window.userToken },
@@ -25,7 +25,7 @@ Mount a declared root store:
 
 ```ts
 const dashboard = await connection.mountStore<
-  Arbor.Stores,
+  Musubi.Stores,
   "MyApp.Stores.DashboardStore"
 >({
   module: "MyApp.Stores.DashboardStore",
@@ -54,16 +54,16 @@ await connection.unmountStore("dashboard")
 
 ## React Provider
 
-Create the connection once and pass it to `ArborProvider`:
+Create the connection once and pass it to `MusubiProvider`:
 
 ```tsx
 import { Socket } from "phoenix"
-import { connect, type ArborConnection } from "@arbor/client"
-import { ArborProvider } from "@arbor/react"
+import { connect, type MusubiConnection } from "@musubi/client"
+import { MusubiProvider } from "@musubi/react"
 import { useEffect, useState } from "react"
 
 export function App() {
-  const [connection, setConnection] = useState<ArborConnection | null>(null)
+  const [connection, setConnection] = useState<MusubiConnection | null>(null)
 
   useEffect(() => {
     const socket = new Socket("/socket", {
@@ -71,7 +71,7 @@ export function App() {
     })
 
     let cancelled = false
-    let current: ArborConnection | null = null
+    let current: MusubiConnection | null = null
 
     connect(socket).then((next) => {
       current = next
@@ -92,26 +92,26 @@ export function App() {
   }
 
   return (
-    <ArborProvider connection={connection}>
+    <MusubiProvider connection={connection}>
       <Dashboard />
-    </ArborProvider>
+    </MusubiProvider>
   )
 }
 ```
 
 ## Mount Roots In React
 
-Use `useArborRoot` to mount a declared root under the nearest provider:
+Use `useMusubiRoot` to mount a declared root under the nearest provider:
 
 ```tsx
-import { useArborCommand, useArborRoot, useArborSnapshot } from "@arbor/react"
-import type { StoreProxy } from "@arbor/client"
+import { useMusubiCommand, useMusubiRoot, useMusubiSnapshot } from "@musubi/react"
+import type { StoreProxy } from "@musubi/client"
 
-type Registry = Arbor.Stores
+type Registry = Musubi.Stores
 type DashboardModule = "MyApp.Stores.DashboardStore"
 
 export function Dashboard() {
-  const root = useArborRoot<Registry, DashboardModule>({
+  const root = useMusubiRoot<Registry, DashboardModule>({
     module: "MyApp.Stores.DashboardStore",
     id: "dashboard",
   })
@@ -128,18 +128,18 @@ export function Dashboard() {
 }
 ```
 
-`useArborRoot` unmounts the root when the component unmounts by default. Pass
+`useMusubiRoot` unmounts the root when the component unmounts by default. Pass
 `unmountOnCleanup: false` when a mounted root should outlive the component.
 
 ## Subscribe To Snapshots
 
-`useArborSnapshot` subscribes to proxy updates and returns an immutable
+`useMusubiSnapshot` subscribes to proxy updates and returns an immutable
 snapshot:
 
 ```tsx
 function DashboardContent({ store }: { store: StoreProxy<Registry, DashboardModule> }) {
-  const title = useArborSnapshot(store, (snapshot) => snapshot.header.title)
-  const refresh = useArborCommand(store, "refresh")
+  const title = useMusubiSnapshot(store, (snapshot) => snapshot.header.title)
+  const refresh = useMusubiCommand(store, "refresh")
 
   return (
     <button onClick={() => void refresh({})}>
@@ -157,7 +157,7 @@ Use selectors to keep React renders focused. A component that selects
 Every store in the tree — not just the root — can declare commands and accept
 them through its own proxy. Children show up as nested proxies on the root,
 reachable by field access for single children and by array index for list
-children. `useArborCommand` works on any proxy.
+children. `useMusubiCommand` works on any proxy.
 
 ### Declaring a command on a child store
 
@@ -165,7 +165,7 @@ The Elixir DSL is identical for root and child stores:
 
 ```elixir
 defmodule MyApp.Stores.CartLineStore do
-  use Arbor.Store
+  use Musubi.Store
 
   attr(:line, map(), required: true)
   attr(:on_qty_change, (String.t(), integer() -> :ok), required: true)
@@ -178,7 +178,7 @@ defmodule MyApp.Stores.CartLineStore do
     reply(%{qty: integer()})
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:inc_qty, _payload, socket) do
     next_qty = socket.assigns.qty + 1
     socket = assign(socket, :qty, next_qty)
@@ -195,13 +195,13 @@ proxy per element. Each carries its own `dispatchCommand`:
 
 ```tsx
 function HeaderRename({ root }: { root: StoreProxy<Registry, "MyApp.Stores.CartPageStore"> }) {
-  const setName = useArborCommand(root.header, "rename")
+  const setName = useMusubiCommand(root.header, "rename")
   return <button onClick={() => void setName({ name: "Ada" })}>Rename</button>
 }
 
 function CartLine({ lineProxy }: { lineProxy: StoreProxy<Registry, "MyApp.Stores.CartLineStore"> }) {
-  const line = useArborSnapshot(lineProxy)
-  const inc = useArborCommand(lineProxy, "inc_qty")
+  const line = useMusubiSnapshot(lineProxy)
+  const inc = useMusubiCommand(lineProxy, "inc_qty")
   return <button onClick={() => void inc({})}>{line.qty}</button>
 }
 
@@ -209,7 +209,7 @@ function CartLines({ root }: { root: StoreProxy<Registry, "MyApp.Stores.CartPage
   return (
     <ul>
       {root.cart.lines.map((lineProxy) => (
-        <CartLine key={lineProxy.__arbor_store_id__.join("/")} lineProxy={lineProxy} />
+        <CartLine key={lineProxy.__musubi_store_id__.join("/")} lineProxy={lineProxy} />
       ))}
     </ul>
   )
@@ -254,7 +254,7 @@ callback-attr round-trip.
 
 ## Async Results And Streams
 
-The client normalizes `Arbor.AsyncResult` values to:
+The client normalizes `Musubi.AsyncResult` values to:
 
 ```ts
 type AsyncResult<T> =
