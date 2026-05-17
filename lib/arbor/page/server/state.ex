@@ -3,7 +3,7 @@ defmodule Arbor.Page.Server.State do
 
   use TypedStructor
 
-  alias Arbor.Page.StoreRegistry
+  alias Arbor.Page.StoreTable
   alias Arbor.Socket
 
   typed_structor do
@@ -16,7 +16,7 @@ defmodule Arbor.Page.Server.State do
       doc:
         "Socket for the root store node. Carries assigns, hook table, and identity for the root."
 
-    field :store_registry, StoreRegistry.t(),
+    field :store_table, StoreTable.t(),
       enforce: true,
       doc: "Runtime-internal table of currently mounted store nodes keyed by `store_id`."
 
@@ -38,7 +38,7 @@ defmodule Arbor.Page.Server.State do
     field :async_index,
           %{
             reference() => {
-              StoreRegistry.identity_key(),
+              StoreTable.key(),
               Arbor.Async.tracking_name(),
               Arbor.Async.kind()
             }

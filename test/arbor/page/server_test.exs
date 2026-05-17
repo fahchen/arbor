@@ -3,7 +3,7 @@ defmodule Arbor.Page.ServerTest do
 
   alias Arbor.Page.Server
   alias Arbor.Page.Server.State
-  alias Arbor.Page.StoreRegistry
+  alias Arbor.Page.StoreTable
 
   setup do
     Process.flag(:trap_exit, true)
@@ -65,7 +65,7 @@ defmodule Arbor.Page.ServerTest do
     %State{
       root_module: RootStore,
       root_socket: root_socket,
-      store_registry: store_registry,
+      store_table: store_table,
       version: version,
       transport: transport
     } = :sys.get_state(pid)
@@ -84,9 +84,9 @@ defmodule Arbor.Page.ServerTest do
 
     assert_receive {:patch, %Arbor.Page.PatchEnvelope{base_version: 0, version: 1}}
 
-    assert StoreRegistry.keys(store_registry) == [[]]
+    assert StoreTable.keys(store_table) == [[]]
 
-    assert registry_entry = StoreRegistry.get(store_registry, [])
+    assert registry_entry = StoreTable.get(store_table, [])
     assert registry_entry.module == RootStore
     assert registry_entry.socket == root_socket
     assert registry_entry.resolved_state == %{status: "mounted", __arbor_store_id__: []}
@@ -230,5 +230,21 @@ defmodule Arbor.Page.ServerTest do
     assert {:ok, %{"error" => "forbidden"}} = Server.command(pid, [], :do_thing, %{})
 
     assert_receive {:auth_deny, %{command: :do_thing, module: DenyStore, path: []}}
+  end
+
+  test "mount/2 runs even when the store module has been purged before init" do
+    # Simulate the cold-VM race: `function_exported?/3` returns `false` for
+    # an unloaded module, which previously caused `root_store?/1` to skip
+    # `mount/2` entirely. With `Code.ensure_loaded?/1` in front, the BEAM
+    # code server reloads the .beam before the predicate runs.
+    store = Arbor.Test.Fixtures.ColdVMStore
+    :code.purge(store)
+    :code.delete(store)
+    refute :erlang.module_loaded(store)
+
+    pid = start_supervised!({Server, {store, %{}, %{transport_pid: self()}}})
+    %State{root_socket: root_socket} = :sys.get_state(pid)
+
+    assert root_socket.assigns.status == "mounted"
   end
 end

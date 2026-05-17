@@ -8,7 +8,7 @@ defmodule Arbor.Page.ServerCommandTest do
   alias Arbor.Lifecycle
   alias Arbor.Page.Server
   alias Arbor.Page.Server.State
-  alias Arbor.Page.StoreRegistry
+  alias Arbor.Page.StoreTable
   alias Arbor.Socket
 
   defmodule LeafStore do
@@ -265,8 +265,8 @@ defmodule Arbor.Page.ServerCommandTest do
       assert {:ok, %{}} =
                Server.command(pid, ["filters"], :change_query, %{"query" => "shirt"})
 
-      %State{store_registry: registry} = :sys.get_state(pid)
-      entry = StoreRegistry.get(registry, ["filters"])
+      %State{store_table: registry} = :sys.get_state(pid)
+      entry = StoreTable.get(registry, ["filters"])
       assert entry.socket.assigns.query == "shirt"
     end
   end
@@ -520,14 +520,14 @@ defmodule Arbor.Page.ServerCommandTest do
     :ok
   end
 
-  defp sync_root_into_registry(%State{root_socket: root_socket, store_registry: registry} = state) do
-    case StoreRegistry.get(registry, []) do
+  defp sync_root_into_registry(%State{root_socket: root_socket, store_table: registry} = state) do
+    case StoreTable.get(registry, []) do
       nil ->
         state
 
       entry ->
-        next_registry = StoreRegistry.put(registry, [], %{entry | socket: root_socket})
-        %{state | store_registry: next_registry}
+        next_registry = StoreTable.put(registry, [], %{entry | socket: root_socket})
+        %{state | store_table: next_registry}
     end
   end
 end

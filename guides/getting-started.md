@@ -131,10 +131,24 @@ Stores can then read it with `Arbor.Socket.session(socket)`.
 
 ## 5. Mount From TypeScript
 
-Install the client packages:
+`@arbor/client` ships inside the Arbor Hex package under
+`deps/arbor/packages/client`. Reference it by local path from the
+frontend project's `package.json` (adjust the relative path so it points
+at `deps/arbor/packages/client` from the JS app root):
+
+```json
+{
+  "dependencies": {
+    "@arbor/client": "file:../deps/arbor/packages/client",
+    "phoenix": "file:../deps/phoenix"
+  }
+}
+```
+
+Then install once after `mix deps.get`:
 
 ```sh
-pnpm add @arbor/client phoenix
+pnpm install   # or npm install / yarn install
 ```
 
 Open one connection, then mount one or more declared root stores by module
@@ -182,8 +196,27 @@ In CI, check for drift:
 mix compile.arbor_ts --check
 ```
 
+## Wire Encoding: Atoms Become Strings
+
+Atom-typed fields and atom literals serialize to JSON strings. The TypeScript
+codegen emits matching string-literal unions; compare with strings on the
+client.
+
+| Elixir field type                            | TypeScript                            | Wire    |
+| :------------------------------------------- | :------------------------------------ | :------ |
+| `field :winner, :p1 \| :p2 \| :draw \| nil`  | `"p1" \| "p2" \| "draw" \| null`      | `"p1"`  |
+| `field :status, atom()`                      | `string`                              | `"on"`  |
+
+The mental model: every atom alternative becomes its string form (the
+atom's name verbatim, via `Atom.to_string/1`). Elixir atoms are
+lowercase by convention, so `:p1` arrives as `"p1"`; an atom like
+`:HTTPError` would arrive as `"HTTPError"`. `nil` serialises to JSON
+`null`. The Elixir side keeps the atom shape inside `socket.assigns`;
+the conversion happens on the way out through `Arbor.Wire.to_wire/1`.
+
 ## Next Steps
 
 - Read `Phoenix Setup` for connection/session details.
 - Read `Client and React` for React hooks and root cleanup.
+- Read `Testing` for the `Arbor.Testing` store-test harness.
 - Read `Client Contract` for the wire and proxy model.

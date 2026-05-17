@@ -1,8 +1,8 @@
-defmodule Arbor.Page.StoreRegistryTest do
+defmodule Arbor.Page.StoreTableTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Page.StoreRegistry
-  alias Arbor.Page.StoreRegistry.Entry
+  alias Arbor.Page.StoreTable
+  alias Arbor.Page.StoreTable.Entry
   alias Arbor.Socket
 
   defmodule RootStore do
@@ -15,7 +15,7 @@ defmodule Arbor.Page.StoreRegistryTest do
   end
 
   test "put/get/delete/keys manage logical store entries by store_id" do
-    registry = StoreRegistry.new()
+    registry = StoreTable.new()
 
     root_entry = %Entry{
       socket: %Socket{id: "", parent_path: [], module: RootStore, assigns: %{}, private: %{}},
@@ -35,16 +35,16 @@ defmodule Arbor.Page.StoreRegistryTest do
 
     registry =
       registry
-      |> StoreRegistry.put([], root_entry)
-      |> StoreRegistry.put(["filters"], child_entry)
+      |> StoreTable.put([], root_entry)
+      |> StoreTable.put(["filters"], child_entry)
 
-    assert Enum.sort(StoreRegistry.keys(registry)) == Enum.sort([[], ["filters"]])
+    assert Enum.sort(StoreTable.keys(registry)) == Enum.sort([[], ["filters"]])
 
-    assert StoreRegistry.get(registry, []) == root_entry
-    assert StoreRegistry.get(registry, ["filters"]) == child_entry
+    assert StoreTable.get(registry, []) == root_entry
+    assert StoreTable.get(registry, ["filters"]) == child_entry
 
-    registry = StoreRegistry.delete(registry, ["filters"])
-    refute StoreRegistry.get(registry, ["filters"])
+    registry = StoreTable.delete(registry, ["filters"])
+    refute StoreTable.get(registry, ["filters"])
   end
 
   test "get/2 resolves root and nested store_ids directly (no scan)" do
@@ -76,14 +76,14 @@ defmodule Arbor.Page.StoreRegistryTest do
     }
 
     registry =
-      StoreRegistry.new()
-      |> StoreRegistry.put([], root_entry)
-      |> StoreRegistry.put(["filters"], filters_entry)
-      |> StoreRegistry.put(["filters", "products", "prod_123"], product_entry)
+      StoreTable.new()
+      |> StoreTable.put([], root_entry)
+      |> StoreTable.put(["filters"], filters_entry)
+      |> StoreTable.put(["filters", "products", "prod_123"], product_entry)
 
-    assert StoreRegistry.get(registry, []) == root_entry
-    assert StoreRegistry.get(registry, ["filters"]) == filters_entry
-    assert StoreRegistry.get(registry, ["filters", "products", "prod_123"]) == product_entry
-    refute StoreRegistry.get(registry, ["filters", "missing"])
+    assert StoreTable.get(registry, []) == root_entry
+    assert StoreTable.get(registry, ["filters"]) == filters_entry
+    assert StoreTable.get(registry, ["filters", "products", "prod_123"]) == product_entry
+    refute StoreTable.get(registry, ["filters", "missing"])
   end
 end

@@ -15,6 +15,7 @@ defmodule Arbor.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       docs: docs(),
+      package: package(),
       dialyzer: [
         plt_local_path: "priv/plts/arbor.plt",
         plt_core_path: "priv/plts/core.plt",
@@ -61,6 +62,27 @@ defmodule Arbor.MixProject do
     "Server-authoritative, page-scoped runtime library for Elixir/Phoenix applications."
   end
 
+  # Hex package contents. Includes the JS source under `packages/*/src`
+  # so that consuming Phoenix apps can reference them via
+  # `file:../deps/arbor/packages/<name>` from their JS package.json. The
+  # consumer's bundler (Vite, esbuild) transpiles `.ts`/`.tsx` on demand.
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{"GitHub" => @source_url},
+      files: ~w(
+          lib
+          mix.exs
+          README.md
+          guides
+          packages/client/src
+          packages/client/package.json
+          packages/react/src
+          packages/react/package.json
+        )
+    ]
+  end
+
   defp docs do
     public_modules = docs_modules()
 
@@ -76,6 +98,7 @@ defmodule Arbor.MixProject do
         "guides/getting-started.md",
         "guides/phoenix-setup.md",
         "guides/client-and-react.md",
+        "guides/testing.md",
         "docs/client-contract.md",
         "docs/persistence-pattern.md"
       ],
@@ -83,7 +106,8 @@ defmodule Arbor.MixProject do
         Tutorials: [
           "guides/getting-started.md",
           "guides/phoenix-setup.md",
-          "guides/client-and-react.md"
+          "guides/client-and-react.md",
+          "guides/testing.md"
         ],
         Reference: [
           "docs/client-contract.md",
@@ -112,6 +136,9 @@ defmodule Arbor.MixProject do
         ],
         Codegen: [
           Mix.Tasks.Compile.ArborTs
+        ],
+        Testing: [
+          Arbor.Testing
         ]
       ]
     ]
@@ -132,13 +159,16 @@ defmodule Arbor.MixProject do
       Arbor.Transport.Socket,
       Arbor.Transport.ConnectionChannel,
       Arbor.Transport.Channel,
-      Mix.Tasks.Compile.ArborTs
+      Mix.Tasks.Compile.ArborTs,
+      Arbor.Testing
     ]
   end
 
   defp skip_doc_reference?(reference) when is_binary(reference) do
     Enum.any?(skipped_doc_references(), &String.starts_with?(reference, &1))
   end
+
+  defp skip_doc_reference?(_other), do: false
 
   defp skipped_doc_references do
     [

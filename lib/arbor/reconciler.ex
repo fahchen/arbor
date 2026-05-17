@@ -3,13 +3,13 @@ defmodule Arbor.Reconciler do
 
   alias Arbor.Child
   alias Arbor.DSL.Attr
-  alias Arbor.Page.StoreRegistry
-  alias Arbor.Page.StoreRegistry.Entry
+  alias Arbor.Page.StoreTable
+  alias Arbor.Page.StoreTable.Entry
   alias Arbor.Socket
   alias Arbor.Stream
   alias Arbor.Telemetry
 
-  @type identity_key() :: StoreRegistry.identity_key()
+  @type identity_key() :: StoreTable.key()
 
   @type reconcile_result() ::
           {:mount, identity_key(), Socket.t(), [Socket.assign_key()]}
@@ -28,15 +28,15 @@ defmodule Arbor.Reconciler do
       iex> parent_socket = Arbor.Socket.assign(%Arbor.Socket{}, :title, "Inbox")
       iex> child = Arbor.Child.child(ExampleChild, id: "child", title: "Inbox")
       iex> {:mount, ["child"], %Arbor.Socket{}, [:title]} =
-      ...>   Arbor.Reconciler.reconcile_child(child, parent_socket, [], Arbor.Page.StoreRegistry.new())
+      ...>   Arbor.Reconciler.reconcile_child(child, parent_socket, [], Arbor.Page.StoreTable.new())
   """
-  @spec reconcile_child(Child.t(), Socket.t(), [String.t()], StoreRegistry.t()) ::
+  @spec reconcile_child(Child.t(), Socket.t(), [String.t()], StoreTable.t()) ::
           reconcile_result()
   def reconcile_child(
         %Child{} = child,
         %Socket{} = parent_socket,
         parent_path,
-        %StoreRegistry{} = registry
+        %StoreTable{} = registry
       )
       when is_list(parent_path) do
     id = validate_id!(child)
@@ -44,7 +44,7 @@ defmodule Arbor.Reconciler do
     consumed_keys = Map.keys(assigns)
     store_id = List.insert_at(parent_path, -1, id)
 
-    case StoreRegistry.get(registry, store_id) do
+    case StoreTable.get(registry, store_id) do
       %Entry{module: existing_module} = entry when existing_module == child.module ->
         cond do
           Socket.consumed_keys_changed?(parent_socket, consumed_keys) ->
@@ -176,25 +176,25 @@ defmodule Arbor.Reconciler do
 
   ## Examples
 
-      iex> entry = %Arbor.Page.StoreRegistry.Entry{socket: %Arbor.Socket{}, module: Example}
+      iex> entry = %Arbor.Page.StoreTable.Entry{socket: %Arbor.Socket{}, module: Example}
       iex> registry =
-      ...>   Arbor.Page.StoreRegistry.put(
-      ...>     Arbor.Page.StoreRegistry.new(),
+      ...>   Arbor.Page.StoreTable.put(
+      ...>     Arbor.Page.StoreTable.new(),
       ...>     ["root"],
       ...>     entry
       ...>   )
       iex> Arbor.Reconciler.prune_stale_entries(registry, %{})
-      %Arbor.Page.StoreRegistry{entries: %{}}
+      %Arbor.Page.StoreTable{entries: %{}}
   """
-  @spec prune_stale_entries(StoreRegistry.t(), map()) :: StoreRegistry.t()
-  def prune_stale_entries(%StoreRegistry{} = registry, live_identities)
+  @spec prune_stale_entries(StoreTable.t(), map()) :: StoreTable.t()
+  def prune_stale_entries(%StoreTable{} = registry, live_identities)
       when is_map(live_identities) do
-    Enum.reduce(StoreRegistry.keys(registry), registry, fn store_id, acc ->
+    Enum.reduce(StoreTable.keys(registry), registry, fn store_id, acc ->
       if Map.has_key?(live_identities, store_id) do
         acc
       else
         emit_lazy_discard(store_id, registry)
-        StoreRegistry.delete(acc, store_id)
+        StoreTable.delete(acc, store_id)
       end
     end)
   end
@@ -227,10 +227,10 @@ defmodule Arbor.Reconciler do
     end)
   end
 
-  @spec emit_lazy_discard(identity_key(), StoreRegistry.t()) :: :ok
-  defp emit_lazy_discard(store_id, %StoreRegistry{} = registry) do
+  @spec emit_lazy_discard(identity_key(), StoreTable.t()) :: :ok
+  defp emit_lazy_discard(store_id, %StoreTable{} = registry) do
     module =
-      case StoreRegistry.get(registry, store_id) do
+      case StoreTable.get(registry, store_id) do
         %Entry{module: module} -> module
         nil -> nil
       end

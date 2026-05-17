@@ -94,6 +94,26 @@ defmodule Arbor.Hooks.ValidateRender do
     details =
       Enum.map_join(errors, "; ", fn {path, message} -> "#{path}: #{message}" end)
 
-    "render output validation failed for #{inspect(store_module)}: #{details}"
+    "render output validation failed for #{inspect(store_module)}: #{details}" <>
+      mount_hint(errors)
+  end
+
+  # Adds an actionable hint when at least one error reports a `nil` value
+  # for a non-nullable field. The most common cause is forgetting to
+  # assign the field in `mount/init` or a `handle_*` callback that
+  # produces it — the spec allows hard-coding in `render/1`, so this is
+  # only a hint, not a directive.
+  @spec mount_hint([validation_error()]) :: String.t()
+  defp mount_hint(errors) do
+    if Enum.any?(errors, fn {_path, message} ->
+         is_binary(message) and String.contains?(message, "got: nil")
+       end) do
+      ". Hint: a non-nullable field rendered as nil — if your `render/1` reads " <>
+        "from `socket.assigns`, ensure the field is assigned in `mount/init` or a " <>
+        "`handle_*` callback. To allow nil legitimately, declare the field nullable " <>
+        "(`field :name, T | nil`)."
+    else
+      ""
+    end
   end
 end
