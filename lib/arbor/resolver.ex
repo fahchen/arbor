@@ -108,7 +108,7 @@ defmodule Arbor.Resolver do
   defp render_store(%Socket{} = socket, %StoreTable{} = registry, live_identities)
        when is_map(live_identities) do
     store_id = Socket.store_id(socket)
-    {raw_state, run_render_hooks?} = render_input(socket, registry, store_id)
+    raw_state = render_input(socket, registry, store_id)
 
     {resolved_state, resolved_registry, resolved_live_identities} =
       resolve_value(raw_state, socket, registry, store_id, live_identities)
@@ -117,7 +117,7 @@ defmodule Arbor.Resolver do
     resolved_state = inject_store_id(resolved_state, store_id)
 
     wire_state = Wire.to_wire(resolved_state)
-    next_socket = finalize_socket(socket, resolved_state, wire_state, run_render_hooks?)
+    next_socket = finalize_socket(socket, resolved_state, wire_state)
 
     next_registry =
       StoreTable.put(
@@ -138,38 +138,27 @@ defmodule Arbor.Resolver do
     {resolved_state, next_socket, next_registry, next_live_identities}
   end
 
-  @spec render_input(Socket.t(), StoreTable.t(), StoreTable.key()) ::
-          {Entry.raw_state(), boolean()}
-  defp render_input(%Socket{} = socket, %StoreTable{} = registry, store_id)
-       when is_list(store_id) do
-    case reusable_root_raw_state(socket, registry, store_id) do
-      {:ok, raw_state} -> {raw_state, false}
-      :error -> {socket.module.render(socket), true}
-    end
-  end
-
-  @spec reusable_root_raw_state(Socket.t(), StoreTable.t(), StoreTable.key()) ::
-          {:ok, Entry.raw_state()} | :error
-  defp reusable_root_raw_state(%Socket{} = socket, %StoreTable{} = registry, []) do
+  @spec render_input(Socket.t(), StoreTable.t(), StoreTable.key()) :: Entry.raw_state()
+  defp render_input(%Socket{} = socket, %StoreTable{} = registry, []) do
     case StoreTable.get(registry, []) do
       %Entry{raw_state: raw_state} ->
         if not Socket.any_changed?(socket) and raw_state != :not_rendered and
              not has_changed_streams?(socket) do
-          {:ok, raw_state}
+          raw_state
         else
-          :error
+          socket.module.render(socket)
         end
 
-      _other ->
-        :error
+      _entry ->
+        socket.module.render(socket)
     end
   end
 
-  defp reusable_root_raw_state(%Socket{}, %StoreTable{}, _store_id), do: :error
+  defp render_input(%Socket{} = socket, %StoreTable{}, _store_id),
+    do: socket.module.render(socket)
 
-  @spec finalize_socket(Socket.t(), resolved_value(), Entry.wire_state() | nil, boolean()) ::
-          Socket.t()
-  defp finalize_socket(%Socket{} = socket, resolved_state, wire_state, true) do
+  @spec finalize_socket(Socket.t(), resolved_value(), Entry.wire_state() | nil) :: Socket.t()
+  defp finalize_socket(%Socket{} = socket, resolved_state, wire_state) do
     after_render_socket =
       case Lifecycle.run_hooks(socket, :after_render, [resolved_state], false) do
         {:cont, %Socket{} = hooked_socket} -> hooked_socket
@@ -187,12 +176,6 @@ defmodule Arbor.Resolver do
         |> Stream.drain_and_prune()
         |> Socket.reset_changed()
     end
-  end
-
-  defp finalize_socket(%Socket{} = socket, _resolved_state, _wire_state, false) do
-    socket
-    |> Stream.drain_and_prune()
-    |> Socket.reset_changed()
   end
 
   @spec has_changed_streams?(Socket.t()) :: boolean()

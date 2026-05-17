@@ -3,7 +3,11 @@ defmodule Arbor.Page.StoreTable.Entry do
 
   use TypedStructor
 
+  alias Arbor.Child
   alias Arbor.Socket
+  alias Arbor.Stream.AsyncPlaceholder
+  alias Arbor.Stream.Marker
+  alias Arbor.Stream.Placeholder
 
   @type resolved_state() ::
           nil
@@ -14,7 +18,20 @@ defmodule Arbor.Page.StoreTable.Entry do
           | [resolved_state()]
           | %{optional(term()) => resolved_state()}
 
-  @type raw_state() :: :not_rendered | resolved_state()
+  @type raw_state_value() ::
+          nil
+          | boolean()
+          | number()
+          | String.t()
+          | atom()
+          | Child.t()
+          | Placeholder.t()
+          | AsyncPlaceholder.t()
+          | Marker.marker()
+          | [raw_state_value()]
+          | %{optional(term()) => raw_state_value()}
+
+  @type raw_state() :: :not_rendered | raw_state_value()
 
   @type wire_state() ::
           nil
