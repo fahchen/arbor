@@ -89,10 +89,9 @@ defmodule Arbor.Resolver do
   @spec resolve(Socket.t(), StoreTable.t()) :: resolve_result()
   def resolve(%Socket{} = socket, %StoreTable{} = registry) do
     resolve_started_at = System.monotonic_time()
-    dirty_store_ids = StoreTable.dirty_store_ids(registry)
 
     {resolved_root, updated_socket, updated_registry, live_identities} =
-      render_store(socket, registry, %{}, dirty_store_ids)
+      render_store(socket, registry, %{})
 
     final_registry = Reconciler.prune_stale_entries(updated_registry, live_identities)
 
@@ -105,18 +104,13 @@ defmodule Arbor.Resolver do
     {:ok, resolved_root, updated_socket, final_registry}
   end
 
-  defp render_store(
-         %Socket{} = socket,
-         %StoreTable{} = registry,
-         live_identities,
-         dirty_store_ids
-       )
-       when is_map(live_identities) and is_struct(dirty_store_ids, MapSet) do
+  defp render_store(%Socket{} = socket, %StoreTable{} = registry, live_identities)
+       when is_map(live_identities) do
     raw_state = socket.module.render(socket)
     store_id = Socket.store_id(socket)
 
     {resolved_state, resolved_registry, resolved_live_identities} =
-      resolve_value(raw_state, socket, registry, store_id, live_identities, dirty_store_ids)
+      resolve_value(raw_state, socket, registry, store_id, live_identities)
 
     resolved_state = normalize_stream_placeholders!(resolved_state, socket)
     resolved_state = inject_store_id(resolved_state, store_id)
@@ -387,74 +381,38 @@ defmodule Arbor.Resolver do
          %Socket{} = parent_socket,
          %StoreTable{} = registry,
          path,
-         live,
-         dirty_store_ids
+         live
        )
-       when is_list(path) and is_struct(dirty_store_ids, MapSet) do
-    resolve_child(child, parent_socket, registry, path, live, dirty_store_ids)
+       when is_list(path) do
+    resolve_child(child, parent_socket, registry, path, live)
   end
 
-  defp resolve_value(
-         value,
-         %Socket{} = parent_socket,
-         %StoreTable{} = registry,
-         path,
-         live,
-         dirty_store_ids
-       )
-       when is_map(value) and not is_struct(value) and is_struct(dirty_store_ids, MapSet) do
+  defp resolve_value(value, %Socket{} = parent_socket, %StoreTable{} = registry, path, live)
+       when is_map(value) and not is_struct(value) do
     Enum.reduce(value, {%{}, registry, live}, fn {key, child_or_value},
                                                  {acc, current_registry, current_live} ->
       if match?(%Child{}, child_or_value) do
         {resolved_child, next_registry, next_live} =
-          resolve_child(
-            child_or_value,
-            parent_socket,
-            current_registry,
-            path,
-            current_live,
-            dirty_store_ids
-          )
+          resolve_child(child_or_value, parent_socket, current_registry, path, current_live)
 
         {Map.put(acc, key, resolved_child), next_registry, next_live}
       else
         next_path = append_path_segment(path, to_string(key))
 
         {resolved_child, next_registry, next_live} =
-          resolve_value(
-            child_or_value,
-            parent_socket,
-            current_registry,
-            next_path,
-            current_live,
-            dirty_store_ids
-          )
+          resolve_value(child_or_value, parent_socket, current_registry, next_path, current_live)
 
         {Map.put(acc, key, resolved_child), next_registry, next_live}
       end
     end)
   end
 
-  defp resolve_value(
-         value,
-         %Socket{} = parent_socket,
-         %StoreTable{} = registry,
-         path,
-         live,
-         dirty_store_ids
-       )
-       when is_list(value) and is_struct(dirty_store_ids, MapSet) do
+  defp resolve_value(value, %Socket{} = parent_socket, %StoreTable{} = registry, path, live)
+       when is_list(value) do
     {resolved_list, {next_registry, next_live}} =
       Enum.map_reduce(value, {registry, live}, fn element, {current_registry, current_live} ->
         {resolved_element, next_registry, next_live} =
-          resolve_value(
-            element,
-            parent_socket,
-            current_registry,
-            path,
-            current_live,
-            dirty_store_ids
-          )
+          resolve_value(element, parent_socket, current_registry, path, current_live)
 
         {resolved_element, {next_registry, next_live}}
       end)
@@ -462,7 +420,7 @@ defmodule Arbor.Resolver do
     {resolved_list, next_registry, next_live}
   end
 
-  defp resolve_value(value, _parent_socket, registry, _path, live, _dirty_store_ids) do
+  defp resolve_value(value, _parent_socket, registry, _path, live) do
     {value, registry, live}
   end
 
@@ -471,11 +429,10 @@ defmodule Arbor.Resolver do
          %Socket{} = parent_socket,
          %StoreTable{} = registry,
          path,
-         live,
-         dirty_store_ids
+         live
        )
-       when is_list(path) and is_struct(dirty_store_ids, MapSet) do
-    case Reconciler.reconcile_child(child, parent_socket, path, registry, dirty_store_ids) do
+       when is_list(path) do
+    case Reconciler.reconcile_child(child, parent_socket, path, registry) do
       {:reuse, store_id, %Entry{} = entry, consumed_keys} ->
         ensure_unique_identity!(store_id, live)
 
@@ -489,7 +446,7 @@ defmodule Arbor.Resolver do
         mounted_socket = Reconciler.mount_store(child_socket)
 
         {resolved_state, next_socket, next_registry, next_live} =
-          render_store(mounted_socket, registry, live, dirty_store_ids)
+          render_store(mounted_socket, registry, live)
 
         next_registry = put_consumed_keys(next_registry, store_id, consumed_keys)
 
@@ -500,7 +457,7 @@ defmodule Arbor.Resolver do
         ensure_unique_identity!(store_id, live)
 
         {resolved_state, next_socket, next_registry, next_live} =
-          render_store(child_socket, registry, live, dirty_store_ids)
+          render_store(child_socket, registry, live)
 
         next_registry = put_consumed_keys(next_registry, store_id, consumed_keys)
 
@@ -547,12 +504,7 @@ defmodule Arbor.Resolver do
        when is_list(store_id) and is_map(live_identities) do
     Enum.reduce(StoreTable.subtree_keys(registry, store_id), live_identities, fn subtree_store_id,
                                                                                  acc ->
-      if subtree_store_id == store_id do
-        Map.put(acc, subtree_store_id, true)
-      else
-        ensure_unique_identity!(subtree_store_id, acc)
-        Map.put(acc, subtree_store_id, true)
-      end
+      Map.put(acc, subtree_store_id, true)
     end)
   end
 
