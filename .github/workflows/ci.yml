@@ -6,48 +6,109 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
 env:
   MIX_ENV: test
 
 jobs:
   test:
-    name: CI
+    name: CI (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} / Phoenix ${{ matrix.phoenix }})
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: "1.18.4"
+            otp: "25.3"
+            phoenix: "~> 1.5.0"
+          - elixir: "1.18.4"
+            otp: "26.2"
+            phoenix: "~> 1.6.0"
+          - elixir: "1.18.4"
+            otp: "27.3"
+            phoenix: "~> 1.7.0"
+          - elixir: "1.18.4"
+            otp: "27.3"
+            phoenix: "~> 1.8.0"
+          - elixir: "1.19.5"
+            otp: "26.2"
+            phoenix: "~> 1.8.0"
+          - elixir: "1.19.5"
+            otp: "27.3"
+            phoenix: "~> 1.8.0"
+          - elixir: "1.19.5"
+            otp: "28.3"
+            phoenix: "~> 1.8.0"
+            lint: lint
+
+    env:
+      PHOENIX_VERSION: ${{ matrix.phoenix }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Setup environment
-        id: setup
-        uses: ./.github/workflows/actions/setup
+      - name: Setup BEAM
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+
+      - name: Restore deps + build cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-phoenix-${{ matrix.phoenix }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-phoenix-${{ matrix.phoenix }}-
+
+      - name: Unlock all deps for matrix resolution
+        run: mix deps.unlock --all
+
+      - name: Fetch deps
+        run: mix deps.get
+
+      - name: Compile deps
+        run: mix deps.compile
 
       - name: Check unused dependencies
+        if: ${{ matrix.lint }}
         run: mix deps.unlock --check-unused
 
       - name: Check formatting
+        if: ${{ matrix.lint }}
         run: mix format --check-formatted
 
       - name: Compile with warnings as errors
+        if: ${{ matrix.lint }}
         run: mix compile --warnings-as-errors
 
       - name: Credo
+        if: ${{ matrix.lint }}
         run: mix credo --strict
 
       - name: Restore PLT cache
+        if: ${{ matrix.lint }}
         id: plt-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: priv/plts
-          key: plt-${{ runner.os }}-${{ steps.setup.outputs.erlang-version }}-${{ steps.setup.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          key: plt-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            plt-${{ runner.os }}-${{ steps.setup.outputs.erlang-version }}-${{ steps.setup.outputs.elixir-version }}-
+            plt-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
 
       - name: Create PLTs
-        if: steps.plt-cache.outputs.cache-hit != 'true'
+        if: ${{ matrix.lint && steps.plt-cache.outputs.cache-hit != 'true' }}
         run: mix dialyzer --plt
 
       - name: Dialyzer
+        if: ${{ matrix.lint }}
         run: mix dialyzer
 
       - name: Run tests
