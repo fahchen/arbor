@@ -1,11 +1,18 @@
-import { applyPatch } from "./patch"
+import { applyPatch, parsePointer } from "./patch"
 import {
   applyStreamOps,
   hasStreamKeyForStore,
   pruneStreams,
   touchedStoreKeys
 } from "./streams"
-import type { ConnectionPatchEnvelope, PatchEnvelope, StoreId, StreamEntry } from "./types"
+import type {
+  ConnectionPatchEnvelope,
+  JsonPatchOp,
+  PatchEnvelope,
+  StoreId,
+  StreamEntry,
+  StreamOp
+} from "./types"
 import { STORE_ID_KEY, storeIdKey } from "./types"
 
 type PushStatus = "ok" | "error" | "timeout"
@@ -470,6 +477,7 @@ function acceptEnvelope(
   envelope: PatchEnvelope,
   isInitial: boolean
 ): void {
+  const previousRoot = connection.root
   const previousStoreIndex = connection.storeIndex
   const previousStreams = connection.streams
   const streamTouched = touchedStoreKeys(envelope.stream_ops)
@@ -485,7 +493,13 @@ function acceptEnvelope(
   connection.root = nextRoot
   connection.storeIndex = nextStoreIndex
   connection.streams = nextStreams
-  connection.snapshotCache.clear()
+  invalidateSnapshotsForOps(
+    connection.snapshotCache,
+    envelope.ops,
+    envelope.stream_ops,
+    previousRoot,
+    nextRoot
+  )
   connection.version = envelope.version
 
   // Drop proxy entries whose store_id no longer exists in the tree. New
@@ -613,6 +627,140 @@ function resetConnectionState(connection: RootConnection): void {
   connection.streams = new Map()
   connection.proxyCache = new Map()
   connection.snapshotCache = new Map()
+}
+
+function invalidateSnapshotsForOps(
+  snapshotCache: Map<string, unknown>,
+  ops: readonly JsonPatchOp[],
+  streamOps: readonly StreamOp[],
+  previousRoot: unknown,
+  root: unknown
+): void {
+  if (ops.some((op) => op.path === "")) {
+    snapshotCache.clear()
+    return
+  }
+
+  for (const op of ops) {
+    invalidateStoreIdsAlongPath(snapshotCache, previousRoot, op.path)
+    invalidateStoreIdsAlongPath(snapshotCache, root, op.path)
+    invalidateSnapshotSubtreesForOp(snapshotCache, previousRoot, op)
+  }
+
+  for (const op of streamOps) {
+    invalidateStoreIdAncestors(snapshotCache, op.store_id)
+  }
+}
+
+function invalidateSnapshotSubtreesForOp(
+  snapshotCache: Map<string, unknown>,
+  previousRoot: unknown,
+  op: JsonPatchOp
+): void {
+  if (op.op !== "add") {
+    invalidateStoreIdsInSubtree(snapshotCache, getPointerValue(previousRoot, op.path))
+  }
+
+  if (op.op !== "remove") {
+    invalidateStoreIdsInSubtree(snapshotCache, op.value)
+  }
+}
+
+function invalidateStoreIdsAlongPath(
+  snapshotCache: Map<string, unknown>,
+  root: unknown,
+  pointerPath: string
+): void {
+  let current: unknown = root
+
+  invalidateStoreKeyIfPresent(snapshotCache, current)
+
+  for (const segment of parsePointer(pointerPath)) {
+    current = getPointerChild(current, segment)
+
+    if (current === undefined) {
+      break
+    }
+
+    invalidateStoreKeyIfPresent(snapshotCache, current)
+  }
+}
+
+function invalidateStoreIdAncestors(
+  snapshotCache: Map<string, unknown>,
+  storeId: StoreId
+): void {
+  for (let depth = 0; depth <= storeId.length; depth += 1) {
+    snapshotCache.delete(storeIdKey(storeId.slice(0, depth)))
+  }
+}
+
+function invalidateStoreIdsInSubtree(
+  snapshotCache: Map<string, unknown>,
+  value: unknown
+): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      invalidateStoreIdsInSubtree(snapshotCache, entry)
+    }
+
+    return
+  }
+
+  if (!isRecord(value)) {
+    return
+  }
+
+  invalidateStoreKeyIfPresent(snapshotCache, value)
+
+  for (const child of Object.values(value)) {
+    invalidateStoreIdsInSubtree(snapshotCache, child)
+  }
+}
+
+function getPointerValue(root: unknown, pointerPath: string): unknown {
+  let current: unknown = root
+
+  for (const segment of parsePointer(pointerPath)) {
+    current = getPointerChild(current, segment)
+
+    if (current === undefined) {
+      return undefined
+    }
+  }
+
+  return current
+}
+
+function invalidateStoreKeyIfPresent(
+  snapshotCache: Map<string, unknown>,
+  value: unknown
+): void {
+  if (!isRecord(value)) {
+    return
+  }
+
+  const maybeStoreId = value[STORE_ID_KEY]
+
+  if (isStoreIdValue(maybeStoreId)) {
+    snapshotCache.delete(storeIdKey(maybeStoreId))
+  }
+}
+
+function getPointerChild(value: unknown, segment: string): unknown {
+  if (Array.isArray(value)) {
+    if (!/^(0|[1-9]\d*)$/.test(segment)) {
+      return undefined
+    }
+
+    return value[Number.parseInt(segment, 10)]
+  }
+
+  if (isRecord(value)) {
+    return value[segment]
+  }
+
+  return undefined
 }
 
 function buildStoreIndex(root: unknown): Map<string, unknown> {
