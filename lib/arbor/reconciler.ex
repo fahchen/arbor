@@ -6,7 +6,6 @@ defmodule Arbor.Reconciler do
   alias Arbor.Page.StoreTable
   alias Arbor.Page.StoreTable.Entry
   alias Arbor.Socket
-  alias Arbor.Stream
   alias Arbor.Telemetry
 
   @type identity_key() :: StoreTable.key()
@@ -39,6 +38,51 @@ defmodule Arbor.Reconciler do
         %StoreTable{} = registry
       )
       when is_list(parent_path) do
+    reconcile_child(
+      child,
+      parent_socket,
+      parent_path,
+      registry,
+      StoreTable.dirty_store_ids(registry)
+    )
+  end
+
+  @doc """
+  Reconciles one child placeholder against the existing registry entry using a
+  precomputed dirty-subtree set for the current resolve pass.
+
+  Returns the same tagged action as `reconcile_child/4` while avoiding repeated
+  subtree scans when many children are reused in one render.
+
+  ## Examples
+
+      iex> parent_socket = Arbor.Socket.assign(%Arbor.Socket{}, :title, "Inbox")
+      iex> child = Arbor.Child.child(ExampleChild, id: "child", title: "Inbox")
+      iex> {:mount, ["child"], %Arbor.Socket{}, [:title]} =
+      ...>   Arbor.Reconciler.reconcile_child(
+      ...>     child,
+      ...>     parent_socket,
+      ...>     [],
+      ...>     Arbor.Page.StoreTable.new(),
+      ...>     MapSet.new()
+      ...>   )
+  """
+  @spec reconcile_child(
+          Child.t(),
+          Socket.t(),
+          [String.t()],
+          StoreTable.t(),
+          MapSet.t(identity_key())
+        ) ::
+          reconcile_result()
+  def reconcile_child(
+        %Child{} = child,
+        %Socket{} = parent_socket,
+        parent_path,
+        %StoreTable{} = registry,
+        dirty_store_ids
+      )
+      when is_list(parent_path) and is_struct(dirty_store_ids, MapSet) do
     id = validate_id!(child)
     assigns = normalize_assigns(child.module, child.assigns)
     consumed_keys = Map.keys(assigns)
@@ -59,7 +103,7 @@ defmodule Arbor.Reconciler do
           # async result write, or a stream insert) since the last render. The
           # parent did not change so `update/2` does not run, but the child
           # still needs to re-render so its new state surfaces in the wire diff.
-          child_store_dirty?(entry.socket) ->
+          subtree_dirty?(dirty_store_ids, store_id) ->
             {:update, store_id, entry.socket, consumed_keys}
 
           true ->
@@ -83,15 +127,10 @@ defmodule Arbor.Reconciler do
     end)
   end
 
-  @spec child_store_dirty?(Socket.t()) :: boolean()
-  defp child_store_dirty?(%Socket{} = socket) do
-    Socket.any_changed?(socket) or stream_changed?(socket)
-  end
-
-  defp stream_changed?(%Socket{} = socket) do
-    socket
-    |> Stream.changed_streams()
-    |> MapSet.size() > 0
+  @spec subtree_dirty?(MapSet.t(identity_key()), identity_key()) :: boolean()
+  defp subtree_dirty?(dirty_store_ids, store_id)
+       when is_struct(dirty_store_ids, MapSet) and is_list(store_id) do
+    MapSet.member?(dirty_store_ids, store_id)
   end
 
   @doc """
