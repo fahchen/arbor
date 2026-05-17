@@ -502,7 +502,15 @@ defmodule Musubi.Socket do
     end)
   end
 
-  @doc false
+  @doc """
+  Writes a private runtime value.
+
+  ## Examples
+
+      iex> socket = Musubi.Socket.put_private(%Musubi.Socket{}, :hooks, %{})
+      iex> socket.private.hooks
+      %{}
+  """
   @spec put_private(t(), private_key(), term()) :: t()
   def put_private(%__MODULE__{} = socket, key, value) do
     %{socket | private: Map.put(socket.private, key, value)}
