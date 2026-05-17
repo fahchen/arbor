@@ -1,14 +1,14 @@
-defmodule Arbor.AsyncTest do
+defmodule Musubi.AsyncTest do
   use ExUnit.Case, async: true
 
-  import Arbor.AsyncTestHelpers
+  import Musubi.AsyncTestHelpers
   import ExUnit.CaptureIO
 
-  alias Arbor.Async
-  alias Arbor.AsyncResult
-  alias Arbor.Socket
+  alias Musubi.Async
+  alias Musubi.AsyncResult
+  alias Musubi.Socket
 
-  # `Arbor.AsyncSupervisor` is started by `Arbor.Application` at app boot.
+  # `Musubi.AsyncSupervisor` is started by `Musubi.Application` at app boot.
 
   describe "assign_async/3 single-key" do
     test "writes loading immediately and tracks the task" do
@@ -247,18 +247,18 @@ defmodule Arbor.AsyncTest do
       stderr =
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          defmodule Arbor.AsyncTest.AssignFnCapture do
-            use Arbor.Store
+          defmodule Musubi.AsyncTest.AssignFnCapture do
+            use Musubi.Store
 
             state do
               field :user, String.t()
             end
 
-            @impl Arbor.Store
+            @impl Musubi.Store
             def mount(socket), do: {:ok, socket}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def render(socket), do: %{user: socket.assigns.user}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def fetch(socket) do
@@ -275,18 +275,18 @@ defmodule Arbor.AsyncTest do
       stderr =
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          defmodule Arbor.AsyncTest.StartCaptureCapture do
-            use Arbor.Store
+          defmodule Musubi.AsyncTest.StartCaptureCapture do
+            use Musubi.Store
 
             state do
               field :ok, boolean()
             end
 
-            @impl Arbor.Store
+            @impl Musubi.Store
             def mount(socket), do: {:ok, socket}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def render(_socket), do: %{ok: true}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def warm(socket) do
@@ -305,18 +305,18 @@ defmodule Arbor.AsyncTest do
       stderr =
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          defmodule Arbor.AsyncTest.StreamFnCapture do
-            use Arbor.Store
+          defmodule Musubi.AsyncTest.StreamFnCapture do
+            use Musubi.Store
 
             state do
               stream :messages, String.t()
             end
 
-            @impl Arbor.Store
+            @impl Musubi.Store
             def mount(socket), do: {:ok, socket}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def render(_socket), do: %{messages: stream(:messages)}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def fetch(socket) do
@@ -333,18 +333,18 @@ defmodule Arbor.AsyncTest do
       stderr =
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          defmodule Arbor.AsyncTest.AssignNoCapture do
-            use Arbor.Store
+          defmodule Musubi.AsyncTest.AssignNoCapture do
+            use Musubi.Store
 
             state do
               field :user, String.t()
             end
 
-            @impl Arbor.Store
+            @impl Musubi.Store
             def mount(socket), do: {:ok, socket}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def render(socket), do: %{user: socket.assigns.user}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def fetch(socket) do
@@ -362,18 +362,18 @@ defmodule Arbor.AsyncTest do
       stderr =
         capture_io(:stderr, fn ->
           Code.compile_string("""
-          defmodule Arbor.AsyncTest.HelperFnNoCapture do
-            use Arbor.Store
+          defmodule Musubi.AsyncTest.HelperFnNoCapture do
+            use Musubi.Store
 
             state do
               field :user, String.t()
             end
 
-            @impl Arbor.Store
+            @impl Musubi.Store
             def mount(socket), do: {:ok, socket}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def render(socket), do: %{user: socket.assigns.user}
-            @impl Arbor.Store
+            @impl Musubi.Store
             def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
             def fetch(socket) do

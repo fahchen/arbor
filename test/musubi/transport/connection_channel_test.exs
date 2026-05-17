@@ -1,11 +1,11 @@
-defmodule Arbor.Transport.ConnectionChannelTest do
+defmodule Musubi.Transport.ConnectionChannelTest do
   use ExUnit.Case, async: true
 
   defmodule TestEndpoint do
     @moduledoc false
-    use Phoenix.Endpoint, otp_app: :arbor
+    use Phoenix.Endpoint, otp_app: :musubi
 
-    socket("/arbor", Arbor.Transport.ConnectionChannelTest.ArborSocket,
+    socket("/musubi", Musubi.Transport.ConnectionChannelTest.MusubiSocket,
       websocket: false,
       longpoll: false
     )
@@ -13,32 +13,32 @@ defmodule Arbor.Transport.ConnectionChannelTest do
 
   defmodule ChildStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :label, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def init(socket) do
       socket
-      |> Arbor.Socket.session()
+      |> Musubi.Socket.session()
       |> Map.fetch!("test_pid")
-      |> send({:child_init, Arbor.Socket.session(socket), Arbor.Socket.connect_info(socket)})
+      |> send({:child_init, Musubi.Socket.session(socket), Musubi.Socket.connect_info(socket)})
 
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket), do: %{label: socket.assigns.label}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule AlphaRootStore do
     @moduledoc false
-    use Arbor.Store, root: true
+    use Musubi.Store, root: true
 
     attr :room_id, String.t(), required: true
 
@@ -48,26 +48,26 @@ defmodule Arbor.Transport.ConnectionChannelTest do
       field :child, ChildStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(params, socket) do
-      session = Arbor.Socket.session(socket)
+      session = Musubi.Socket.session(socket)
       test_pid = Map.fetch!(session, "test_pid")
 
       send(test_pid, {:alpha_mount, self(), params, socket.assigns.current_user})
 
-      socket = Arbor.Socket.assign(socket, :room_id, Map.fetch!(params, "room_id"))
+      socket = Musubi.Socket.assign(socket, :room_id, Map.fetch!(params, "room_id"))
 
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def init(socket) do
-      test_pid = Map.fetch!(Arbor.Socket.session(socket), "test_pid")
+      test_pid = Map.fetch!(Musubi.Socket.session(socket), "test_pid")
       send(test_pid, {:alpha_init, socket.assigns.room_id})
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         room_id: socket.assigns.room_id,
@@ -80,29 +80,29 @@ defmodule Arbor.Transport.ConnectionChannelTest do
       payload :room_id, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:rename, %{"room_id" => room_id}, socket) do
-      {:noreply, Arbor.Socket.assign(socket, :room_id, room_id)}
+      {:noreply, Musubi.Socket.assign(socket, :room_id, room_id)}
     end
   end
 
   defmodule BetaRootStore do
     @moduledoc false
-    use Arbor.Store, root: true
+    use Musubi.Store, root: true
 
     state do
       field :label, String.t()
       field :current_user, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(params, socket) do
-      test_pid = Map.fetch!(Arbor.Socket.session(socket), "test_pid")
+      test_pid = Map.fetch!(Musubi.Socket.session(socket), "test_pid")
       send(test_pid, {:beta_mount, self(), params, socket.assigns.current_user})
-      {:ok, Arbor.Socket.assign(socket, :label, Map.fetch!(params, "label"))}
+      {:ok, Musubi.Socket.assign(socket, :label, Map.fetch!(params, "label"))}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{label: socket.assigns.label, current_user: socket.assigns.current_user}
     end
@@ -111,28 +111,28 @@ defmodule Arbor.Transport.ConnectionChannelTest do
       payload :label, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:rename, %{"label" => label}, socket) do
-      {:noreply, Arbor.Socket.assign(socket, :label, label)}
+      {:noreply, Musubi.Socket.assign(socket, :label, label)}
     end
   end
 
-  defmodule ArborSocket do
+  defmodule MusubiSocket do
     @moduledoc false
-    use Arbor.Socket,
+    use Musubi.Socket,
       roots: [
-        Arbor.Transport.ConnectionChannelTest.AlphaRootStore,
-        Arbor.Transport.ConnectionChannelTest.BetaRootStore
+        Musubi.Transport.ConnectionChannelTest.AlphaRootStore,
+        Musubi.Transport.ConnectionChannelTest.BetaRootStore
       ]
 
-    @impl Arbor.Socket
+    @impl Musubi.Socket
     def handle_connect(%{"current_user" => current_user}, socket) do
-      {:ok, Arbor.Socket.assign(socket, :current_user, current_user)}
+      {:ok, Musubi.Socket.assign(socket, :current_user, current_user)}
     end
 
-    @impl Arbor.Socket
+    @impl Musubi.Socket
     def handle_join(params, socket) do
-      test_pid = socket |> Arbor.Socket.session() |> Map.fetch!("test_pid")
+      test_pid = socket |> Musubi.Socket.session() |> Map.fetch!("test_pid")
       send(test_pid, {:connection_join, params, socket.assigns.current_user})
 
       {:ok, socket}
@@ -142,11 +142,11 @@ defmodule Arbor.Transport.ConnectionChannelTest do
   import Phoenix.ChannelTest
 
   @endpoint TestEndpoint
-  @alpha_module_str "Arbor.Transport.ConnectionChannelTest.AlphaRootStore"
-  @beta_module_str "Arbor.Transport.ConnectionChannelTest.BetaRootStore"
+  @alpha_module_str "Musubi.Transport.ConnectionChannelTest.AlphaRootStore"
+  @beta_module_str "Musubi.Transport.ConnectionChannelTest.BetaRootStore"
 
   setup_all do
-    start_supervised!({Phoenix.PubSub, name: Arbor.Transport.ConnectionChannelTest.PubSub})
+    start_supervised!({Phoenix.PubSub, name: Musubi.Transport.ConnectionChannelTest.PubSub})
     start_supervised!(TestEndpoint)
     :ok
   end
@@ -490,15 +490,15 @@ defmodule Arbor.Transport.ConnectionChannelTest do
     session = %{"test_pid" => self(), "user_id" => "u1"}
     connect_info = %{session: session, peer_data: %{address: {127, 0, 0, 1}}}
 
-    phoenix_socket = socket(ArborSocket, "user_id", %{})
+    phoenix_socket = socket(MusubiSocket, "user_id", %{})
 
     {:ok, connected_socket} =
-      ArborSocket.connect(%{"current_user" => "connect-user"}, phoenix_socket, connect_info)
+      MusubiSocket.connect(%{"current_user" => "connect-user"}, phoenix_socket, connect_info)
 
     subscribe_and_join(
       connected_socket,
-      Arbor.Transport.ConnectionChannel,
-      "arbor:connection",
+      Musubi.Transport.ConnectionChannel,
+      "musubi:connection",
       %{"scope" => "main"}
     )
   end

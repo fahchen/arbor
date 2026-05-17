@@ -1,6 +1,6 @@
 # Run with: mix run bench/diff_bench.exs
 #
-# Measures `Arbor.Diff.diff/2` cost across small, large, and reorder-heavy
+# Measures `Musubi.Diff.diff/2` cost across small, large, and reorder-heavy
 # wire-form trees. Reorders intentionally use no `move` op (BDR-0014) so the
 # emitted op count grows with shifted positions — the bench shows the cost.
 
@@ -22,9 +22,9 @@ reorder_b = Enum.reverse(reorder_a)
 
 Benchee.run(
   %{
-    "diff small" => fn -> Arbor.Diff.diff(small_a, small_b) end,
-    "diff large (~14% changed)" => fn -> Arbor.Diff.diff(large_a, large_b) end,
-    "diff reorder (200 rev)" => fn -> Arbor.Diff.diff(reorder_a, reorder_b) end
+    "diff small" => fn -> Musubi.Diff.diff(small_a, small_b) end,
+    "diff large (~14% changed)" => fn -> Musubi.Diff.diff(large_a, large_b) end,
+    "diff reorder (200 rev)" => fn -> Musubi.Diff.diff(reorder_a, reorder_b) end
   },
   warmup: 1,
   time: 3,

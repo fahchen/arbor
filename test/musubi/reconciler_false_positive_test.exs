@@ -1,13 +1,13 @@
-defmodule Arbor.ReconcilerFalsePositiveTest do
+defmodule Musubi.ReconcilerFalsePositiveTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Page.StoreTable
-  alias Arbor.Page.StoreTable.Entry
-  alias Arbor.Resolver
-  alias Arbor.Socket
+  alias Musubi.Page.StoreTable
+  alias Musubi.Page.StoreTable.Entry
+  alias Musubi.Resolver
+  alias Musubi.Socket
 
   defmodule ChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     attr :title, String.t(), required: true
     attr :test_pid, pid(), required: true
@@ -16,43 +16,43 @@ defmodule Arbor.ReconcilerFalsePositiveTest do
       field :title, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def update(assigns, socket) do
       send(socket.assigns.test_pid, :child_update)
       {:ok, Socket.assign(socket, assigns)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       send(socket.assigns.test_pid, :child_render)
       %{title: socket.assigns.title}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule ParentStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :child, ChildStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         child: child(ChildStore, id: "c", title: "static", test_pid: socket.assigns.test_pid)
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

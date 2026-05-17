@@ -1,7 +1,7 @@
-defmodule Arbor.SocketTest do
+defmodule Musubi.SocketTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Socket
+  alias Musubi.Socket
 
   describe "struct defaults" do
     test "matches the frozen socket shape" do

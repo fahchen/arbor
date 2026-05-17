@@ -1,19 +1,19 @@
-defmodule Arbor.Page.ServerCommandTest do
+defmodule Musubi.Page.ServerCommandTest do
   use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog
 
   require Logger
 
-  alias Arbor.Lifecycle
-  alias Arbor.Page.Server
-  alias Arbor.Page.Server.State
-  alias Arbor.Page.StoreTable
-  alias Arbor.Socket
+  alias Musubi.Lifecycle
+  alias Musubi.Page.Server
+  alias Musubi.Page.Server.State
+  alias Musubi.Page.StoreTable
+  alias Musubi.Socket
 
   defmodule LeafStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :status, String.t()
@@ -23,20 +23,20 @@ defmodule Arbor.Page.ServerCommandTest do
       payload :id, String.t()
     end
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :status, "ready")}
-    @impl Arbor.Store
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :status, "ready")}
+    @impl Musubi.Store
     def render(socket), do: %{status: socket.assigns.status}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:select, %{"id" => id}, socket) do
-      {:reply, %{selected: id}, Arbor.Socket.assign(socket, :status, "selected:" <> id)}
+      {:reply, %{selected: id}, Musubi.Socket.assign(socket, :status, "selected:" <> id)}
     end
   end
 
   defmodule FiltersStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :query, String.t()
@@ -48,25 +48,25 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :wipe
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :query, "")}
-    @impl Arbor.Store
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :query, "")}
+    @impl Musubi.Store
     def render(socket), do: %{query: socket.assigns.query}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:change_query, %{"query" => query}, socket) do
-      {:noreply, Arbor.Socket.assign(socket, :query, query)}
+      {:noreply, Musubi.Socket.assign(socket, :query, query)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:wipe, _payload, socket) do
-      {:noreply, Arbor.Socket.assign(socket, :query, "")}
+      {:noreply, Musubi.Socket.assign(socket, :query, "")}
     end
   end
 
   defmodule RootStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
@@ -76,15 +76,15 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :reload_products
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       socket =
         socket
-        |> Arbor.Socket.assign(:title, "home")
-        |> Arbor.Socket.assign(:reloads, 0)
+        |> Musubi.Socket.assign(:title, "home")
+        |> Musubi.Socket.assign(:reloads, 0)
 
       socket =
-        case Arbor.Socket.get_private(socket, :hook_events) do
+        case Musubi.Socket.get_private(socket, :hook_events) do
           nil -> socket
           test_pid -> attach_audit_hooks(socket, test_pid)
         end
@@ -92,19 +92,19 @@ defmodule Arbor.Page.ServerCommandTest do
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         title: socket.assigns.title,
-        filters: Arbor.Child.child(FiltersStore, id: "filters"),
-        leaf: Arbor.Child.child(LeafStore, id: "leaf")
+        filters: Musubi.Child.child(FiltersStore, id: "filters"),
+        leaf: Musubi.Child.child(LeafStore, id: "leaf")
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:reload_products, _payload, socket) do
       next = Map.get(socket.assigns, :reloads, 0) + 1
-      {:reply, %{reloaded: true}, Arbor.Socket.assign(socket, :reloads, next)}
+      {:reply, %{reloaded: true}, Musubi.Socket.assign(socket, :reloads, next)}
     end
 
     defp attach_audit_hooks(socket, test_pid) do
@@ -122,7 +122,7 @@ defmodule Arbor.Page.ServerCommandTest do
 
   defmodule HaltingStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :ok, boolean()
@@ -130,20 +130,20 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :restricted
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       socket =
         Lifecycle.attach_hook(socket, :auth, :before_command, fn _name, _payload, sock ->
           {:halt, %{ok: false, reason: "unauthorized"}, sock}
         end)
 
-      {:ok, Arbor.Socket.assign(socket, :ok, true)}
+      {:ok, Musubi.Socket.assign(socket, :ok, true)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket), do: %{ok: socket.assigns.ok}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:restricted, _payload, socket) do
       send(socket.assigns.test_pid, :handler_should_not_run)
       {:noreply, socket}
@@ -152,7 +152,7 @@ defmodule Arbor.Page.ServerCommandTest do
 
   defmodule SilentHaltStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :ok, boolean()
@@ -160,20 +160,20 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :gated
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       socket =
         Lifecycle.attach_hook(socket, :gate, :before_command, fn _name, _payload, sock ->
           {:halt, sock}
         end)
 
-      {:ok, Arbor.Socket.assign(socket, :ok, true)}
+      {:ok, Musubi.Socket.assign(socket, :ok, true)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket), do: %{ok: socket.assigns.ok}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:gated, _payload, socket) do
       send(socket.assigns.test_pid, :handler_should_not_run)
       {:noreply, socket}
@@ -182,7 +182,7 @@ defmodule Arbor.Page.ServerCommandTest do
 
   defmodule ProductCardStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :id, String.t()
@@ -190,12 +190,12 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :select
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :id, socket.id)}
-    @impl Arbor.Store
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :id, socket.id)}
+    @impl Musubi.Store
     def render(socket), do: %{id: socket.assigns.id}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:select, _payload, socket) do
       {:reply, %{selected: socket.assigns.id}, socket}
     end
@@ -203,30 +203,30 @@ defmodule Arbor.Page.ServerCommandTest do
 
   defmodule ProductsListStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :products, list(ProductCardStore.t())
     end
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ids, ["prod_123", "prod_456"])}
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :ids, ["prod_123", "prod_456"])}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         products:
-          Enum.map(socket.assigns.ids, fn id -> Arbor.Child.child(ProductCardStore, id: id) end)
+          Enum.map(socket.assigns.ids, fn id -> Musubi.Child.child(ProductCardStore, id: id) end)
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule CrashingStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :ok, boolean()
@@ -234,12 +234,12 @@ defmodule Arbor.Page.ServerCommandTest do
 
     command :boom
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ok, true)}
-    @impl Arbor.Store
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :ok, true)}
+    @impl Musubi.Store
     def render(socket), do: %{ok: socket.assigns.ok}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:boom, _payload, _socket) do
       raise "boom"
     end
@@ -408,8 +408,8 @@ defmodule Arbor.Page.ServerCommandTest do
       :telemetry.attach_many(
         handler_id,
         [
-          [:arbor, :command, :start],
-          [:arbor, :command, :stop]
+          [:musubi, :command, :start],
+          [:musubi, :command, :stop]
         ],
         fn event, measurements, metadata, pid ->
           send(pid, {:telemetry, event, measurements, metadata})
@@ -424,14 +424,14 @@ defmodule Arbor.Page.ServerCommandTest do
 
       assert {:ok, _reply} = Server.command(pid, ["filters"], :wipe, %{})
 
-      assert_receive {:telemetry, [:arbor, :command, :start], _,
+      assert_receive {:telemetry, [:musubi, :command, :start], _,
                       %{
                         page_id: "home",
                         store_id: ["filters"],
                         command: :wipe
                       }}
 
-      assert_receive {:telemetry, [:arbor, :command, :stop], _,
+      assert_receive {:telemetry, [:musubi, :command, :stop], _,
                       %{
                         page_id: "home",
                         store_id: ["filters"],
@@ -445,7 +445,7 @@ defmodule Arbor.Page.ServerCommandTest do
 
       :telemetry.attach(
         handler_id,
-        [:arbor, :command, :stop],
+        [:musubi, :command, :stop],
         fn event, measurements, metadata, pid ->
           send(pid, {:telemetry, event, measurements, metadata})
         end,
@@ -459,7 +459,7 @@ defmodule Arbor.Page.ServerCommandTest do
       assert {:ok, _reply} =
                Server.command(pid, ["filters"], :change_query, %{"query" => "secret-payload"})
 
-      assert_receive {:telemetry, [:arbor, :command, :stop], _, metadata}
+      assert_receive {:telemetry, [:musubi, :command, :stop], _, metadata}
 
       refute Map.has_key?(metadata, :payload)
       refute String.contains?(inspect(metadata), "secret-payload")
@@ -472,7 +472,7 @@ defmodule Arbor.Page.ServerCommandTest do
 
       :telemetry.attach(
         handler_id,
-        [:arbor, :command, :exception],
+        [:musubi, :command, :exception],
         fn event, measurements, metadata, pid ->
           send(pid, {:telemetry, event, measurements, metadata})
         end,
@@ -488,7 +488,7 @@ defmodule Arbor.Page.ServerCommandTest do
         catch_exit(Server.command(pid, [], :boom, %{}))
         assert_receive {:EXIT, ^pid, _reason}
 
-        assert_receive {:telemetry, [:arbor, :command, :exception], _,
+        assert_receive {:telemetry, [:musubi, :command, :exception], _,
                         %{kind: :error, reason: %RuntimeError{}, stacktrace: stacktrace}}
 
         assert is_list(stacktrace)

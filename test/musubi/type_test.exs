@@ -1,12 +1,12 @@
-defmodule Arbor.TypeTest do
+defmodule Musubi.TypeTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Type
+  alias Musubi.Type
 
   defmodule LeafState do
     @moduledoc false
 
-    use Arbor.State
+    use Musubi.State
 
     state do
       field :title, String.t()
@@ -16,9 +16,9 @@ defmodule Arbor.TypeTest do
   defmodule ContainerState do
     @moduledoc false
 
-    use Arbor.State
+    use Musubi.State
 
-    alias Arbor.TypeTest.LeafState
+    alias Musubi.TypeTest.LeafState
 
     state do
       field :leaf, LeafState.t()
@@ -40,7 +40,7 @@ defmodule Arbor.TypeTest do
       assert Type.valid_type?(quote(do: SomeModule.t()))
       assert Type.valid_type?(quote(do: SomeModule.state()))
       assert Type.valid_type?(quote(do: stream(String.t())))
-      assert Type.valid_type?(quote(do: Arbor.AsyncResult.of(stream(String.t()))))
+      assert Type.valid_type?(quote(do: Musubi.AsyncResult.of(stream(String.t()))))
     end
 
     test "rejects unknown constructors and non-literal map keys" do
@@ -89,19 +89,19 @@ defmodule Arbor.TypeTest do
     end
 
     test "stream fields validate only stream marker wire values" do
-      assert Type.valid?(%{"__arbor_stream__" => "messages"}, quote(do: stream(String.t())))
+      assert Type.valid?(%{"__musubi_stream__" => "messages"}, quote(do: stream(String.t())))
       refute Type.valid?([], quote(do: stream(String.t())))
       refute Type.valid?(["a"], quote(do: stream(String.t())))
     end
 
     test "async stream fields validate an AsyncResult whose result is a stream marker" do
-      type = quote(do: Arbor.AsyncResult.of(stream(String.t())))
+      type = quote(do: Musubi.AsyncResult.of(stream(String.t())))
 
       assert Type.valid?(
                %{
-                 "__arbor_async__" => true,
+                 "__musubi_async__" => true,
                  "status" => "loading",
-                 "result" => %{"__arbor_stream__" => "messages"},
+                 "result" => %{"__musubi_stream__" => "messages"},
                  "reason" => nil
                },
                type
@@ -109,9 +109,9 @@ defmodule Arbor.TypeTest do
 
       assert Type.valid?(
                %{
-                 "__arbor_async__" => true,
+                 "__musubi_async__" => true,
                  "status" => "failed",
-                 "result" => %{"__arbor_stream__" => "messages"},
+                 "result" => %{"__musubi_stream__" => "messages"},
                  "reason" => %{"kind" => "error", "value" => "rate_limited"}
                },
                type
@@ -119,7 +119,7 @@ defmodule Arbor.TypeTest do
 
       refute Type.valid?(
                %{
-                 "__arbor_async__" => true,
+                 "__musubi_async__" => true,
                  "status" => "ok",
                  "result" => [],
                  "reason" => nil
@@ -143,36 +143,36 @@ defmodule Arbor.TypeTest do
     end
 
     test "Module.state() referencing a non-store module raises at compile time" do
-      defmodule Arbor.TypeTest.FakeStateRefHost do
-        def __arbor__(:fields) do
-          [%{name: :leaf, type: quote(do: Arbor.TypeTest.LeafState.state())}]
+      defmodule Musubi.TypeTest.FakeStateRefHost do
+        def __musubi__(:fields) do
+          [%{name: :leaf, type: quote(do: Musubi.TypeTest.LeafState.state())}]
         end
       end
 
-      assert_raise CompileError, ~r/is not an Arbor\.Store/, fn ->
-        Type.verify_module!(Arbor.TypeTest.FakeStateRefHost)
+      assert_raise CompileError, ~r/is not an Musubi\.Store/, fn ->
+        Type.verify_module!(Musubi.TypeTest.FakeStateRefHost)
       end
     end
   end
 
   describe "verify_module!/1" do
-    test "loaded arbor modules pass" do
+    test "loaded musubi modules pass" do
       assert :ok = Type.verify_module!(LeafState)
       assert :ok = Type.verify_module!(ContainerState)
     end
 
-    test "raises when a referenced module does not opt into the Arbor runtime contract" do
+    test "raises when a referenced module does not opt into the Musubi runtime contract" do
       # The verify_module! callback walks the host module's reflection. Build
       # a fake host that exposes the same shape so we can drive the check
       # directly without depending on @after_verify firing inside the test.
-      defmodule Arbor.TypeTest.FakeHost do
-        def __arbor__(:fields) do
+      defmodule Musubi.TypeTest.FakeHost do
+        def __musubi__(:fields) do
           [%{name: :payload, type: quote(do: NoSuchModule.t())}]
         end
       end
 
       assert_raise CompileError, ~r/NoSuchModule\.t\(\) but/, fn ->
-        Type.verify_module!(Arbor.TypeTest.FakeHost)
+        Type.verify_module!(Musubi.TypeTest.FakeHost)
       end
     end
   end

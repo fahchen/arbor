@@ -1,7 +1,7 @@
-defmodule Arbor.AsyncResultTest do
+defmodule Musubi.AsyncResultTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.AsyncResult
+  alias Musubi.AsyncResult
 
   doctest AsyncResult
 
@@ -55,15 +55,15 @@ defmodule Arbor.AsyncResultTest do
   describe "wire serialization" do
     test "status atom becomes a string and field keys become string keys" do
       assert %{
-               "__arbor_async__" => true,
+               "__musubi_async__" => true,
                "status" => "loading",
                "result" => nil,
                "reason" => nil
              } =
-               Arbor.Wire.to_wire(AsyncResult.loading())
+               Musubi.Wire.to_wire(AsyncResult.loading())
 
-      assert %{"__arbor_async__" => true, "status" => "ok", "result" => 42, "reason" => nil} =
-               Arbor.Wire.to_wire(AsyncResult.ok(nil, 42))
+      assert %{"__musubi_async__" => true, "status" => "ok", "result" => 42, "reason" => nil} =
+               Musubi.Wire.to_wire(AsyncResult.ok(nil, 42))
     end
   end
 end

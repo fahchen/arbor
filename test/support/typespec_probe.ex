@@ -1,50 +1,50 @@
-defmodule Arbor.TestSupport.TypespecProbeChild do
+defmodule Musubi.TestSupport.TypespecProbeChild do
   @moduledoc false
 
-  use Arbor.Store
+  use Musubi.Store
 
   state do
     field :amount, integer()
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(socket), do: {:ok, socket}
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(_socket), do: %{amount: 0}
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
   # Snapshot the compile-time env (alias scope, module name, file) so codegen
-  # tests can drive `Arbor.Codegen.TypeScript.Manifest.collect/1` against the
-  # same env the `:arbor_ts` compiler would see at consumer compile time.
+  # tests can drive `Musubi.Codegen.TypeScript.Manifest.collect/1` against the
+  # same env the `:musubi_ts` compiler would see at consumer compile time.
   @captured_env __ENV__
   @doc false
   def __env__, do: @captured_env
 end
 
-defmodule Arbor.TestSupport.TypespecProbe do
+defmodule Musubi.TestSupport.TypespecProbe do
   @moduledoc false
 
-  use Arbor.Store
+  use Musubi.Store
 
-  alias Arbor.TestSupport.TypespecProbeChild
+  alias Musubi.TestSupport.TypespecProbeChild
 
   state do
     stream(:messages, String.t())
     stream(:items, TypespecProbeChild.t(), item_key: &"item-#{&1.amount}", limit: -50)
-    field :load_stream, Arbor.AsyncResult.of(stream(TypespecProbeChild.t()))
-    field :profile, Arbor.AsyncResult.of(TypespecProbeChild.t())
+    field :load_stream, Musubi.AsyncResult.of(stream(TypespecProbeChild.t()))
+    field :profile, Musubi.AsyncResult.of(TypespecProbeChild.t())
     field :status, %{type: :active} | %{type: :paused, value: integer()}
     field :child, TypespecProbeChild.state()
     field :tags, list(String.t())
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(socket), do: {:ok, socket}
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(_socket),
     do: %{
       messages: stream(:messages),
@@ -56,7 +56,7 @@ defmodule Arbor.TestSupport.TypespecProbe do
       tags: []
     }
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
   @captured_env __ENV__
@@ -64,10 +64,10 @@ defmodule Arbor.TestSupport.TypespecProbe do
   def __env__, do: @captured_env
 end
 
-defmodule Arbor.TestSupport.TypespecProbeWithCommand do
+defmodule Musubi.TestSupport.TypespecProbeWithCommand do
   @moduledoc false
 
-  use Arbor.Store
+  use Musubi.Store
 
   state do
     field :selected_id, String.t() | nil
@@ -79,11 +79,11 @@ defmodule Arbor.TestSupport.TypespecProbeWithCommand do
 
   command :refresh
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(socket), do: {:ok, socket}
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(socket), do: %{selected_id: Map.get(socket.assigns, :selected_id)}
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
   @captured_env __ENV__

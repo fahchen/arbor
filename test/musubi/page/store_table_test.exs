@@ -1,9 +1,9 @@
-defmodule Arbor.Page.StoreTableTest do
+defmodule Musubi.Page.StoreTableTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Page.StoreTable
-  alias Arbor.Page.StoreTable.Entry
-  alias Arbor.Socket
+  alias Musubi.Page.StoreTable
+  alias Musubi.Page.StoreTable.Entry
+  alias Musubi.Socket
 
   defmodule RootStore do
   end

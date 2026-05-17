@@ -1,26 +1,26 @@
-defmodule Mix.Tasks.Compile.ArborTsTest do
+defmodule Mix.Tasks.Compile.MusubiTsTest do
   # async: false because the test scopes a manifest target_dir override via
   # Process dict and writes the rendered bundle to the configured
   # `:ts_codegen_output_path` (which `config/test.exs` points at
-  # `test/tmp/arbor_ts_bundle.ts`). Concurrent runs would race on that path.
+  # `test/tmp/musubi_ts_bundle.ts`). Concurrent runs would race on that path.
   use ExUnit.Case, async: false
 
-  alias Arbor.Codegen.TypeScript.Manifest
-  alias Arbor.TestSupport.TypespecProbe
-  alias Arbor.TestSupport.TypespecProbeChild
-  alias Mix.Tasks.Compile.ArborTs
+  alias Mix.Tasks.Compile.MusubiTs
+  alias Musubi.Codegen.TypeScript.Manifest
+  alias Musubi.TestSupport.TypespecProbe
+  alias Musubi.TestSupport.TypespecProbeChild
 
   setup do
     target =
       Path.join(
         System.tmp_dir!(),
-        "arbor_ts_compile_#{:erlang.unique_integer([:positive])}"
+        "musubi_ts_compile_#{:erlang.unique_integer([:positive])}"
       )
 
     File.mkdir_p!(target)
-    Process.put(:__arbor_ts_target_dir__, target)
+    Process.put(:__musubi_ts_target_dir__, target)
 
-    output_path = Application.fetch_env!(:arbor, :ts_codegen_output_path)
+    output_path = Application.fetch_env!(:musubi, :ts_codegen_output_path)
     File.mkdir_p!(Path.dirname(output_path))
     File.rm(output_path)
 
@@ -34,12 +34,12 @@ defmodule Mix.Tasks.Compile.ArborTsTest do
 
   describe "run/1 — empty manifest" do
     test "returns :noop and does not create the bundle file", %{output_path: output_path} do
-      assert ArborTs.run([]) == :noop
+      assert MusubiTs.run([]) == :noop
       refute File.exists?(output_path)
     end
 
     test "returns :noop in --check mode", %{output_path: output_path} do
-      assert ArborTs.run(["--check"]) == :noop
+      assert MusubiTs.run(["--check"]) == :noop
       refute File.exists?(output_path)
     end
   end
@@ -52,56 +52,56 @@ defmodule Mix.Tasks.Compile.ArborTsTest do
     end
 
     test "writes a fresh bundle covering every stamped module", %{output_path: output_path} do
-      assert {:ok, []} = ArborTs.run([])
+      assert {:ok, []} = MusubiTs.run([])
 
       contents = File.read!(output_path)
-      assert contents =~ "declare namespace Arbor {"
+      assert contents =~ "declare namespace Musubi {"
       refute contents =~ "declare global"
       refute contents =~ "export {}"
-      refute contents =~ ~s|import "@arbor/client"|
+      refute contents =~ ~s|import "@musubi/client"|
       assert contents =~ "type AsyncResult<T>"
       assert contents =~ "interface StoreDef<Module extends string, Shape, Commands>"
-      assert contents =~ ~s|"Arbor.TestSupport.TypespecProbe": StoreDef<|
-      assert contents =~ ~s|"Arbor.TestSupport.TypespecProbeChild": StoreDef<|
-      assert contents =~ "Arbor.StreamField<"
-      assert contents =~ "Arbor.AsyncField<"
+      assert contents =~ ~s|"Musubi.TestSupport.TypespecProbe": StoreDef<|
+      assert contents =~ ~s|"Musubi.TestSupport.TypespecProbeChild": StoreDef<|
+      assert contents =~ "Musubi.StreamField<"
+      assert contents =~ "Musubi.AsyncField<"
     end
 
     test "returns :noop when the bundle already matches", %{output_path: output_path} do
-      assert {:ok, []} = ArborTs.run([])
-      assert ArborTs.run([]) == :noop
+      assert {:ok, []} = MusubiTs.run([])
+      assert MusubiTs.run([]) == :noop
       assert File.exists?(output_path)
     end
 
     test "rewrites a stale bundle", %{output_path: output_path} do
       File.write!(output_path, "// stale\n")
-      assert {:ok, []} = ArborTs.run([])
+      assert {:ok, []} = MusubiTs.run([])
 
       assert File.read!(output_path) =~
-               ~s|"Arbor.TestSupport.TypespecProbe": StoreDef<|
+               ~s|"Musubi.TestSupport.TypespecProbe": StoreDef<|
     end
 
     test "--check returns drift diagnostic on mismatch and does not write",
          %{output_path: output_path} do
       File.write!(output_path, "// stale\n")
 
-      assert {:error, [diagnostic]} = ArborTs.run(["--check"])
+      assert {:error, [diagnostic]} = MusubiTs.run(["--check"])
       assert diagnostic.severity == :error
-      assert diagnostic.compiler_name == "arbor_ts"
+      assert diagnostic.compiler_name == "musubi_ts"
       assert diagnostic.file == output_path
       assert File.read!(output_path) == "// stale\n"
     end
 
     test "--check returns :noop when bundle matches", %{output_path: output_path} do
-      assert {:ok, []} = ArborTs.run([])
-      assert ArborTs.run(["--check"]) == :noop
+      assert {:ok, []} = MusubiTs.run([])
+      assert MusubiTs.run(["--check"]) == :noop
       assert File.exists?(output_path)
     end
   end
 
   describe "manifests/0" do
     test "returns the manifest target dir so `mix clean` removes it", %{target: target} do
-      assert ArborTs.manifests() == [target]
+      assert MusubiTs.manifests() == [target]
     end
   end
 
@@ -110,7 +110,7 @@ defmodule Mix.Tasks.Compile.ArborTsTest do
       Manifest.stamp(TypespecProbe, "lib/x.ex", target)
       assert File.dir?(Path.join(target, inspect(TypespecProbe)))
 
-      ArborTs.clean()
+      MusubiTs.clean()
 
       refute File.exists?(target)
     end

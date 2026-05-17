@@ -1,80 +1,80 @@
-defmodule Arbor.Page.PatchEnvelopeTest do
+defmodule Musubi.Page.PatchEnvelopeTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Page.PatchEnvelope
-  alias Arbor.Page.Server
-  alias Arbor.Stream
+  alias Musubi.Page.PatchEnvelope
+  alias Musubi.Page.Server
+  alias Musubi.Stream
 
   defmodule TitleStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
     end
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "Inbox")}
-    @impl Arbor.Store
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :title, "Inbox")}
+    @impl Musubi.Store
     def render(socket), do: %{title: socket.assigns.title}
 
     command :rename do
       payload :title, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:rename, %{"title" => title}, socket),
-      do: {:noreply, Arbor.Socket.assign(socket, :title, title)}
+      do: {:noreply, Musubi.Socket.assign(socket, :title, title)}
   end
 
   defmodule SeedingStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
       stream :messages, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       socket =
         socket
-        |> Arbor.Socket.assign(:title, "Hello")
+        |> Musubi.Socket.assign(:title, "Hello")
         |> Stream.stream_insert(:messages, %{id: "1", body: "first"})
         |> Stream.stream_insert(:messages, %{id: "2", body: "second"})
 
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket), do: %{title: socket.assigns.title, messages: stream(:messages)}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule StreamOnlyHandlerStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
       stream :messages, String.t()
     end
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "static")}
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :title, "static")}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket), do: %{title: socket.assigns.title, messages: stream(:messages)}
 
     command :ping
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:ping, _payload, socket) do
       {:noreply, Stream.stream_insert(socket, :messages, %{id: "n", body: "noop"})}
     end
@@ -83,19 +83,19 @@ defmodule Arbor.Page.PatchEnvelopeTest do
   defmodule NoopStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :ok, boolean()
     end
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ok, true)}
-    @impl Arbor.Store
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :ok, true)}
+    @impl Musubi.Store
     def render(socket), do: %{ok: socket.assigns.ok}
 
     command :ping
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:ping, _payload, socket), do: {:noreply, socket}
   end
 
@@ -127,7 +127,7 @@ defmodule Arbor.Page.PatchEnvelopeTest do
              } = envelope
 
       # Stream-typed `messages` field appears as a marker inside the wire root.
-      assert root_wire["messages"] == %{"__arbor_stream__" => "messages"}
+      assert root_wire["messages"] == %{"__musubi_stream__" => "messages"}
       assert root_wire["title"] == "Hello"
 
       # Stream content flows entirely through stream_ops.

@@ -1,8 +1,8 @@
-defmodule Arbor.LifecycleTest do
+defmodule Musubi.LifecycleTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Lifecycle
-  alias Arbor.Socket
+  alias Musubi.Lifecycle
+  alias Musubi.Socket
 
   defmodule RootStore do
   end

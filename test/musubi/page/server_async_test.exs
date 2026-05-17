@@ -1,28 +1,28 @@
-defmodule Arbor.Page.ServerAsyncTest do
+defmodule Musubi.Page.ServerAsyncTest do
   use ExUnit.Case, async: true
 
-  import Arbor.AsyncTestHelpers
+  import Musubi.AsyncTestHelpers
   import ExUnit.CaptureLog
 
   require Logger
 
-  alias Arbor.Async
-  alias Arbor.AsyncResult
-  alias Arbor.Page.PatchEnvelope
-  alias Arbor.Page.Server
-  alias Arbor.Page.StoreTable
-  alias Arbor.Stream
+  alias Musubi.Async
+  alias Musubi.AsyncResult
+  alias Musubi.Page.PatchEnvelope
+  alias Musubi.Page.Server
+  alias Musubi.Page.StoreTable
+  alias Musubi.Stream
 
   defmodule AsyncStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
-    import Arbor.AsyncTestHelpers
+    import Musubi.AsyncTestHelpers
 
     state do
-      field :profile, Arbor.AsyncResult.of(%{name: String.t()})
-      field :user, Arbor.AsyncResult.of(String.t())
-      field :org, Arbor.AsyncResult.of(String.t())
+      field :profile, Musubi.AsyncResult.of(%{name: String.t()})
+      field :user, Musubi.AsyncResult.of(String.t())
+      field :org, Musubi.AsyncResult.of(String.t())
       field :cache_status, String.t()
       stream_async :messages, %{id: String.t(), body: String.t()}
     end
@@ -90,20 +90,20 @@ defmodule Arbor.Page.ServerAsyncTest do
     @cancel_reasons [:user_left, :user_navigated]
     def __cancel_reasons__, do: @cancel_reasons
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       socket =
         socket
-        |> Arbor.Socket.assign(:profile, AsyncResult.ok(nil, %{name: "cached"}))
-        |> Arbor.Socket.assign(:user, AsyncResult.ok(nil, "cached-user"))
-        |> Arbor.Socket.assign(:org, AsyncResult.ok(nil, "cached-org"))
-        |> Arbor.Socket.assign(:cache_status, "cold")
-        |> Arbor.Socket.assign(:messages, AsyncResult.loading())
+        |> Musubi.Socket.assign(:profile, AsyncResult.ok(nil, %{name: "cached"}))
+        |> Musubi.Socket.assign(:user, AsyncResult.ok(nil, "cached-user"))
+        |> Musubi.Socket.assign(:org, AsyncResult.ok(nil, "cached-org"))
+        |> Musubi.Socket.assign(:cache_status, "cold")
+        |> Musubi.Socket.assign(:messages, AsyncResult.loading())
 
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         profile: socket.assigns.profile,
@@ -114,13 +114,13 @@ defmodule Arbor.Page.ServerAsyncTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load_profile, %{"name" => name}, socket) do
       fun = instrument(test_pid(socket), fn -> {:ok, %{name: name}} end)
-      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
+      {:noreply, Musubi.Async.assign_async(socket, :profile, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load_profile_blocked, %{"name" => name, "tag" => tag}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -129,46 +129,46 @@ defmodule Arbor.Page.ServerAsyncTest do
           end
         end)
 
-      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
+      {:noreply, Musubi.Async.assign_async(socket, :profile, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load_profile_bad_return, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> 123 end)
-      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
+      {:noreply, Musubi.Async.assign_async(socket, :profile, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load_profile_raise, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> raise "boom" end)
-      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
+      {:noreply, Musubi.Async.assign_async(socket, :profile, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load_profile_exit, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> exit(:boom) end)
-      {:noreply, Arbor.Async.assign_async(socket, :profile, fun)}
+      {:noreply, Musubi.Async.assign_async(socket, :profile, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load_identity, _payload, socket) do
-      fun = instrument(test_pid(socket), fn -> {:ok, %{user: "ada", org: "arbor"}} end)
-      {:noreply, Arbor.Async.assign_async(socket, [:user, :org], fun)}
+      fun = instrument(test_pid(socket), fn -> {:ok, %{user: "ada", org: "musubi"}} end)
+      {:noreply, Musubi.Async.assign_async(socket, [:user, :org], fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load_identity_missing_key, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> {:ok, %{user: "ada"}} end)
-      {:noreply, Arbor.Async.assign_async(socket, [:user, :org], fun)}
+      {:noreply, Musubi.Async.assign_async(socket, [:user, :org], fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:start_warm, %{"name" => name}, socket) do
       fun = instrument(test_pid(socket), fn -> {:warmed, name} end)
-      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
+      {:noreply, Musubi.Async.start_async(socket, :warm_cache, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:start_warm_blocked, %{"name" => name, "tag" => tag}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -177,67 +177,67 @@ defmodule Arbor.Page.ServerAsyncTest do
           end
         end)
 
-      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
+      {:noreply, Musubi.Async.start_async(socket, :warm_cache, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:start_warm_raise, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> raise "boom" end)
-      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
+      {:noreply, Musubi.Async.start_async(socket, :warm_cache, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:start_warm_exit, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> exit(:boom) end)
-      {:noreply, Arbor.Async.start_async(socket, :warm_cache, fun)}
+      {:noreply, Musubi.Async.start_async(socket, :warm_cache, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:cancel_warm, %{"reason" => reason}, socket) do
-      {:noreply, Arbor.Async.cancel_async(socket, :warm_cache, String.to_existing_atom(reason))}
+      {:noreply, Musubi.Async.cancel_async(socket, :warm_cache, String.to_existing_atom(reason))}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:raising_handle_async, _payload, socket) do
       fun = instrument(test_pid(socket), fn -> :ok end)
-      {:noreply, Arbor.Async.start_async(socket, :raises, fun)}
+      {:noreply, Musubi.Async.start_async(socket, :raises, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:cancel_profile_by_name, %{"reason" => reason}, socket) do
-      socket = Arbor.Async.cancel_async(socket, :profile, String.to_existing_atom(reason))
+      socket = Musubi.Async.cancel_async(socket, :profile, String.to_existing_atom(reason))
       {:noreply, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:cancel_profile_by_value, %{"reason" => reason}, socket) do
       socket =
-        Arbor.Async.cancel_async(socket, socket.assigns.profile, String.to_existing_atom(reason))
+        Musubi.Async.cancel_async(socket, socket.assigns.profile, String.to_existing_atom(reason))
 
       {:noreply, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:stream_messages, %{"mode" => "ok"}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
           {:ok, [%{id: "m1", body: "First"}, %{id: "m2", body: "Second"}]}
         end)
 
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:stream_messages, %{"mode" => "ok_with_opts"}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
           {:ok, [%{id: "m1", body: "First"}, %{id: "m2", body: "Second"}], at: 0, limit: -100}
         end)
 
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:stream_messages, %{"mode" => "ok_with_reset"}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -245,40 +245,40 @@ defmodule Arbor.Page.ServerAsyncTest do
            reset: true}
         end)
 
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:stream_messages, %{"mode" => "error"}, socket) do
       fun = instrument(test_pid(socket), fn -> {:error, :rate_limited} end)
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:stream_messages, %{"mode" => "bad_return"}, socket) do
       fun = instrument(test_pid(socket), fn -> 123 end)
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:stream_messages, %{"mode" => "not_enumerable"}, socket) do
       fun = instrument(test_pid(socket), fn -> {:ok, 123} end)
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:stream_messages, %{"mode" => "raise"}, socket) do
       fun = instrument(test_pid(socket), fn -> raise "boom" end)
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:stream_messages, %{"mode" => "exit"}, socket) do
       fun = instrument(test_pid(socket), fn -> exit(:boom) end)
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:stream_messages_blocked, %{"tag" => tag}, socket) do
       fun =
         instrument(test_pid(socket), fn ->
@@ -287,26 +287,26 @@ defmodule Arbor.Page.ServerAsyncTest do
           end
         end)
 
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:cancel_messages, %{"reason" => reason}, socket) do
-      socket = Arbor.Async.cancel_async(socket, :messages, String.to_existing_atom(reason))
+      socket = Musubi.Async.cancel_async(socket, :messages, String.to_existing_atom(reason))
       {:noreply, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_async(:warm_cache, {:ok, {:warmed, name}}, socket) do
-      {:noreply, Arbor.Socket.assign(socket, :cache_status, "warm:" <> name)}
+      {:noreply, Musubi.Socket.assign(socket, :cache_status, "warm:" <> name)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_async(:warm_cache, {:exit, reason}, socket) do
-      {:noreply, Arbor.Socket.assign(socket, :cache_status, "exit:" <> inspect(reason))}
+      {:noreply, Musubi.Socket.assign(socket, :cache_status, "exit:" <> inspect(reason))}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_async(:raises, {:ok, _value}, _socket) do
       raise "boom-in-handle-async"
     end
@@ -316,19 +316,19 @@ defmodule Arbor.Page.ServerAsyncTest do
 
   defmodule MissingStreamStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     command :load_messages
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load_messages, _payload, socket) do
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fn -> {:ok, []} end)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fn -> {:ok, []} end)}
     end
   end
 
@@ -377,7 +377,7 @@ defmodule Arbor.Page.ServerAsyncTest do
 
       socket = root_socket(pid)
       assert %AsyncResult{status: :ok, result: "ada"} = socket.assigns.user
-      assert %AsyncResult{status: :ok, result: "arbor"} = socket.assigns.org
+      assert %AsyncResult{status: :ok, result: "musubi"} = socket.assigns.org
     end
 
     test "marks invalid return values as failed" do
@@ -549,7 +549,7 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     test "same-name overwrite keeps the latest result and lazy-discards the stale task" do
-      attach_telemetry_handler!([:arbor, :async, :lazy_discard])
+      attach_telemetry_handler!([:musubi, :async, :lazy_discard])
 
       pid = start!()
 
@@ -573,7 +573,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert_receive {:DOWN, ^first_ref, _, _, _}, 200
       sync_server!(pid)
 
-      assert_received {:telemetry, [:arbor, :async, :lazy_discard], _measurements, metadata}
+      assert_received {:telemetry, [:musubi, :async, :lazy_discard], _measurements, metadata}
       assert %{name: :warm_cache, kind: :start} = metadata
       assert %{assigns: %{cache_status: "warm:second"}} = root_socket(pid)
     end
@@ -581,7 +581,7 @@ defmodule Arbor.Page.ServerAsyncTest do
 
   describe "handle_async/3" do
     test "runtime survives, emits :exception telemetry, processes subsequent commands" do
-      attach_telemetry_handler!([:arbor, :async, :exception])
+      attach_telemetry_handler!([:musubi, :async, :exception])
 
       pid = start!()
 
@@ -590,7 +590,7 @@ defmodule Arbor.Page.ServerAsyncTest do
         await_task!()
         sync_server!(pid)
 
-        assert_received {:telemetry, [:arbor, :async, :exception], _measurements, metadata}
+        assert_received {:telemetry, [:musubi, :async, :exception], _measurements, metadata}
         assert metadata.name == :raises
         assert metadata.kind == :start
         assert is_list(metadata.stacktrace)
@@ -695,7 +695,7 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     test "writes failed on {:error, reason} and leaves the stream slot untouched" do
-      attach_telemetry_handler!([:arbor, :async, :stop])
+      attach_telemetry_handler!([:musubi, :async, :stop])
 
       pid = start!()
 
@@ -703,7 +703,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       await_task!()
       sync_server!(pid)
 
-      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+      assert_received {:telemetry, [:musubi, :async, :stop], _measurements,
                        %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{status: :failed, reason: {:error, :rate_limited}} =
@@ -714,7 +714,7 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     test "marks invalid return values as failed" do
-      attach_telemetry_handler!([:arbor, :async, :stop])
+      attach_telemetry_handler!([:musubi, :async, :stop])
 
       pid = start!()
 
@@ -722,7 +722,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       await_task!()
       sync_server!(pid)
 
-      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+      assert_received {:telemetry, [:musubi, :async, :stop], _measurements,
                        %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
@@ -733,7 +733,7 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     test "marks non-enumerable stream results as failed" do
-      attach_telemetry_handler!([:arbor, :async, :stop])
+      attach_telemetry_handler!([:musubi, :async, :stop])
 
       pid = start!()
 
@@ -743,7 +743,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       await_task!()
       sync_server!(pid)
 
-      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+      assert_received {:telemetry, [:musubi, :async, :stop], _measurements,
                        %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{status: :failed, reason: {:exit, {:error, %ArgumentError{}, _stack}}} =
@@ -754,7 +754,7 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     test "marks raised stream tasks as failed" do
-      attach_telemetry_handler!([:arbor, :async, :stop])
+      attach_telemetry_handler!([:musubi, :async, :stop])
 
       pid = start!()
 
@@ -762,7 +762,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       await_task!()
       sync_server!(pid)
 
-      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+      assert_received {:telemetry, [:musubi, :async, :stop], _measurements,
                        %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{
@@ -772,7 +772,7 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     test "marks exited stream tasks as failed" do
-      attach_telemetry_handler!([:arbor, :async, :stop])
+      attach_telemetry_handler!([:musubi, :async, :stop])
 
       pid = start!()
 
@@ -780,7 +780,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       await_task!()
       sync_server!(pid)
 
-      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+      assert_received {:telemetry, [:musubi, :async, :stop], _measurements,
                        %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{status: :failed, reason: {:exit, :boom}} =
@@ -788,7 +788,7 @@ defmodule Arbor.Page.ServerAsyncTest do
     end
 
     test "cancel_async by name resolves the stream assign to failed" do
-      attach_telemetry_handler!([:arbor, :async, :stop])
+      attach_telemetry_handler!([:musubi, :async, :stop])
 
       pid = start!()
 
@@ -808,7 +808,7 @@ defmodule Arbor.Page.ServerAsyncTest do
       assert_receive {:DOWN, ^ref, _, _, _}, 200
       sync_server!(pid)
 
-      assert_received {:telemetry, [:arbor, :async, :stop], _measurements,
+      assert_received {:telemetry, [:musubi, :async, :stop], _measurements,
                        %{name: :messages, kind: :stream}}
 
       assert %AsyncResult{status: :failed, reason: {:exit, :user_navigated}} =

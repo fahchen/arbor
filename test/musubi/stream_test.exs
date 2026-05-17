@@ -1,25 +1,25 @@
-defmodule Arbor.StreamTest do
+defmodule Musubi.StreamTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Socket
-  alias Arbor.Stream
-  alias Arbor.Stream.Slot
+  alias Musubi.Socket
+  alias Musubi.Stream
+  alias Musubi.Stream.Slot
 
   defmodule MessagesStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       stream :messages, String.t(), limit: -3
       stream :songs, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{messages: stream(:messages), songs: stream(:songs)}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

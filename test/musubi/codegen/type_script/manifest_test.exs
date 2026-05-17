@@ -1,13 +1,13 @@
-defmodule Arbor.Codegen.TypeScript.ManifestTest do
+defmodule Musubi.Codegen.TypeScript.ManifestTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Codegen.TypeScript.Manifest
-  alias Arbor.TestSupport.TypespecProbe
-  alias Arbor.TestSupport.TypespecProbeChild
+  alias Musubi.Codegen.TypeScript.Manifest
+  alias Musubi.TestSupport.TypespecProbe
+  alias Musubi.TestSupport.TypespecProbeChild
 
   setup do
     target =
-      Path.join(System.tmp_dir!(), "arbor_ts_manifest_#{:erlang.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "musubi_ts_manifest_#{:erlang.unique_integer([:positive])}")
 
     File.mkdir_p!(target)
     on_exit(fn -> File.rm_rf!(target) end)
@@ -101,7 +101,7 @@ defmodule Arbor.Codegen.TypeScript.ManifestTest do
 
   describe "__after_compile__/2" do
     test "stamps modules whose source lives outside test/", %{target: target} do
-      Process.put(:__arbor_ts_target_dir__, target)
+      Process.put(:__musubi_ts_target_dir__, target)
 
       env = %{TypespecProbe.__env__() | file: "/abs/lib/whatever/typespec_probe.ex"}
 
@@ -112,7 +112,7 @@ defmodule Arbor.Codegen.TypeScript.ManifestTest do
     end
 
     test "skips modules whose source lives under test/", %{target: target} do
-      Process.put(:__arbor_ts_target_dir__, target)
+      Process.put(:__musubi_ts_target_dir__, target)
 
       env = %Macro.Env{module: TypespecProbe, file: "/abs/test/support/typespec_probe.ex"}
 
@@ -122,7 +122,7 @@ defmodule Arbor.Codegen.TypeScript.ManifestTest do
     end
 
     test "skips modules whose source lives in a top-level test/ file", %{target: target} do
-      Process.put(:__arbor_ts_target_dir__, target)
+      Process.put(:__musubi_ts_target_dir__, target)
 
       env = %Macro.Env{module: TypespecProbe, file: "/abs/test/something_test.exs"}
 
@@ -134,7 +134,7 @@ defmodule Arbor.Codegen.TypeScript.ManifestTest do
     test "expands aliased module references against env.aliases", %{target: target} do
       # Stamp via the real env captured at TypespecProbe's compile time, but
       # rewrite the file path so the test/ filter doesn't skip the write.
-      Process.put(:__arbor_ts_target_dir__, target)
+      Process.put(:__musubi_ts_target_dir__, target)
 
       env = %{TypespecProbe.__env__() | file: "/abs/lib/typespec_probe.ex"}
       Manifest.__after_compile__(env, "")
@@ -143,14 +143,14 @@ defmodule Arbor.Codegen.TypeScript.ManifestTest do
 
       profile_field = Enum.find(fields, fn %{name: name} -> name == :profile end)
 
-      # `field :profile, Arbor.AsyncResult.of(TypespecProbeChild.t())` — the
+      # `field :profile, Musubi.AsyncResult.of(TypespecProbeChild.t())` — the
       # `TypespecProbeChild` reference was a single-segment alias in the
       # source. After expansion, every alias node carries the full path.
       assert {{:., _dot_meta, [aliases, :of]}, _call_meta, [inner]} = profile_field.type
-      assert {:__aliases__, _alias_meta, [:Arbor, :AsyncResult]} = aliases
+      assert {:__aliases__, _alias_meta, [:Musubi, :AsyncResult]} = aliases
       assert {{:., _inner_dot, [inner_alias, :t]}, _inner_call, []} = inner
 
-      assert {:__aliases__, _inner_alias_meta, [:Arbor, :TestSupport, :TypespecProbeChild]} =
+      assert {:__aliases__, _inner_alias_meta, [:Musubi, :TestSupport, :TypespecProbeChild]} =
                inner_alias
     end
   end

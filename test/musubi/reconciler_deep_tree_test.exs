@@ -1,13 +1,13 @@
-defmodule Arbor.ReconcilerDeepTreeTest do
+defmodule Musubi.ReconcilerDeepTreeTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Page.StoreTable
-  alias Arbor.Page.StoreTable.Entry
-  alias Arbor.Resolver
-  alias Arbor.Socket
+  alias Musubi.Page.StoreTable
+  alias Musubi.Page.StoreTable.Entry
+  alias Musubi.Resolver
+  alias Musubi.Socket
 
   defmodule DeepLeafStore do
-    use Arbor.Store
+    use Musubi.Store
 
     attr :seed, String.t(), required: true
 
@@ -15,32 +15,32 @@ defmodule Arbor.ReconcilerDeepTreeTest do
       field :title, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       {:ok, Socket.assign(socket, :title, socket.assigns.seed)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{title: socket.assigns.title}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule DeepMidStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
       field :leaf, DeepLeafStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         title: socket.assigns.title,
@@ -48,26 +48,26 @@ defmodule Arbor.ReconcilerDeepTreeTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule DeepRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :mid, DeepMidStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{mid: child(DeepMidStore, id: "mid", title: socket.assigns.title)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

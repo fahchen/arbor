@@ -1,98 +1,98 @@
-defmodule Arbor.ResolverTest do
+defmodule Musubi.ResolverTest do
   use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog
 
   require Logger
 
-  alias Arbor.AsyncResult
-  alias Arbor.Lifecycle
-  alias Arbor.Page.StoreTable
-  alias Arbor.Page.StoreTable.Entry
-  alias Arbor.Reconciler
-  alias Arbor.Resolver
-  alias Arbor.Socket
+  alias Musubi.AsyncResult
+  alias Musubi.Lifecycle
+  alias Musubi.Page.StoreTable
+  alias Musubi.Page.StoreTable.Entry
+  alias Musubi.Reconciler
+  alias Musubi.Resolver
+  alias Musubi.Socket
 
   defmodule HeaderStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :user_name, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{user_name: socket.assigns.user_name}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule RawMapRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :header, HeaderStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       %{header: %{user_name: "Alice"}}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule PlaceholderRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :header, HeaderStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{header: child(HeaderStore, id: "header", user_name: socket.assigns.user_name)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule MountInertRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
-      {:ok, Arbor.Socket.assign(socket, :tmp, child(HeaderStore, id: "x", user_name: "tmp"))}
+      {:ok, Musubi.Socket.assign(socket, :tmp, child(HeaderStore, id: "x", user_name: "tmp"))}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       %{title: "ready"}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule NestedStreamRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :feed do
@@ -104,55 +104,55 @@ defmodule Arbor.ResolverTest do
       stream :users, %{id: String.t(), name: String.t()}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       %{feed: %{messages: stream(:messages)}, users: stream(:users)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule AsyncStreamRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       stream_async :messages, %{id: String.t(), body: String.t()}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket),
-      do: {:ok, Arbor.Socket.assign(socket, :messages, Arbor.AsyncResult.loading())}
+      do: {:ok, Musubi.Socket.assign(socket, :messages, Musubi.AsyncResult.loading())}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       %{messages: async_stream(:messages)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule MissingStreamRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       stream :messages, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule WrongStreamPathRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :feed do
@@ -160,16 +160,16 @@ defmodule Arbor.ResolverTest do
       end
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{messages: stream(:messages)}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule DuplicateStreamRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :feed do
@@ -177,82 +177,82 @@ defmodule Arbor.ResolverTest do
       end
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       %{feed: %{"messages" => stream(:messages), :messages => stream(:messages)}}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule ListStreamRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       stream :messages, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{messages: []}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule HandWrittenStreamMarkerRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       stream :messages, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
-    def render(_socket), do: %{messages: %{__arbor_stream__: "messages"}}
-    @impl Arbor.Store
+    @impl Musubi.Store
+    def render(_socket), do: %{messages: %{__musubi_stream__: "messages"}}
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule ListChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :label, String.t()
       field :preserved, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       send(socket.assigns.test_pid, {:mount, socket.id})
-      {:ok, Arbor.Socket.assign(socket, :preserved, "mounted-#{socket.id}")}
+      {:ok, Musubi.Socket.assign(socket, :preserved, "mounted-#{socket.id}")}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{label: socket.assigns.label, preserved: socket.assigns.preserved}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule ListRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :items, list(ListChildStore.state())
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         items:
@@ -262,12 +262,12 @@ defmodule Arbor.ResolverTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule DerivedLineChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     attr :line, map(), required: true
 
@@ -276,18 +276,18 @@ defmodule Arbor.ResolverTest do
       field :qty, integer()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, mirror_line(socket, socket.assigns.line)}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{sku: socket.assigns.sku, qty: socket.assigns.qty}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def update(params, socket), do: {:ok, mirror_line(socket, params.line)}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
     defp mirror_line(socket, line) do
@@ -298,16 +298,16 @@ defmodule Arbor.ResolverTest do
   end
 
   defmodule DerivedLineRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :lines, list(DerivedLineChildStore.state())
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         lines:
@@ -317,65 +317,65 @@ defmodule Arbor.ResolverTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule FilterStoreV1 do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :version, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       send(socket.assigns.test_pid, :mounted_v1)
-      {:ok, Arbor.Socket.assign(socket, :version, "v1")}
+      {:ok, Musubi.Socket.assign(socket, :version, "v1")}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{version: socket.assigns.version}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule FilterStoreV2 do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :version, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       send(socket.assigns.test_pid, :mounted_v2)
-      {:ok, Arbor.Socket.assign(socket, :version, "v2")}
+      {:ok, Musubi.Socket.assign(socket, :version, "v2")}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{version: socket.assigns.version}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule ModuleSwapRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :filters, map()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         filters:
@@ -383,40 +383,40 @@ defmodule Arbor.ResolverTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule DuplicateChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :value, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{value: socket.assigns.value}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule DuplicateRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :items, list(DuplicateChildStore.state())
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       %{
         items: [
@@ -426,78 +426,78 @@ defmodule Arbor.ResolverTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule DefaultUpdateChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{title: socket.assigns.title}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule DefaultUpdateRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :child, DefaultUpdateChildStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{child: child(DefaultUpdateChildStore, id: "child", title: socket.assigns.title)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule AssignedChildRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :child, map() | nil
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{child: socket.assigns.child}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule ToggleChildRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :child, map() | nil
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       if socket.assigns.show? do
         %{child: socket.assigns.child}
@@ -506,51 +506,51 @@ defmodule Arbor.ResolverTest do
       end
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule MemoChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       send(socket.assigns.test_pid, :memo_mount)
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       send(socket.assigns.test_pid, :memo_to_state)
       %{title: socket.assigns.title}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def update(_new_assigns, socket) do
       send(socket.assigns.test_pid, :memo_update)
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule MemoRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :child, MemoChildStore.state()
       field :sibling_field, integer()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         child:
@@ -563,111 +563,111 @@ defmodule Arbor.ResolverTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule BadMountChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :value, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(_socket) do
       {:error, :db_unavailable}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       %{value: "never"}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule BadUpdateChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :value, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{value: socket.assigns.value}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def update(_new_assigns, _socket) do
       :bad
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule BadLifecycleRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :child, map()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{child: child(socket.assigns.child_module, id: "child", value: socket.assigns.value)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule RaisingChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :value, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       raise KeyError, key: :value, term: %{}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule RaisingRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :child, map()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       raise KeyError, key: :boom, term: %{}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -699,8 +699,8 @@ defmodule Arbor.ResolverTest do
       assert {:ok, resolved_root, _socket, _registry} = Resolver.resolve(socket, registry)
 
       assert resolved_root == %{
-               header: %{user_name: "Alice", __arbor_store_id__: ["header"]},
-               __arbor_store_id__: []
+               header: %{user_name: "Alice", __musubi_store_id__: ["header"]},
+               __musubi_store_id__: []
              }
     end
 
@@ -711,14 +711,14 @@ defmodule Arbor.ResolverTest do
       assert {:ok, resolved_root, _socket, resolved_registry} = Resolver.resolve(socket, registry)
 
       assert %{
-               feed: %{messages: %{__arbor_stream__: "messages"}},
-               users: %{__arbor_stream__: "users"},
-               __arbor_store_id__: []
+               feed: %{messages: %{__musubi_stream__: "messages"}},
+               users: %{__musubi_stream__: "users"},
+               __musubi_store_id__: []
              } = resolved_root
 
       assert %Entry{wire_state: wire_state} = StoreTable.get(resolved_registry, [])
-      assert %{"feed" => %{"messages" => %{"__arbor_stream__" => "messages"}}} = wire_state
-      assert %{"users" => %{"__arbor_stream__" => "users"}} = wire_state
+      assert %{"feed" => %{"messages" => %{"__musubi_stream__" => "messages"}}} = wire_state
+      assert %{"users" => %{"__musubi_stream__" => "users"}} = wire_state
     end
 
     test "async stream placeholders render markers inside AsyncResult.result" do
@@ -730,19 +730,19 @@ defmodule Arbor.ResolverTest do
       assert %{
                messages: %AsyncResult{
                  status: :loading,
-                 result: %{__arbor_stream__: "messages"},
+                 result: %{__musubi_stream__: "messages"},
                  reason: nil
                },
-               __arbor_store_id__: []
+               __musubi_store_id__: []
              } = resolved_root
 
       assert %Entry{wire_state: wire_state} = StoreTable.get(resolved_registry, [])
 
       assert %{
                "messages" => %{
-                 "__arbor_async__" => true,
+                 "__musubi_async__" => true,
                  "status" => "loading",
-                 "result" => %{"__arbor_stream__" => "messages"},
+                 "result" => %{"__musubi_stream__" => "messages"},
                  "reason" => nil
                }
              } = wire_state
@@ -856,7 +856,7 @@ defmodule Arbor.ResolverTest do
     end
 
     test "Missing id is rejected" do
-      child = Arbor.Child.child(DuplicateChildStore, value: "missing")
+      child = Musubi.Child.child(DuplicateChildStore, value: "missing")
       socket = root_socket(AssignedChildRootStore, %{child: child})
 
       assert_raise ArgumentError, ~r/missing required :id/, fn ->
@@ -865,7 +865,7 @@ defmodule Arbor.ResolverTest do
     end
 
     test "Non-string id is rejected" do
-      child = Arbor.Child.child(DuplicateChildStore, id: 42, value: "bad")
+      child = Musubi.Child.child(DuplicateChildStore, id: 42, value: "bad")
       socket = root_socket(AssignedChildRootStore, %{child: child})
 
       assert_raise ArgumentError, ~r/id must be a binary string/, fn ->
@@ -881,7 +881,7 @@ defmodule Arbor.ResolverTest do
     end
 
     test "Disappearance silently discards the node" do
-      child = Arbor.Child.child(HeaderStore, id: "header", user_name: "Alice")
+      child = Musubi.Child.child(HeaderStore, id: "header", user_name: "Alice")
       socket = root_socket(ToggleChildRootStore, %{show?: true, child: child})
       registry = registry(socket)
 
@@ -953,7 +953,7 @@ defmodule Arbor.ResolverTest do
     end
 
     test "Toggling :if=false then :if=true on the same identity remounts" do
-      child = Arbor.Child.child(ListChildStore, id: "n", label: "Notice", test_pid: self())
+      child = Musubi.Child.child(ListChildStore, id: "n", label: "Notice", test_pid: self())
       socket = root_socket(ToggleChildRootStore, %{show?: true, child: child})
       registry = registry(socket)
 
@@ -1011,7 +1011,7 @@ defmodule Arbor.ResolverTest do
     end
 
     test "Returning {:error, reason} from mount raises" do
-      child = Arbor.Child.child(BadMountChildStore, id: "child")
+      child = Musubi.Child.child(BadMountChildStore, id: "child")
 
       capture_log(fn ->
         pid =

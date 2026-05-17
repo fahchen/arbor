@@ -1,12 +1,12 @@
-defmodule Arbor.WireTest do
+defmodule Musubi.WireTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Wire
+  alias Musubi.Wire
 
   defmodule LeafState do
     @moduledoc false
 
-    use Arbor.State
+    use Musubi.State
 
     state do
       field :title, String.t()
@@ -17,7 +17,7 @@ defmodule Arbor.WireTest do
   defmodule StreamState do
     @moduledoc false
 
-    use Arbor.State
+    use Musubi.State
 
     state do
       stream :messages, String.t()
@@ -46,7 +46,7 @@ defmodule Arbor.WireTest do
              %{"title" => "Inbox", "status" => "paused"}
   end
 
-  test "auto-derives for Arbor.State / Arbor.Store structs" do
+  test "auto-derives for Musubi.State / Musubi.Store structs" do
     state = struct!(LeafState, title: "Inbox", status: :active)
     assert Wire.to_wire(state) == %{"title" => "Inbox", "status" => "active"}
   end
@@ -55,12 +55,12 @@ defmodule Arbor.WireTest do
     state = struct!(StreamState, messages: ["ignored"])
 
     assert Wire.to_wire(state) == %{
-             "messages" => %{"__arbor_stream__" => "messages"}
+             "messages" => %{"__musubi_stream__" => "messages"}
            }
   end
 
-  test "raises a clear error when an unresolved Arbor.Child slips through" do
-    child = Arbor.Child.child(LeafState, id: "x", title: "y")
+  test "raises a clear error when an unresolved Musubi.Child slips through" do
+    child = Musubi.Child.child(LeafState, id: "x", title: "y")
 
     assert_raise ArgumentError, ~r/unresolved child placeholder/, fn ->
       Wire.to_wire(child)

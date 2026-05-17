@@ -1,17 +1,17 @@
-defmodule Arbor.Transport.ChannelTest do
+defmodule Musubi.Transport.ChannelTest do
   use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog
 
   require Logger
 
-  alias Arbor.Page.PatchEnvelope
+  alias Musubi.Page.PatchEnvelope
 
   defmodule TestEndpoint do
     @moduledoc false
-    use Phoenix.Endpoint, otp_app: :arbor
+    use Phoenix.Endpoint, otp_app: :musubi
 
-    socket("/socket", Arbor.Transport.ChannelTest.UserSocket,
+    socket("/socket", Musubi.Transport.ChannelTest.UserSocket,
       websocket: false,
       longpoll: false
     )
@@ -21,7 +21,7 @@ defmodule Arbor.Transport.ChannelTest do
     @moduledoc false
     use Phoenix.Socket
 
-    channel("arbor:*", Arbor.Transport.ChannelTest.ArborChannel)
+    channel("musubi:*", Musubi.Transport.ChannelTest.MusubiChannel)
 
     def connect(_params, socket, _connect_info), do: {:ok, socket}
     def id(_socket), do: nil
@@ -30,30 +30,30 @@ defmodule Arbor.Transport.ChannelTest do
   defmodule RootStore do
     @moduledoc false
 
-    use Arbor.Store, root: true
+    use Musubi.Store, root: true
 
     state do
       field :title, String.t()
     end
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :title, "Inbox")}
-    @impl Arbor.Store
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :title, "Inbox")}
+    @impl Musubi.Store
     def render(socket), do: %{title: socket.assigns.title}
 
     command :rename do
       payload :title, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:rename, %{"title" => title}, socket),
-      do: {:noreply, Arbor.Socket.assign(socket, :title, title)}
+      do: {:noreply, Musubi.Socket.assign(socket, :title, title)}
   end
 
   defmodule ParamStore do
     @moduledoc false
 
-    use Arbor.Store, root: true
+    use Musubi.Store, root: true
 
     attr :room_id, String.t(), required: true
 
@@ -61,33 +61,33 @@ defmodule Arbor.Transport.ChannelTest do
       field :room_id, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket), do: %{room_id: socket.assigns.room_id}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
-  defmodule ArborChannel do
+  defmodule MusubiChannel do
     @moduledoc false
 
-    use Arbor.Transport.Channel,
+    use Musubi.Transport.Channel,
       stores: [
-        Arbor.Transport.ChannelTest.RootStore,
-        Arbor.Transport.ChannelTest.ParamStore
+        Musubi.Transport.ChannelTest.RootStore,
+        Musubi.Transport.ChannelTest.ParamStore
       ]
   end
 
   import Phoenix.ChannelTest
   @endpoint TestEndpoint
 
-  @root_module_str "Arbor.Transport.ChannelTest.RootStore"
+  @root_module_str "Musubi.Transport.ChannelTest.RootStore"
   @root_id "home"
-  @param_module_str "Arbor.Transport.ChannelTest.ParamStore"
+  @param_module_str "Musubi.Transport.ChannelTest.ParamStore"
 
   setup_all do
-    start_supervised!({Phoenix.PubSub, name: Arbor.Transport.ChannelTest.PubSub})
+    start_supervised!({Phoenix.PubSub, name: Musubi.Transport.ChannelTest.PubSub})
     start_supervised!(TestEndpoint)
     :ok
   end
@@ -122,7 +122,7 @@ defmodule Arbor.Transport.ChannelTest do
 
     UserSocket
     |> socket("user_id", %{})
-    |> subscribe_and_join(ArborChannel, "arbor:#{@root_id}", full_payload)
+    |> subscribe_and_join(MusubiChannel, "musubi:#{@root_id}", full_payload)
   end
 
   test "join starts a page server and pushes the initial patch envelope" do
@@ -152,7 +152,7 @@ defmodule Arbor.Transport.ChannelTest do
     assert log =~ "missing required attr :room_id"
   end
 
-  test "command event flows through Arbor.Page.Server.command/4 and replies + patches" do
+  test "command event flows through Musubi.Page.Server.command/4 and replies + patches" do
     {:ok, _reply, socket} = join_root()
 
     assert_push("patch", %{"version" => 1})
@@ -180,7 +180,7 @@ defmodule Arbor.Transport.ChannelTest do
 
     assert_push("patch", %{"version" => 1})
 
-    page_pid = Map.fetch!(socket.assigns, :__arbor_page__)
+    page_pid = Map.fetch!(socket.assigns, :__musubi_page__)
     page_down = Process.monitor(page_pid)
 
     unknown_ref =
@@ -210,20 +210,20 @@ defmodule Arbor.Transport.ChannelTest do
     handler = self()
 
     :telemetry.attach_many(
-      "arbor-channel-test",
+      "musubi-channel-test",
       [
-        [:arbor, :channel, :join],
-        [:arbor, :channel, :terminate]
+        [:musubi, :channel, :join],
+        [:musubi, :channel, :terminate]
       ],
       fn name, _meas, meta, _config -> send(handler, {:channel_event, name, meta}) end,
       nil
     )
 
-    on_exit(fn -> :telemetry.detach("arbor-channel-test") end)
+    on_exit(fn -> :telemetry.detach("musubi-channel-test") end)
 
     {:ok, _reply, channel_socket} = join_root()
 
-    assert_receive {:channel_event, [:arbor, :channel, :join],
+    assert_receive {:channel_event, [:musubi, :channel, :join],
                     %{module: RootStore, id: @root_id, page_pid: page_pid}}
 
     assert is_pid(page_pid)
@@ -234,7 +234,7 @@ defmodule Arbor.Transport.ChannelTest do
     leave_ref = Phoenix.ChannelTest.leave(channel_socket)
     assert_reply(leave_ref, :ok)
 
-    assert_receive {:channel_event, [:arbor, :channel, :terminate],
+    assert_receive {:channel_event, [:musubi, :channel, :terminate],
                     %{module: RootStore, id: @root_id}}
 
     assert_receive {:DOWN, ^page_ref, :process, ^page_pid, _reason}, 1_000
@@ -244,7 +244,7 @@ defmodule Arbor.Transport.ChannelTest do
     assert {:error, %{reason: reason}} =
              UserSocket
              |> socket("user_id", %{})
-             |> subscribe_and_join(ArborChannel, "arbor:home", %{
+             |> subscribe_and_join(MusubiChannel, "musubi:home", %{
                "module" => "MyApp.Unknown",
                "id" => @root_id,
                "params" => %{}

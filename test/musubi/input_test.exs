@@ -1,9 +1,9 @@
-defmodule Arbor.InputTest do
+defmodule Musubi.InputTest do
   use ExUnit.Case, async: true
 
   defmodule AddressInput do
     @moduledoc false
-    use Arbor.Input
+    use Musubi.Input
 
     input do
       field :line1, String.t()
@@ -13,7 +13,7 @@ defmodule Arbor.InputTest do
 
   defmodule UserInput do
     @moduledoc false
-    use Arbor.Input
+    use Musubi.Input
 
     input do
       field :name, String.t()
@@ -36,26 +36,26 @@ defmodule Arbor.InputTest do
   end
 
   describe "Scenario: reflection" do
-    test "exposes :fields and singular __arbor__/2 lookup" do
+    test "exposes :fields and singular __musubi__/2 lookup" do
       assert [
                %{name: :name},
                %{name: :age},
                %{name: :address}
-             ] = UserInput.__arbor__(:fields)
+             ] = UserInput.__musubi__(:fields)
 
-      assert {:ok, %{name: :name}} = UserInput.__arbor__(:field, :name)
-      assert :error = UserInput.__arbor__(:field, :unknown)
+      assert {:ok, %{name: :name}} = UserInput.__musubi__(:field, :name)
+      assert :error = UserInput.__musubi__(:field, :unknown)
     end
 
     test "tags module kind as :input" do
-      assert UserInput.__arbor_kind__() == :input
-      assert Arbor.Input.input_module?(UserInput)
-      refute Arbor.Input.input_module?(Arbor.Socket)
+      assert UserInput.__musubi_kind__() == :input
+      assert Musubi.Input.input_module?(UserInput)
+      refute Musubi.Input.input_module?(Musubi.Socket)
     end
 
     test "no commands or attrs are exposed" do
-      assert [] = UserInput.__arbor__(:commands)
-      assert [] = UserInput.__arbor__(:attrs)
+      assert [] = UserInput.__musubi__(:commands)
+      assert [] = UserInput.__musubi__(:attrs)
     end
   end
 
@@ -67,12 +67,12 @@ defmodule Arbor.InputTest do
         "address" => %{"line1" => "1 Way", "city" => "Town"}
       }
 
-      assert :ok = UserInput.__arbor_validate_input__(wire)
+      assert :ok = UserInput.__musubi_validate_input__(wire)
     end
 
     test "missing field returns error" do
       assert {:error, errors} =
-               UserInput.__arbor_validate_input__(%{"name" => "Alice", "age" => 30})
+               UserInput.__musubi_validate_input__(%{"name" => "Alice", "age" => 30})
 
       assert Enum.any?(errors, fn {path, msg} ->
                path == "$.address" and msg =~ "missing required field"
@@ -81,7 +81,7 @@ defmodule Arbor.InputTest do
 
     test "wrong type returns error" do
       assert {:error, errors} =
-               UserInput.__arbor_validate_input__(%{
+               UserInput.__musubi_validate_input__(%{
                  "name" => "Alice",
                  "age" => "thirty",
                  "address" => %{"line1" => "1 Way", "city" => "Town"}
@@ -94,7 +94,7 @@ defmodule Arbor.InputTest do
 
     test "extra key returns error" do
       assert {:error, errors} =
-               UserInput.__arbor_validate_input__(%{
+               UserInput.__musubi_validate_input__(%{
                  "name" => "Alice",
                  "age" => 30,
                  "address" => %{"line1" => "1 Way", "city" => "Town"},
@@ -107,14 +107,14 @@ defmodule Arbor.InputTest do
     end
 
     test "non-map value returns error" do
-      assert {:error, [{"$", _msg}]} = UserInput.__arbor_validate_input__("not a map")
+      assert {:error, [{"$", _msg}]} = UserInput.__musubi_validate_input__("not a map")
     end
   end
 
-  describe "Scenario: nested input recurses through __arbor_validate_input__" do
+  describe "Scenario: nested input recurses through __musubi_validate_input__" do
     test "nested input mismatches surface from the leaf" do
       assert {:error, errors} =
-               UserInput.__arbor_validate_input__(%{
+               UserInput.__musubi_validate_input__(%{
                  "name" => "Alice",
                  "age" => 30,
                  "address" => %{"line1" => "1 Way", "city" => 99}
@@ -124,7 +124,7 @@ defmodule Arbor.InputTest do
     end
   end
 
-  describe "Scenario: derived Arbor.Wire" do
+  describe "Scenario: derived Musubi.Wire" do
     test "input struct serializes via Wire to a string-keyed map" do
       input = %UserInput{
         name: "Alice",
@@ -136,7 +136,7 @@ defmodule Arbor.InputTest do
                "name" => "Alice",
                "age" => 30,
                "address" => %{"line1" => "1 Way", "city" => "Town"}
-             } = Arbor.Wire.to_wire(input)
+             } = Musubi.Wire.to_wire(input)
     end
   end
 end

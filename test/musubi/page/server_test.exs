@@ -1,9 +1,9 @@
-defmodule Arbor.Page.ServerTest do
+defmodule Musubi.Page.ServerTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Page.Server
-  alias Arbor.Page.Server.State
-  alias Arbor.Page.StoreTable
+  alias Musubi.Page.Server
+  alias Musubi.Page.Server.State
+  alias Musubi.Page.StoreTable
 
   setup do
     Process.flag(:trap_exit, true)
@@ -11,47 +11,47 @@ defmodule Arbor.Page.ServerTest do
   end
 
   defmodule RootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :status, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
-      {:ok, Arbor.Socket.assign(socket, :status, "mounted")}
+      {:ok, Musubi.Socket.assign(socket, :status, "mounted")}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{status: socket.assigns.status}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule TerminatesRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :status, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
-      {:ok, Arbor.Socket.assign(socket, status: "mounted")}
+      {:ok, Musubi.Socket.assign(socket, status: "mounted")}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{status: socket.assigns.status}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def terminate(reason, socket) do
       send(socket.assigns.test_pid, {:root_terminate, reason, socket.assigns.status})
       :ok
@@ -75,44 +75,44 @@ defmodule Arbor.Page.ServerTest do
     assert root_socket.module == RootStore
     assert root_socket.assigns == %{__changed__: %{}, status: "mounted"}
 
-    assert %{before_command: [%{id: Arbor.Hooks.ValidateCommandSchema}]} =
-             Arbor.Socket.get_private(root_socket, :hooks)
+    assert %{before_command: [%{id: Musubi.Hooks.ValidateCommandSchema}]} =
+             Musubi.Socket.get_private(root_socket, :hooks)
 
     # M4: initial render emits the bootstrap envelope (version 1).
     assert version == 1
     assert transport == %{transport_pid: self()}
 
-    assert_receive {:patch, %Arbor.Page.PatchEnvelope{base_version: 0, version: 1}}
+    assert_receive {:patch, %Musubi.Page.PatchEnvelope{base_version: 0, version: 1}}
 
     assert StoreTable.keys(store_table) == [[]]
 
     assert registry_entry = StoreTable.get(store_table, [])
     assert registry_entry.module == RootStore
     assert registry_entry.socket == root_socket
-    assert registry_entry.resolved_state == %{status: "mounted", __arbor_store_id__: []}
+    assert registry_entry.resolved_state == %{status: "mounted", __musubi_store_id__: []}
 
     assert registry_entry.wire_state == %{
              "status" => "mounted",
-             "__arbor_store_id__" => []
+             "__musubi_store_id__" => []
            }
   end
 
   test "default hooks include ValidateCommandSchema everywhere and ValidateRender in dev/test" do
-    default_hooks = Application.get_env(:arbor, :default_hooks, [])
+    default_hooks = Application.get_env(:musubi, :default_hooks, [])
 
     assert Enum.any?(default_hooks, fn
-             {Arbor.Hooks.ValidateCommandSchema, :before_command, _fun} -> true
+             {Musubi.Hooks.ValidateCommandSchema, :before_command, _fun} -> true
              _other -> false
            end)
 
     if Mix.env() in [:dev, :test] do
       assert Enum.any?(default_hooks, fn
-               {Arbor.Hooks.ValidateRender, :after_serialize, _fun} -> true
+               {Musubi.Hooks.ValidateRender, :after_serialize, _fun} -> true
                _other -> false
              end)
     else
       refute Enum.any?(default_hooks, fn
-               {Arbor.Hooks.ValidateRender, :after_serialize, _fun} -> true
+               {Musubi.Hooks.ValidateRender, :after_serialize, _fun} -> true
                _other -> false
              end)
     end
@@ -130,37 +130,37 @@ defmodule Arbor.Page.ServerTest do
   end
 
   defmodule HandleInfoStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :counter, integer()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
-      {:ok, Arbor.Socket.assign(socket, :counter, 0)}
+      {:ok, Musubi.Socket.assign(socket, :counter, 0)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{counter: socket.assigns.counter}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_info(:bump, socket) do
-      {:noreply, Arbor.Socket.update(socket, :counter, &(&1 + 1))}
+      {:noreply, Musubi.Socket.update(socket, :counter, &(&1 + 1))}
     end
   end
 
-  test "catch-all handle_info dispatches to root store and emits [:arbor, :pubsub, :receive]" do
+  test "catch-all handle_info dispatches to root store and emits [:musubi, :pubsub, :receive]" do
     handler = self()
 
     :telemetry.attach(
       "pubsub-receive-test",
-      [:arbor, :pubsub, :receive],
+      [:musubi, :pubsub, :receive],
       fn _name, _meas, meta, _config -> send(handler, {:pubsub_receive, meta}) end,
       nil
     )
@@ -181,7 +181,7 @@ defmodule Arbor.Page.ServerTest do
   end
 
   defmodule DenyStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :status, String.t()
@@ -189,35 +189,35 @@ defmodule Arbor.Page.ServerTest do
 
     command(:do_thing)
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
-      socket = Arbor.Socket.assign(socket, :status, "ready")
+      socket = Musubi.Socket.assign(socket, :status, "ready")
 
       socket =
-        Arbor.Lifecycle.attach_hook(socket, :authz, :before_command, fn _name, _payload, s ->
+        Musubi.Lifecycle.attach_hook(socket, :authz, :before_command, fn _name, _payload, s ->
           {:halt, %{"error" => "forbidden"}, s}
         end)
 
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{status: socket.assigns.status}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:do_thing, _payload, socket) do
       {:noreply, socket}
     end
   end
 
-  test "graceful denial via :before_command halt-with-reply emits [:arbor, :auth, :deny]" do
+  test "graceful denial via :before_command halt-with-reply emits [:musubi, :auth, :deny]" do
     handler = self()
 
     :telemetry.attach(
       "auth-deny-test",
-      [:arbor, :auth, :deny],
+      [:musubi, :auth, :deny],
       fn _name, _meas, meta, _config -> send(handler, {:auth_deny, meta}) end,
       nil
     )
@@ -237,7 +237,7 @@ defmodule Arbor.Page.ServerTest do
     # an unloaded module, which previously caused `root_store?/1` to skip
     # `mount/2` entirely. With `Code.ensure_loaded?/1` in front, the BEAM
     # code server reloads the .beam before the predicate runs.
-    store = Arbor.Test.Fixtures.ColdVMStore
+    store = Musubi.Test.Fixtures.ColdVMStore
     :code.purge(store)
     :code.delete(store)
     refute :erlang.module_loaded(store)

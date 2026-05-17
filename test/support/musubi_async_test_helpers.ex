@@ -1,6 +1,6 @@
-defmodule Arbor.AsyncTestHelpers do
+defmodule Musubi.AsyncTestHelpers do
   @moduledoc """
-  Deterministic timing helpers for `Arbor.Async` and `Arbor.Page.Server` tests.
+  Deterministic timing helpers for `Musubi.Async` and `Musubi.Page.Server` tests.
 
   The contract: every async task body in test stores wraps its real work
   with `instrument/2`, which sends `{@started_msg, task_pid}` to the
@@ -21,12 +21,12 @@ defmodule Arbor.AsyncTestHelpers do
 
   import ExUnit.Assertions
 
-  @started_msg :__arbor_test_task_started__
+  @started_msg :__musubi_test_task_started__
 
   @default_timeout 200
 
   @doc "The marker atom sent by `instrument/2` to announce a spawned task."
-  @spec started_msg() :: :__arbor_test_task_started__
+  @spec started_msg() :: :__musubi_test_task_started__
   def started_msg, do: @started_msg
 
   @doc """

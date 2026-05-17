@@ -1,7 +1,7 @@
-defmodule Arbor.Codegen.TypeScript.TypeRendererTest do
+defmodule Musubi.Codegen.TypeScript.TypeRendererTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Codegen.TypeScript.TypeRenderer
+  alias Musubi.Codegen.TypeScript.TypeRenderer
 
   describe "primitives" do
     test "String.t()" do
@@ -72,9 +72,9 @@ defmodule Arbor.Codegen.TypeScript.TypeRendererTest do
       assert TypeRenderer.render(quote(do: list(String.t()))) == "string[]"
     end
 
-    test "stream(T) renders as Arbor.StreamField<T> phantom marker" do
+    test "stream(T) renders as Musubi.StreamField<T> phantom marker" do
       assert TypeRenderer.render(quote(do: stream(String.t()))) ==
-               "Arbor.StreamField<string>"
+               "Musubi.StreamField<string>"
     end
 
     test "list of nested list" do
@@ -104,7 +104,7 @@ defmodule Arbor.Codegen.TypeScript.TypeRendererTest do
       ast = quote(do: %{feed: %{messages: stream(String.t())}})
 
       assert TypeRenderer.render(ast) ==
-               "{ feed: { messages: Arbor.StreamField<string> } }"
+               "{ feed: { messages: Musubi.StreamField<string> } }"
     end
   end
 
@@ -128,9 +128,9 @@ defmodule Arbor.Codegen.TypeScript.TypeRendererTest do
       assert TypeRenderer.render(ast) == "Array<string | number>"
     end
 
-    test "stream of union renders as Arbor.StreamField<union>" do
+    test "stream of union renders as Musubi.StreamField<union>" do
       ast = quote(do: stream(String.t() | integer()))
-      assert TypeRenderer.render(ast) == "Arbor.StreamField<string | number>"
+      assert TypeRenderer.render(ast) == "Musubi.StreamField<string | number>"
     end
 
     test "union of literal maps" do
@@ -141,32 +141,32 @@ defmodule Arbor.Codegen.TypeScript.TypeRendererTest do
 
   describe "module references" do
     test "Module.t() emits the full Elixir alias path" do
-      ast = quote(do: Arbor.TestSupport.TypespecProbeChild.t())
-      assert TypeRenderer.render(ast) == "Arbor.TestSupport.TypespecProbeChild"
+      ast = quote(do: Musubi.TestSupport.TypespecProbeChild.t())
+      assert TypeRenderer.render(ast) == "Musubi.TestSupport.TypespecProbeChild"
     end
 
-    test "Module.state() emits Arbor.StoreField<\"...\"> phantom marker" do
-      ast = quote(do: Arbor.TestSupport.TypespecProbeChild.state())
+    test "Module.state() emits Musubi.StoreField<\"...\"> phantom marker" do
+      ast = quote(do: Musubi.TestSupport.TypespecProbeChild.state())
 
       assert TypeRenderer.render(ast) ==
-               ~s|Arbor.StoreField<"Arbor.TestSupport.TypespecProbeChild">|
+               ~s|Musubi.StoreField<"Musubi.TestSupport.TypespecProbeChild">|
     end
 
-    test "Arbor.AsyncResult.of(T) renders as Arbor.AsyncField<T>" do
-      ast = quote(do: Arbor.AsyncResult.of(String.t()))
-      assert TypeRenderer.render(ast) == "Arbor.AsyncField<string>"
+    test "Musubi.AsyncResult.of(T) renders as Musubi.AsyncField<T>" do
+      ast = quote(do: Musubi.AsyncResult.of(String.t()))
+      assert TypeRenderer.render(ast) == "Musubi.AsyncField<string>"
     end
 
-    test "AsyncResult.of(stream(T)) renders as Arbor.AsyncField<Arbor.StreamField<T>>" do
-      ast = quote(do: Arbor.AsyncResult.of(stream(String.t())))
-      assert TypeRenderer.render(ast) == "Arbor.AsyncField<Arbor.StreamField<string>>"
+    test "AsyncResult.of(stream(T)) renders as Musubi.AsyncField<Musubi.StreamField<T>>" do
+      ast = quote(do: Musubi.AsyncResult.of(stream(String.t())))
+      assert TypeRenderer.render(ast) == "Musubi.AsyncField<Musubi.StreamField<string>>"
     end
 
     test "AsyncResult.of with cross-module ref" do
-      ast = quote(do: Arbor.AsyncResult.of(Arbor.TestSupport.TypespecProbeChild.t()))
+      ast = quote(do: Musubi.AsyncResult.of(Musubi.TestSupport.TypespecProbeChild.t()))
 
       assert TypeRenderer.render(ast) ==
-               "Arbor.AsyncField<Arbor.TestSupport.TypespecProbeChild>"
+               "Musubi.AsyncField<Musubi.TestSupport.TypespecProbeChild>"
     end
 
     test "non-AsyncResult `.of/1` falls back to unknown" do

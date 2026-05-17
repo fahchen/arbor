@@ -1,29 +1,29 @@
-defmodule Arbor.DSL.AttrTest do
+defmodule Musubi.DSL.AttrTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.DSL.Attr
+  alias Musubi.DSL.Attr
 
   defmodule AttrFixture do
-    use Arbor.Store
+    use Musubi.Store
 
     attr :current_user, String.t(), required: true
     attr :selected, boolean(), default: false
     attr :on_select, (%{id: String.t()} -> any()), required: true
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
-  test "attr metadata is exposed through __arbor__(:attrs)" do
+  test "attr metadata is exposed through __musubi__(:attrs)" do
     assert [
              %{name: :current_user, type: current_user_type, required: true, default: no_default},
              %{name: :selected, type: selected_type, required: false, default: false},
              %{name: :on_select, type: callback_type, required: true, default: no_default_again}
-           ] = AttrFixture.__arbor__(:attrs)
+           ] = AttrFixture.__musubi__(:attrs)
 
     assert no_default == Attr.no_default()
     assert no_default_again == Attr.no_default()

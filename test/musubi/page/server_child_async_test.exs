@@ -1,4 +1,4 @@
-defmodule Arbor.Page.ServerChildAsyncTest do
+defmodule Musubi.Page.ServerChildAsyncTest do
   @moduledoc """
   Verifies async + lifecycle-hook support on child stores: assign_async,
   start_async, cancel_async, stream_async, plus the `:handle_async` and
@@ -8,27 +8,27 @@ defmodule Arbor.Page.ServerChildAsyncTest do
 
   use ExUnit.Case, async: true
 
-  import Arbor.AsyncTestHelpers
+  import Musubi.AsyncTestHelpers
 
-  alias Arbor.AsyncResult
-  alias Arbor.Page.PatchEnvelope
-  alias Arbor.Page.Server
-  alias Arbor.Page.StoreTable
+  alias Musubi.AsyncResult
+  alias Musubi.Page.PatchEnvelope
+  alias Musubi.Page.Server
+  alias Musubi.Page.StoreTable
 
   @async_terminal_events [
-    [:arbor, :async, :stop],
-    [:arbor, :async, :exception]
+    [:musubi, :async, :stop],
+    [:musubi, :async, :exception]
   ]
 
   defmodule WidgetStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
-    import Arbor.AsyncTestHelpers
+    import Musubi.AsyncTestHelpers
 
     state do
       field :data, String.t() | nil
-      field :slow, Arbor.AsyncResult.of(String.t())
+      field :slow, Musubi.AsyncResult.of(String.t())
       stream_async :messages, %{id: String.t(), body: String.t()}
     end
 
@@ -48,28 +48,28 @@ defmodule Arbor.Page.ServerChildAsyncTest do
 
     command :load_messages
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket) do
       hook_pid = socket.assigns.test_pid
 
       socket =
         socket
-        |> Arbor.Lifecycle.attach_hook(:trace_async, :handle_async, fn name, result, sock ->
+        |> Musubi.Lifecycle.attach_hook(:trace_async, :handle_async, fn name, result, sock ->
           send(hook_pid, {:child_handle_async_hook, sock.id, name, result})
           {:cont, sock}
         end)
-        |> Arbor.Lifecycle.attach_hook(:trace_before, :before_command, fn name, payload, sock ->
+        |> Musubi.Lifecycle.attach_hook(:trace_before, :before_command, fn name, payload, sock ->
           send(hook_pid, {:child_before_command_hook, sock.id, name, payload})
           {:cont, sock}
         end)
-        |> Arbor.Socket.assign(:data, nil)
-        |> Arbor.Socket.assign(:slow, AsyncResult.loading())
-        |> Arbor.Socket.assign(:messages, AsyncResult.loading())
+        |> Musubi.Socket.assign(:data, nil)
+        |> Musubi.Socket.assign(:slow, AsyncResult.loading())
+        |> Musubi.Socket.assign(:messages, AsyncResult.loading())
 
       {:ok, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         data: Map.get(socket.assigns, :data),
@@ -78,19 +78,19 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load, %{"id" => id}, socket) do
       fun = instrument(socket.assigns.test_pid, fn -> {:ok, "loaded:" <> id} end)
-      {:reply, %{ok: true}, Arbor.Async.assign_async(socket, :data, fun)}
+      {:reply, %{ok: true}, Musubi.Async.assign_async(socket, :data, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:start_warm, %{"tag" => tag}, socket) do
       fun = instrument(socket.assigns.test_pid, fn -> {:warmed, tag} end)
-      {:noreply, Arbor.Async.start_async(socket, :warm, fun)}
+      {:noreply, Musubi.Async.start_async(socket, :warm, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:start_slow, _payload, socket) do
       fun =
         instrument(socket.assigns.test_pid, fn ->
@@ -99,51 +99,51 @@ defmodule Arbor.Page.ServerChildAsyncTest do
           end
         end)
 
-      {:noreply, Arbor.Async.assign_async(socket, :slow, fun)}
+      {:noreply, Musubi.Async.assign_async(socket, :slow, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:cancel_slow, _payload, socket) do
-      {:noreply, Arbor.Async.cancel_async(socket, :slow, :user_navigated)}
+      {:noreply, Musubi.Async.cancel_async(socket, :slow, :user_navigated)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:load_messages, _payload, socket) do
       fun =
         instrument(socket.assigns.test_pid, fn ->
           {:ok, [%{id: "m1", body: "hi"}, %{id: "m2", body: "yo"}]}
         end)
 
-      {:noreply, Arbor.Async.stream_async(socket, :messages, fun)}
+      {:noreply, Musubi.Async.stream_async(socket, :messages, fun)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_async(:warm, {:ok, {:warmed, _tag}}, socket) do
       send(socket.assigns.test_pid, {:child_handle_async_callback, socket.id, :warm})
       {:noreply, socket}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_async(_name, _result, socket), do: {:noreply, socket}
   end
 
   defmodule RootStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :widget, map()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
-      %{widget: Arbor.Child.child(WidgetStore, id: "w1", test_pid: socket.assigns.test_pid)}
+      %{widget: Musubi.Child.child(WidgetStore, id: "w1", test_pid: socket.assigns.test_pid)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -156,7 +156,7 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       await_task!()
       sync_server!(pid)
 
-      assert_received {:telemetry, [:arbor, :async, :stop], _, %{name: :data, status: :ok}}
+      assert_received {:telemetry, [:musubi, :async, :stop], _, %{name: :data, status: :ok}}
       assert %AsyncResult{status: :ok, result: "loaded:abc"} = child_assign(pid, :data)
     end
 
@@ -205,7 +205,7 @@ defmodule Arbor.Page.ServerChildAsyncTest do
       assert_receive {:DOWN, ^ref, _, _, _}, 200
       sync_server!(pid)
 
-      assert_received {:telemetry, [:arbor, :async, :stop], _, %{name: :slow, status: :failed}}
+      assert_received {:telemetry, [:musubi, :async, :stop], _, %{name: :slow, status: :failed}}
 
       assert %AsyncResult{status: :failed, reason: {:exit, :user_navigated}} =
                child_assign(pid, :slow)
@@ -227,7 +227,7 @@ defmodule Arbor.Page.ServerChildAsyncTest do
                          ]
                        }}
 
-      assert_received {:telemetry, [:arbor, :async, :stop], _, %{name: :messages, status: :ok}}
+      assert_received {:telemetry, [:musubi, :async, :stop], _, %{name: :messages, status: :ok}}
       assert %AsyncResult{status: :ok, result: true} = child_assign(pid, :messages)
     end
   end

@@ -1,7 +1,7 @@
-defmodule Arbor.DiffTest do
+defmodule Musubi.DiffTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Diff
+  alias Musubi.Diff
 
   describe "scalar and map ops" do
     test "tiny scalar change emits a single replace op" do
@@ -83,13 +83,13 @@ defmodule Arbor.DiffTest do
 
   describe "Rule: function values never appear in ops" do
     test "function in current term raises ArgumentError at the diff entry" do
-      assert_raise ArgumentError, ~r/Arbor\.Diff received a function value/, fn ->
+      assert_raise ArgumentError, ~r/Musubi\.Diff received a function value/, fn ->
         Diff.diff(%{"a" => 1}, %{"a" => fn _arg -> :nope end})
       end
     end
 
     test "function in previous term raises ArgumentError" do
-      assert_raise ArgumentError, ~r/Arbor\.Diff received a function value/, fn ->
+      assert_raise ArgumentError, ~r/Musubi\.Diff received a function value/, fn ->
         Diff.diff(%{"a" => fn -> :nope end}, %{"a" => 1})
       end
     end

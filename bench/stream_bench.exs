@@ -9,7 +9,7 @@
 defmodule Bench.StreamStore do
   @moduledoc false
 
-  use Arbor.Store
+  use Musubi.Store
 
   state do
     stream(:items, %{id: String.t(), body: String.t()},
@@ -22,16 +22,16 @@ defmodule Bench.StreamStore do
     payload :n, integer()
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def mount(socket), do: {:ok, socket}
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def handle_command(:bulk_insert, %{"n" => n}, socket) do
     items = for k <- 1..n, do: %{id: Integer.to_string(k), body: "row-#{k}"}
-    {:noreply, Arbor.Stream.stream(socket, :items, items)}
+    {:noreply, Musubi.Stream.stream(socket, :items, items)}
   end
 
-  @impl Arbor.Store
+  @impl Musubi.Store
   def render(socket), do: %{items: Map.get(socket.assigns, :items, [])}
 end
 
@@ -40,7 +40,7 @@ defmodule Bench.StreamHelpers do
 
   def start_page do
     {:ok, pid} =
-      Arbor.Page.Server.start_link({Bench.StreamStore, %{}, %{transport_pid: self()}})
+      Musubi.Page.Server.start_link({Bench.StreamStore, %{}, %{transport_pid: self()}})
 
     Process.unlink(pid)
     drain()
@@ -61,7 +61,7 @@ defmodule Bench.StreamHelpers do
   end
 
   def bulk(pid, n) do
-    {:ok, _} = Arbor.Page.Server.command(pid, [], :bulk_insert, %{"n" => n})
+    {:ok, _} = Musubi.Page.Server.command(pid, [], :bulk_insert, %{"n" => n})
     drain()
     pid
   end

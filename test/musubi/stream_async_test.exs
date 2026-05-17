@@ -1,29 +1,29 @@
-defmodule Arbor.StreamAsyncTest do
+defmodule Musubi.StreamAsyncTest do
   use ExUnit.Case, async: true
 
-  import Arbor.AsyncTestHelpers
+  import Musubi.AsyncTestHelpers
 
-  alias Arbor.Async
-  alias Arbor.AsyncResult
-  alias Arbor.Socket
-  alias Arbor.Stream
+  alias Musubi.Async
+  alias Musubi.AsyncResult
+  alias Musubi.Socket
+  alias Musubi.Stream
 
   defmodule MessagesStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       stream_async :messages, %{id: String.t(), body: String.t()}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket) do
       %{messages: async_stream(:messages)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

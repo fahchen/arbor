@@ -1,15 +1,15 @@
-defmodule Arbor.ResolverRootShortCircuitTest do
+defmodule Musubi.ResolverRootShortCircuitTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Lifecycle
-  alias Arbor.Page.StoreTable
-  alias Arbor.Page.StoreTable.Entry
-  alias Arbor.Resolver
-  alias Arbor.Socket
-  alias Arbor.Stream
+  alias Musubi.Lifecycle
+  alias Musubi.Page.StoreTable
+  alias Musubi.Page.StoreTable.Entry
+  alias Musubi.Resolver
+  alias Musubi.Socket
+  alias Musubi.Stream
 
   defmodule ShortCircuitChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     attr :test_pid, pid(), required: true
 
@@ -17,50 +17,50 @@ defmodule Arbor.ResolverRootShortCircuitTest do
       field :count, integer()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, Socket.assign(socket, :count, 0)}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{count: socket.assigns.count}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule ShortCircuitRootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :child, ShortCircuitChildStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       send(socket.assigns.test_pid, :root_render_called)
       %{child: child(ShortCircuitChildStore, id: "child", test_pid: socket.assigns.test_pid)}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule RootStreamDirtyStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :child, ShortCircuitChildStore.state()
       stream :messages, %{id: String.t()}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       send(socket.assigns.test_pid, :root_render_called)
 
@@ -70,7 +70,7 @@ defmodule Arbor.ResolverRootShortCircuitTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -136,9 +136,9 @@ defmodule Arbor.ResolverRootShortCircuitTest do
 
     assert {:ok,
             %{
-              child: %{count: 0, __arbor_store_id__: ["child"]},
-              messages: %{__arbor_stream__: "messages"},
-              __arbor_store_id__: []
+              child: %{count: 0, __musubi_store_id__: ["child"]},
+              messages: %{__musubi_stream__: "messages"},
+              __musubi_store_id__: []
             }, root_socket, registry} =
              Resolver.resolve(socket, registry(socket))
 
@@ -153,9 +153,9 @@ defmodule Arbor.ResolverRootShortCircuitTest do
 
     assert {:ok,
             %{
-              child: %{count: 0, __arbor_store_id__: ["child"]},
-              messages: %{__arbor_stream__: "messages"},
-              __arbor_store_id__: []
+              child: %{count: 0, __musubi_store_id__: ["child"]},
+              messages: %{__musubi_stream__: "messages"},
+              __musubi_store_id__: []
             }, _next_root_socket, _next_registry} =
              Resolver.resolve(dirty_root_socket, registry)
 

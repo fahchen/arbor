@@ -1,13 +1,13 @@
-defmodule Arbor.Hooks.ValidateRenderTest do
+defmodule Musubi.Hooks.ValidateRenderTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Hooks.ValidateRender
-  alias Arbor.Socket
+  alias Musubi.Hooks.ValidateRender
+  alias Musubi.Socket
 
   defmodule MoneyState do
     @moduledoc false
 
-    use Arbor.State
+    use Musubi.State
 
     state do
       field :amount, integer()
@@ -17,88 +17,88 @@ defmodule Arbor.Hooks.ValidateRenderTest do
   defmodule HeaderStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :user_name, String.t()
       field :avatar_url, String.t() | nil
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{user_name: "Alice", avatar_url: nil}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule TitleStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{title: "Inbox"}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule NullableStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :avatar_url, String.t() | nil
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{avatar_url: nil}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule VariantStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :status, %{type: :active} | %{type: :paused, value: integer()}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{status: %{type: :active}}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule HeaderContainerStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
-    alias Arbor.Hooks.ValidateRenderTest.HeaderStore
+    alias Musubi.Hooks.ValidateRenderTest.HeaderStore
 
     state do
       field :header, HeaderStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{header: %{user_name: "Alice", avatar_url: nil}}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -128,8 +128,8 @@ defmodule Arbor.Hooks.ValidateRenderTest do
   end
 
   test "Scenario: A state module is not a store" do
-    assert true = Arbor.State.runtime_module?(MoneyState)
-    refute Arbor.State.runtime_module?(HeaderStore)
+    assert true = Musubi.State.runtime_module?(MoneyState)
+    refute Musubi.State.runtime_module?(HeaderStore)
   end
 
   test "Scenario: Raw map populates the field without mounting a child store" do
@@ -157,9 +157,9 @@ defmodule Arbor.Hooks.ValidateRenderTest do
                  "header" => %{
                    "user_name" => "Alice",
                    "avatar_url" => nil,
-                   "__arbor_store_id__" => ["header"]
+                   "__musubi_store_id__" => ["header"]
                  },
-                 "__arbor_store_id__" => []
+                 "__musubi_store_id__" => []
                },
                HeaderContainerStore
              )
@@ -173,7 +173,7 @@ defmodule Arbor.Hooks.ValidateRenderTest do
       ValidateRender.after_serialize(:raise, %{"title" => 42}, socket)
     end
 
-    assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1}, metadata}
+    assert_receive {:telemetry_event, [:musubi, :validate, :exception], %{count: 1}, metadata}
 
     assert %{store_module: TitleStore, errors: [{"$.title", _msg} | _rest]} = metadata
   end
@@ -186,9 +186,9 @@ defmodule Arbor.Hooks.ValidateRenderTest do
              ValidateRender.after_serialize(:telemetry, %{"title" => 42}, socket)
 
     # Filter on `store_module: TitleStore` at receive-time so concurrent tests
-    # emitting `[:arbor, :validate, :exception]` for their own stores don't
+    # emitting `[:musubi, :validate, :exception]` for their own stores don't
     # race this assertion.
-    assert_receive {:telemetry_event, [:arbor, :validate, :exception], %{count: 1},
+    assert_receive {:telemetry_event, [:musubi, :validate, :exception], %{count: 1},
                     %{store_module: TitleStore, errors: [{"$.title", _msg} | _rest]}}
   end
 
@@ -200,9 +200,9 @@ defmodule Arbor.Hooks.ValidateRenderTest do
              ValidateRender.after_serialize(:raise, %{"title" => "Inbox"}, socket)
 
     # Filter on `store_module: TitleStore` at receive-time so concurrent tests
-    # emitting `[:arbor, :validate, :stop]` for their own stores don't race
+    # emitting `[:musubi, :validate, :stop]` for their own stores don't race
     # this assertion.
-    assert_receive {:telemetry_event, [:arbor, :validate, :stop], %{count: 1},
+    assert_receive {:telemetry_event, [:musubi, :validate, :stop], %{count: 1},
                     %{store_module: TitleStore, errors: []}}
   end
 
@@ -212,8 +212,8 @@ defmodule Arbor.Hooks.ValidateRenderTest do
     :telemetry.attach_many(
       handler_id,
       [
-        [:arbor, :validate, :stop],
-        [:arbor, :validate, :exception]
+        [:musubi, :validate, :stop],
+        [:musubi, :validate, :exception]
       ],
       fn event, measurements, metadata, pid ->
         send(pid, {:telemetry_event, event, measurements, metadata})

@@ -1,42 +1,42 @@
-defmodule Arbor.WireStitchingTest do
+defmodule Musubi.WireStitchingTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Page.StoreTable
-  alias Arbor.Page.StoreTable.Entry
-  alias Arbor.Resolver
-  alias Arbor.Socket
+  alias Musubi.Page.StoreTable
+  alias Musubi.Page.StoreTable.Entry
+  alias Musubi.Resolver
+  alias Musubi.Socket
 
   defmodule ChildStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :val, integer()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{val: socket.assigns.val}
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule RootStore do
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :title, String.t()
       field :child, ChildStore.state()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket) do
       %{
         title: socket.assigns.title,
@@ -44,7 +44,7 @@ defmodule Arbor.WireStitchingTest do
       }
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 

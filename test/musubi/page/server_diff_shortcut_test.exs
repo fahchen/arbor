@@ -1,14 +1,14 @@
-defmodule Arbor.Page.ServerDiffShortcutTest do
+defmodule Musubi.Page.ServerDiffShortcutTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Page.PatchEnvelope
-  alias Arbor.Page.Server
-  alias Arbor.Page.Server.State
+  alias Musubi.Page.PatchEnvelope
+  alias Musubi.Page.Server
+  alias Musubi.Page.Server.State
 
   defmodule NoopStore do
     @moduledoc false
 
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :ok, boolean()
@@ -16,13 +16,13 @@ defmodule Arbor.Page.ServerDiffShortcutTest do
 
     command :ping
 
-    @impl Arbor.Store
-    def mount(socket), do: {:ok, Arbor.Socket.assign(socket, :ok, true)}
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :ok, true)}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket), do: %{ok: socket.assigns.ok}
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(:ping, _payload, socket), do: {:noreply, socket}
   end
 
@@ -32,7 +32,7 @@ defmodule Arbor.Page.ServerDiffShortcutTest do
     :ok =
       :telemetry.attach(
         handler_id,
-        [:arbor, :diff, :stop],
+        [:musubi, :diff, :stop],
         fn event, measurements, metadata, test_pid ->
           send(test_pid, {{event, measurements, metadata}, self()})
         end,
@@ -49,7 +49,7 @@ defmodule Arbor.Page.ServerDiffShortcutTest do
 
     assert {:ok, %{}} = Server.command(pid, [], :ping, %{})
     assert %State{version: 1, previous_wire_root: %{"ok" => true}} = :sys.get_state(pid)
-    refute_receive {{[:arbor, :diff, :stop], _measurements, _metadata}, ^pid}, 100
+    refute_receive {{[:musubi, :diff, :stop], _measurements, _metadata}, ^pid}, 100
     refute_receive {:patch, _envelope}, 100
   end
 end

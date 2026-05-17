@@ -1,12 +1,12 @@
-defmodule Arbor.Hooks.ValidateCommandSchemaTest do
+defmodule Musubi.Hooks.ValidateCommandSchemaTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Hooks.ValidateCommandSchema
-  alias Arbor.Socket
+  alias Musubi.Hooks.ValidateCommandSchema
+  alias Musubi.Socket
 
   defmodule TargetStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :query, String.t()
@@ -18,27 +18,27 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
 
     command :no_payload
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(socket), do: %{query: Map.get(socket.assigns, :query, "")}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   defmodule HostStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :ok, boolean()
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{ok: true}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
@@ -115,12 +115,12 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
     end
   end
 
-  test "successful validation emits [:arbor, :validate, :command, :stop]" do
+  test "successful validation emits [:musubi, :validate, :command, :stop]" do
     handler_id = "validate-command-#{System.unique_integer([:positive, :monotonic])}"
 
     :telemetry.attach(
       handler_id,
-      [:arbor, :validate, :command, :stop],
+      [:musubi, :validate, :command, :stop],
       fn event, measurements, metadata, pid ->
         send(pid, {:telemetry_event, event, measurements, metadata})
       end,
@@ -138,13 +138,13 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
                socket
              )
 
-    assert_receive {:telemetry_event, [:arbor, :validate, :command, :stop], %{count: 1},
+    assert_receive {:telemetry_event, [:musubi, :validate, :command, :stop], %{count: 1},
                     %{store_module: TargetStore, command: :change_query}}
   end
 
   defmodule AddressInput do
     @moduledoc false
-    use Arbor.Input
+    use Musubi.Input
 
     input do
       field :line1, String.t()
@@ -154,7 +154,7 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
 
   defmodule UserInput do
     @moduledoc false
-    use Arbor.Input
+    use Musubi.Input
 
     input do
       field :name, String.t()
@@ -165,7 +165,7 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
 
   defmodule UserState do
     @moduledoc false
-    use Arbor.State
+    use Musubi.State
 
     state do
       field :name, String.t()
@@ -175,7 +175,7 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
 
   defmodule NestedInputStore do
     @moduledoc false
-    use Arbor.Store
+    use Musubi.Store
 
     state do
       field :ok, boolean()
@@ -201,16 +201,16 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
       payload :tags, list(String.t())
     end
 
-    @impl Arbor.Store
+    @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def render(_socket), do: %{ok: true}
-    @impl Arbor.Store
+    @impl Musubi.Store
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
   end
 
   describe "nested data structures" do
-    test "Arbor.Input nested payload — happy path" do
+    test "Musubi.Input nested payload — happy path" do
       socket = host_socket_targeting(NestedInputStore)
 
       payload = %{
@@ -225,7 +225,7 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
                ValidateCommandSchema.before_command(:create_user, payload, socket)
     end
 
-    test "Arbor.Input nested payload — missing key" do
+    test "Musubi.Input nested payload — missing key" do
       socket = host_socket_targeting(NestedInputStore)
 
       payload = %{"user" => %{"name" => "Alice", "age" => 30}}
@@ -235,7 +235,7 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
       end
     end
 
-    test "Arbor.Input nested payload — wrong type" do
+    test "Musubi.Input nested payload — wrong type" do
       socket = host_socket_targeting(NestedInputStore)
 
       payload = %{
@@ -251,7 +251,7 @@ defmodule Arbor.Hooks.ValidateCommandSchemaTest do
       end
     end
 
-    test "Arbor.State nested payload (cross-type compatibility)" do
+    test "Musubi.State nested payload (cross-type compatibility)" do
       socket = host_socket_targeting(NestedInputStore)
 
       payload = %{"user" => %{"name" => "Alice", "age" => 30}}
