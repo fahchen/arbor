@@ -120,21 +120,24 @@ use Musubi.Socket,
   ]
 ```
 
-The client mounts by module string and root id:
+The client mounts by module string and root id. `mountStore` returns a
+`{ store, unmount }` pair:
 
 ```ts
-await connection.mountStore({
+const { store: cart, unmount } = await connection.mountStore({
   module: "MyApp.Stores.CartPageStore",
   id: "cart:current-user",
   params: { cart_id: "current-user" },
 })
 ```
 
-The same root id cannot be mounted twice on one Musubi connection. Unmounting is
-also root-scoped:
+Calling `mountStore` again with the same root id on one Musubi connection
+attaches to the existing mounted root instead of creating a second
+server-side root. Each caller receives its own `unmount` handle, but the
+underlying root stays mounted until the last caller unmounts:
 
 ```ts
-await connection.unmountStore("cart:current-user")
+await unmount()
 ```
 
 Child stores are server-owned and cannot be mounted or unmounted directly by

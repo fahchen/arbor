@@ -162,12 +162,9 @@ const socket = new Socket("/socket", {
   params: { token: window.userToken },
 })
 
-const connection = await connect(socket)
+const connection = await connect<Musubi.Stores>(socket)
 
-const counter = await connection.mountStore<
-  Musubi.Stores,
-  "MyAppWeb.Stores.CounterStore"
->({
+const { store: counter, unmount } = await connection.mountStore({
   module: "MyAppWeb.Stores.CounterStore",
   id: "counter",
   params: { count: 1 },
@@ -176,10 +173,15 @@ const counter = await connection.mountStore<
 console.log(counter.count)
 
 await counter.dispatchCommand("increment", { amount: 1 })
+await unmount()
 ```
 
-The `id` must be unique within the Musubi connection. A single connection can
-mount many root stores as long as each root id is distinct.
+`connect<R>(socket)` binds the registry once; later `mountStore` calls
+infer the store type from the `module` literal alone. React consumers
+typically use `createMusubi<Musubi.Stores>()` from `@musubi/react` to
+get the same inference across hooks. The `id` must be unique within the
+Musubi connection — a single connection can mount many root stores as
+long as each root id is distinct.
 
 ## 6. Regenerate Types
 

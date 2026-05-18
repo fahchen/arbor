@@ -25,22 +25,21 @@ Runtime keys are deliberately stable. In particular, keep
 ## Public Client Shape
 
 Applications create one Phoenix socket, open one Musubi connection, and mount
-declared roots through that connection.
-The generated `Musubi.Stores` registry type is threaded into the client API;
-the `module` string literal selects the concrete store type and is validated
-against roots declared by the backend socket module.
+declared roots through that connection. The generated `Musubi.Stores`
+registry type is bound to the API exactly once — via the `R` generic on
+`connect<R>(socket)`, or via `createMusubi<R>()` in `@musubi/react` —
+and the `module` string literal then drives type inference for every
+later `mountStore` call. `mountStore` returns a `{ store, unmount }`
+pair.
 
 ```ts
 const phx = new Phoenix.Socket("/socket", {
   params: { token: window.userToken },
 })
 
-const connection = await connect(phx)
+const connection = await connect<Musubi.Stores>(phx)
 
-const cart = await connection.mountStore<
-  Musubi.Stores,
-  "MyApp.Stores.CartPageStore"
->({
+const { store: cart, unmount } = await connection.mountStore({
   module: "MyApp.Stores.CartPageStore",
   id: "cart:page",
   params: { cart_id: "cart:page" },
@@ -51,6 +50,8 @@ cart.header.title
 cart.lines.map((line) => line.name)
 
 const reply = await cart.dispatchCommand("checkout", {})
+
+await unmount()
 ```
 
 The backend socket module declares the root-store allowlist and implements only
@@ -79,7 +80,9 @@ Public rules:
 - callers open one connection and mount roots by module name plus root id
 - callers do not pass generated runtime values
 - callers do not decode patches, streams, or async wire values manually
-- callers may explicitly unmount mounted roots with `connection.unmountStore(rootId)`
+- callers may explicitly unmount a mounted root by awaiting the `unmount`
+  closure returned from `mountStore`
+- `connection.disconnect()` returns `Promise<void>`
 - child stores are exposed as nested proxies
 - streams are exposed as materialized arrays
 - async values are exposed as normalized `AsyncResult<T>`
@@ -109,7 +112,7 @@ type MountStore = {
 ```
 
 The `module` string must match a root store module declared by the backend
-connection. The `id` must be unique within that connection.
+connection. The `id` must be explicit and unique within that connection.
 
 Mounted store identity inside a connected tree is:
 
@@ -313,34 +316,43 @@ Marker rules:
 
 ## Client Projection
 
-The client package derives public proxy and snapshot types from the generated
-registry.
+The client package exports an empty augmentable `Registry` interface and
+derives public proxy and snapshot types from it. User-facing helpers
+take the module key first and default the registry to `Registry`; the
+registry itself is bound for the connection by `connect<R>(socket)` or
+`createMusubi<R>()`, not threaded through every call.
 
 ```ts
-type StoreModule<R> = Extract<keyof R, string>
-type DefOf<R, M extends StoreModule<R>> = R[M & keyof R]
+// Empty by default; users pass their generated `Musubi.Stores` as `R`.
+interface Registry {}
 
-type StoreSnapshot<R, M extends StoreModule<R>> = {
+type StoreModule<R = Registry> = Extract<keyof R, string>
+type DefOf<M extends StoreModule<R>, R = Registry> = R[M & keyof R]
+
+type StoreSnapshot<M extends StoreModule<R>, R = Registry> = {
   readonly __musubi_store_id__: StoreId
 } & {
-  [K in keyof ShapeOf<R, M>]: SnapshotValue<R, ShapeOf<R, M>[K]>
+  [K in keyof ShapeOf<M, R>]: SnapshotValue<ShapeOf<M, R>[K], R>
 }
 
-interface StoreRuntime<R, M extends StoreModule<R>> {
+interface StoreRuntime<M extends StoreModule<R>, R = Registry> {
   readonly __musubi_store_id__: StoreId
-  dispatchCommand<K extends CommandName<R, M>>(
+  dispatchCommand<K extends CommandName<M, R>>(
     name: K,
-    payload: CommandPayload<R, M, K>
-  ): Promise<CommandReply<R, M, K>>
+    payload: CommandPayload<M, K, R>
+  ): Promise<CommandReply<M, K, R>>
   subscribe(listener: () => void): () => void
-  snapshot(): StoreSnapshot<R, M>
+  snapshot(): StoreSnapshot<M, R>
 }
 
-type StoreProxy<R, M extends StoreModule<R>> =
-  StoreRuntime<R, M> & {
-    [K in keyof ShapeOf<R, M>]: ProxyValue<R, ShapeOf<R, M>[K]>
+type StoreProxy<M extends StoreModule<R>, R = Registry> =
+  StoreRuntime<M, R> & {
+    [K in keyof ShapeOf<M, R>]: ProxyValue<ShapeOf<M, R>[K], R>
   }
 ```
+
+`SnapshotValue<T, R = Registry>` and `ProxyValue<T, R = Registry>` keep
+`T` first because `T` is a projected wire type, not a module key.
 
 Reserved runtime member names on every store proxy:
 
