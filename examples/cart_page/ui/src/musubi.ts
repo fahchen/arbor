@@ -1,9 +1,13 @@
 import { Socket } from "phoenix"
-import { connect } from "@musubi/client"
+import { createMusubi } from "@musubi/react"
 
-// The generated `musubi.d.ts` is ambient — tsc auto-loads it from
-// `src/generated/musubi.d.ts` via the project's `include` glob, so no
-// side-effect import is required.
+// One factory call binds R (the generated `Musubi.Stores`) for the
+// connection and every hook. Subsequent `useMusubiRoot`, `useMusubiSnapshot`,
+// and `useMusubiCommand` calls infer the store type from the `module`
+// string literal alone — no generic threading at call sites.
+//
+// tsc auto-loads `src/generated/musubi.d.ts` via the project's `include`
+// glob; no side-effect import required.
 
 export const socket = new Socket("/socket", {})
 
@@ -18,6 +22,11 @@ export const CART_PAGE_ROOT = {
   }
 } as const
 
-export function connectMusubi() {
-  return connect(socket)
-}
+export const {
+  connect,
+  MusubiProvider,
+  useMusubiCommand,
+  useMusubiConnection,
+  useMusubiRoot,
+  useMusubiSnapshot
+} = createMusubi<Musubi.Stores>()

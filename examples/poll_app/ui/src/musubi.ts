@@ -1,9 +1,11 @@
 import { Socket } from "phoenix"
-import { connect } from "@musubi/client"
-import type { MountStoreOptions } from "@musubi/client"
+import { createMusubi } from "@musubi/react"
+import type { MountStoreOptions } from "@musubi/react"
 
-// The generated `musubi.d.ts` is ambient — tsc auto-loads it from
-// `src/generated/musubi.d.ts` via the project's `include` glob.
+// One factory call binds R (the generated `Musubi.Stores`) for the
+// connection and every hook. Subsequent `useMusubiRoot`, `useMusubiSnapshot`,
+// and `useMusubiCommand` calls infer the store type from the `module`
+// string literal alone — no generic threading at call sites.
 
 // In dev the Vite WebSocket proxy has issues, so connect directly to the
 // Phoenix backend. In production the built assets are served by Phoenix and
@@ -22,7 +24,7 @@ export const DASHBOARD_ROOT = {
 
 export function pollRoomRoot(
   pollId: string
-): MountStoreOptions<Musubi.Stores, "PollApp.Stores.PollRoomStore"> {
+): MountStoreOptions<"PollApp.Stores.PollRoomStore", Musubi.Stores> {
   return {
     module: "PollApp.Stores.PollRoomStore",
     id: pollId,
@@ -30,6 +32,11 @@ export function pollRoomRoot(
   }
 }
 
-export function connectMusubi() {
-  return connect(socket)
-}
+export const {
+  connect,
+  MusubiProvider,
+  useMusubiCommand,
+  useMusubiConnection,
+  useMusubiRoot,
+  useMusubiSnapshot
+} = createMusubi<Musubi.Stores>()
