@@ -27,7 +27,6 @@ export interface MountedStore<M extends StoreModule<R>, R> {
 }
 
 export interface MusubiConnection<R> {
-  readonly topic: string
   mountStore<M extends StoreModule<R>>(
     options: MountStoreOptions<M, R>
   ): Promise<MountedStore<M, R>>
@@ -63,8 +62,6 @@ export async function connect<R>(
 
 function buildConnectionApi<R>(connectionState: ConnectionState): MusubiConnection<R> {
   return {
-    topic: connectionState.topic,
-
     async mountStore<M extends StoreModule<R>>(
       options: MountStoreOptions<M, R>
     ): Promise<MountedStore<M, R>> {
