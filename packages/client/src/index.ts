@@ -1,4 +1,6 @@
 export { connect } from "./connect"
+export { MusubiCommandError } from "./error"
+export type { MusubiCommandErrorKind, MusubiCommandErrorOptions } from "./error"
 export type {
   ConnectOptions,
   MountStoreOptions,

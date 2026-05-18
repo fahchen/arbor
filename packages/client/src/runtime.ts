@@ -1,3 +1,4 @@
+import { MusubiCommandError } from "./error"
 import { applyPatch, parsePointer } from "./patch"
 import {
   applyStreamOps,
@@ -302,11 +303,24 @@ export function dispatchConnectionCommand<Reply>(
       })
       .receive("error", (reply) => {
         cleanup()
-        reject(new Error(`Command failed: ${JSON.stringify(reply)}`))
+        reject(
+          new MusubiCommandError({
+            kind: "failed",
+            command: name,
+            storeId: [...storeId],
+            reply
+          })
+        )
       })
       .receive("timeout", () => {
         cleanup()
-        reject(new Error("Command timed out"))
+        reject(
+          new MusubiCommandError({
+            kind: "timeout",
+            command: name,
+            storeId: [...storeId]
+          })
+        )
       })
   })
 }
