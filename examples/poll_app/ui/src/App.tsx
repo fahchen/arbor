@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { SubmitEvent } from "react"
-import type { StoreProxy } from "@musubi/react"
+import { MusubiCommandError, type StoreProxy } from "@musubi/react"
 
 import {
   DASHBOARD_ROOT,
@@ -9,6 +9,14 @@ import {
   useMusubiRoot,
   useMusubiSnapshot
 } from "./musubi"
+
+function formatCommandError(error: unknown, label: string): string {
+  if (MusubiCommandError.is(error)) {
+    if (error.kind === "timeout") return `${label} timed out`
+    return `${label} failed: ${error.code ?? error.message}`
+  }
+  return error instanceof Error ? error.message : `${label} failed.`
+}
 
 type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
 
@@ -157,7 +165,7 @@ function PollRoomView({
   const toggleStatusCmd = useMusubiCommand(root, "toggle_status")
 
   const [feedback, setFeedback] = useState("")
-  const [busy, setBusy] = useState(false)
+  const busy = voteCmd.isPending || resetVoteCmd.isPending
 
   const poll = page.poll
   const options = page.options ?? []
@@ -191,41 +199,40 @@ function PollRoomView({
 
   async function handleVote(optionId: string, target: HTMLElement) {
     if (isClosed || busy) return
-    setBusy(true)
 
     try {
-      const reply = await voteCmd({ option_id: optionId }) as { status: string }
+      const reply = (await voteCmd.dispatch({ option_id: optionId })) as { status: string }
       if (reply.status === "closed") setFeedback("Poll is closed.")
       else if (reply.status === "voted") {
         setFeedback("Vote cast.")
         spawnParticles(target)
       }
     } catch (e) {
-      setFeedback(e instanceof Error ? e.message : "Vote failed.")
-    } finally {
-      setBusy(false)
+      // demonstrate structured-error code access
+      if (MusubiCommandError.is(e) && e.code) {
+        setFeedback(`Vote rejected (${e.code})`)
+      } else {
+        setFeedback(formatCommandError(e, "Vote"))
+      }
     }
   }
 
   async function handleResetVote() {
     if (busy) return
-    setBusy(true)
 
     try {
-      await resetVoteCmd({})
+      await resetVoteCmd.dispatch({})
       setFeedback("Vote removed.")
     } catch (e) {
-      setFeedback(e instanceof Error ? e.message : "Reset failed.")
-    } finally {
-      setBusy(false)
+      setFeedback(formatCommandError(e, "Reset"))
     }
   }
 
   async function handleToggleStatus() {
     try {
-      await toggleStatusCmd({})
+      await toggleStatusCmd.dispatch({})
     } catch (e) {
-      setFeedback(e instanceof Error ? e.message : "Toggle failed.")
+      setFeedback(formatCommandError(e, "Toggle"))
     }
   }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import type { SubmitEvent } from "react"
-import type { StoreProxy } from "@musubi/react"
+import { MusubiCommandError, type StoreProxy } from "@musubi/react"
 
 import {
   CHAT_ROOM_ROOT,
@@ -8,6 +8,14 @@ import {
   useMusubiRoot,
   useMusubiSnapshot
 } from "./musubi"
+
+function formatCommandError(error: unknown, label: string): string {
+  if (MusubiCommandError.is(error)) {
+    if (error.kind === "timeout") return `${label} timed out`
+    return `${label} failed: ${error.code ?? error.message}`
+  }
+  return error instanceof Error ? error.message : `${label} failed.`
+}
 
 type RootModule = "ChatRoom.Stores.ChatRoomStore"
 type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
@@ -36,7 +44,7 @@ function ChatRoom({ root }: { root: Store<RootModule> }) {
   const [nameDraft, setNameDraft] = useState("")
   const [body, setBody] = useState("")
   const [feedback, setFeedback] = useState("")
-  const [busy, setBusy] = useState<"name" | "send" | null>(null)
+  const busy = setName.isPending ? "name" : sendMessage.isPending ? "send" : null
 
   const currentUser = room.current_user
   const onlineUsers = room.online_users
@@ -59,15 +67,11 @@ function ChatRoom({ root }: { root: Store<RootModule> }) {
       return
     }
 
-    setBusy("name")
-
     try {
-      const reply = await setName({ name: nextName })
+      const reply = await setName.dispatch({ name: nextName })
       setFeedback(`Name updated to ${reply.name}.`)
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Name update failed.")
-    } finally {
-      setBusy(null)
+      setFeedback(formatCommandError(error, "Name update"))
     }
   }
 
@@ -81,16 +85,12 @@ function ChatRoom({ root }: { root: Store<RootModule> }) {
       return
     }
 
-    setBusy("send")
-
     try {
-      const reply = await sendMessage({ body: nextBody })
+      const reply = await sendMessage.dispatch({ body: nextBody })
       setFeedback(reply.queued ? "Message queued for async delivery." : "Send request returned.")
       setBody("")
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Message send failed.")
-    } finally {
-      setBusy(null)
+      setFeedback(formatCommandError(error, "Message send"))
     }
   }
 

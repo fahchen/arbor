@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { SubmitEvent } from "react"
-import type { StoreProxy } from "@musubi/react"
+import { MusubiCommandError, type StoreProxy } from "@musubi/react"
 
 import {
   CART_PAGE_ROOT,
@@ -8,6 +8,14 @@ import {
   useMusubiRoot,
   useMusubiSnapshot
 } from "./musubi"
+
+function formatCommandError(error: unknown, label: string): string {
+  if (MusubiCommandError.is(error)) {
+    if (error.kind === "timeout") return `${label} timed out`
+    return `${label} failed: ${error.code ?? error.message}`
+  }
+  return error instanceof Error ? error.message : `${label} failed.`
+}
 
 type RootModule = "CartPage.Stores.CartPageStore"
 type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
@@ -60,7 +68,13 @@ function CartPage({ root }: { root: Store<RootModule> }) {
 
   const [sku, setSku] = useState<(typeof PRODUCT_OPTIONS)[number]["sku"]>("mug")
   const [feedback, setFeedback] = useState<string>("")
-  const [busy, setBusy] = useState<"add" | "checkout" | "remove" | null>(null)
+  const busy = addItem.isPending
+    ? "add"
+    : checkout.isPending
+      ? "checkout"
+      : removeLine.isPending
+        ? "remove"
+        : null
 
   const selectedProduct = useMemo(
     () => PRODUCT_OPTIONS.find((option) => option.sku === sku) ?? PRODUCT_OPTIONS[0],
@@ -81,27 +95,21 @@ function CartPage({ root }: { root: Store<RootModule> }) {
 
   async function handleAddItem(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    setBusy("add")
-
     try {
-      const reply = (await addItem({ sku })) as Record<string, never> | { error: string }
+      const reply = (await addItem.dispatch({ sku })) as Record<string, never> | { error: string }
       setFeedback(
         "error" in reply
           ? `Add failed: ${reply.error}`
           : `Added ${selectedProduct.label} to demo-cart.`
       )
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Add failed.")
-    } finally {
-      setBusy(null)
+      setFeedback(formatCommandError(error, "Add"))
     }
   }
 
   async function handleCheckout() {
-    setBusy("checkout")
-
     try {
-      const reply = (await checkout({})) as { order_id?: string; error?: string }
+      const reply = (await checkout.dispatch({})) as { order_id?: string; error?: string }
 
       if (reply.order_id) {
         setFeedback(`Checkout succeeded: ${reply.order_id}`)
@@ -111,22 +119,16 @@ function CartPage({ root }: { root: Store<RootModule> }) {
         setFeedback("Checkout completed.")
       }
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Checkout failed.")
-    } finally {
-      setBusy(null)
+      setFeedback(formatCommandError(error, "Checkout"))
     }
   }
 
   async function handleRemoveLine(id: string) {
-    setBusy("remove")
-
     try {
-      await removeLine({ id })
+      await removeLine.dispatch({ id })
       setFeedback("Line removed.")
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Remove failed.")
-    } finally {
-      setBusy(null)
+      setFeedback(formatCommandError(error, "Remove"))
     }
   }
 
@@ -292,18 +294,14 @@ function CartLine({
   const line = useMusubiSnapshot(lineProxy)
   const incQty = useMusubiCommand(lineProxy, "inc_qty")
   const decQty = useMusubiCommand(lineProxy, "dec_qty")
-  const [pending, setPending] = useState<"inc" | "dec" | null>(null)
+  const pending = incQty.isPending ? "inc" : decQty.isPending ? "dec" : null
 
   async function step(kind: "inc" | "dec") {
-    setPending(kind)
-
     try {
-      const reply = await (kind === "inc" ? incQty({}) : decQty({}))
+      const reply = await (kind === "inc" ? incQty.dispatch({}) : decQty.dispatch({}))
       onFeedback(`Line ${line.sku} -> qty ${reply.qty}`)
     } catch (error) {
-      onFeedback(error instanceof Error ? error.message : "Qty update failed.")
-    } finally {
-      setPending(null)
+      onFeedback(formatCommandError(error, "Qty update"))
     }
   }
 
