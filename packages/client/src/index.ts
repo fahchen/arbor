@@ -22,7 +22,6 @@ export type {
   JsonPatchOp,
   PatchEnvelope,
   ProxyValue,
-  Registry,
   ShapeOf,
   SnapshotValue,
   StoreId,

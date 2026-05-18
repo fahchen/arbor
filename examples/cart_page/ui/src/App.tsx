@@ -9,9 +9,8 @@ import {
   useMusubiSnapshot
 } from "./musubi"
 
-type Registry = Musubi.Stores
 type RootModule = "CartPage.Stores.CartPageStore"
-type Store<M extends keyof Registry & string> = StoreProxy<M, Registry>
+type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
 
 const PRODUCT_OPTIONS = [
   {

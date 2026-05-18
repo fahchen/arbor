@@ -14,7 +14,6 @@ import {
   type MountStoreOptions,
   type MountedStore,
   type MusubiConnection,
-  type Registry,
   type SocketLike,
   type StoreModule,
   type StoreProxy,
@@ -36,7 +35,6 @@ export type {
   MountedStore,
   MusubiConnection,
   PatchEnvelope,
-  Registry,
   StoreId,
   StoreModule,
   StoreProxy,
@@ -49,14 +47,14 @@ export type {
 // Public types
 // ---------------------------------------------------------------------------
 
-export type MusubiRootMount<M extends StoreModule<R>, R = Registry> =
+export type MusubiRootMount<M extends StoreModule<R>, R> =
   | { status: "loading"; store: null; error: null }
   | { status: "ready"; store: StoreProxy<M, R>; error: null }
   | { status: "error"; store: null; error: Error }
 
 export type UseMusubiRootOptions<
   M extends StoreModule<R>,
-  R = Registry
+  R
 > = MountStoreOptions<M, R> & {
   unmountOnCleanup?: boolean
 }
@@ -100,11 +98,10 @@ export interface MusubiFactory<R> {
  *     } = createMusubi<Musubi.Stores>()
  *
  * Each call returns a fresh React context and hook set, so multiple
- * factories can coexist (tests, multi-registry setups). Bare
- * `createMusubi()` defaults `R` to the empty `Registry` — useful only
- * when no generated stores exist yet.
+ * factories can coexist (tests, multi-registry setups). `R` is required —
+ * pass your generated `Musubi.Stores` type (or any store-map type).
  */
-export function createMusubi<R = Registry>(): MusubiFactory<R> {
+export function createMusubi<R>(): MusubiFactory<R> {
   const ConnectionContext = createContext<MusubiConnection<R> | null>(null)
 
   const MusubiProvider: FC<{

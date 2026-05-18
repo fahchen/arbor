@@ -316,26 +316,25 @@ Marker rules:
 
 ## Client Projection
 
-The client package exports an empty augmentable `Registry` interface and
-derives public proxy and snapshot types from it. User-facing helpers
-take the module key first and default the registry to `Registry`; the
-registry itself is bound for the connection by `connect<R>(socket)` or
-`createMusubi<R>()`, not threaded through every call.
+The client package derives public proxy and snapshot types from a
+caller-supplied registry type `R`. User-facing helpers take the module
+key first and require `R` as the second generic. The registry itself is
+bound once for the connection by `connect<R>(socket)` or
+`createMusubi<R>()`, not threaded through every call. Consumers pass
+their generated `Musubi.Stores` type (or any store-map type) directly —
+there is no intermediate `Registry` symbol.
 
 ```ts
-// Empty by default; users pass their generated `Musubi.Stores` as `R`.
-interface Registry {}
+type StoreModule<R> = Extract<keyof R, string>
+type DefOf<M extends StoreModule<R>, R> = R[M & keyof R]
 
-type StoreModule<R = Registry> = Extract<keyof R, string>
-type DefOf<M extends StoreModule<R>, R = Registry> = R[M & keyof R]
-
-type StoreSnapshot<M extends StoreModule<R>, R = Registry> = {
+type StoreSnapshot<M extends StoreModule<R>, R> = {
   readonly __musubi_store_id__: StoreId
 } & {
   [K in keyof ShapeOf<M, R>]: SnapshotValue<ShapeOf<M, R>[K], R>
 }
 
-interface StoreRuntime<M extends StoreModule<R>, R = Registry> {
+interface StoreRuntime<M extends StoreModule<R>, R> {
   readonly __musubi_store_id__: StoreId
   dispatchCommand<K extends CommandName<M, R>>(
     name: K,
@@ -345,14 +344,14 @@ interface StoreRuntime<M extends StoreModule<R>, R = Registry> {
   snapshot(): StoreSnapshot<M, R>
 }
 
-type StoreProxy<M extends StoreModule<R>, R = Registry> =
+type StoreProxy<M extends StoreModule<R>, R> =
   StoreRuntime<M, R> & {
     [K in keyof ShapeOf<M, R>]: ProxyValue<ShapeOf<M, R>[K], R>
   }
 ```
 
-`SnapshotValue<T, R = Registry>` and `ProxyValue<T, R = Registry>` keep
-`T` first because `T` is a projected wire type, not a module key.
+`SnapshotValue<T, R>` and `ProxyValue<T, R>` keep `T` first because `T`
+is a projected wire type, not a module key.
 
 Reserved runtime member names on every store proxy:
 

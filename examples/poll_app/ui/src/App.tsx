@@ -10,8 +10,7 @@ import {
   useMusubiSnapshot
 } from "./musubi"
 
-type Registry = Musubi.Stores
-type Store<M extends keyof Registry & string> = StoreProxy<M, Registry>
+type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
 
 // ---------------------------------------------------------------------------
 // Root shell — connects the Phoenix socket once, then switches between pages

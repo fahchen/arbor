@@ -6,7 +6,7 @@ import {
   unmountConnectionRoot
 } from "./runtime"
 import type { ConnectionState, SocketLike } from "./runtime"
-import type { Registry, StoreModule, StoreProxy } from "./types"
+import type { StoreModule, StoreProxy } from "./types"
 
 export interface ConnectOptions {
   topic?: string
@@ -14,19 +14,19 @@ export interface ConnectOptions {
 
 export interface MountStoreOptions<
   M extends StoreModule<R>,
-  R = Registry
+  R
 > {
   module: M
   id: string
   params?: Record<string, unknown>
 }
 
-export interface MountedStore<M extends StoreModule<R>, R = Registry> {
+export interface MountedStore<M extends StoreModule<R>, R> {
   readonly store: StoreProxy<M, R>
   readonly unmount: () => Promise<void>
 }
 
-export interface MusubiConnection<R = Registry> {
+export interface MusubiConnection<R> {
   readonly topic: string
   mountStore<M extends StoreModule<R>>(
     options: MountStoreOptions<M, R>
@@ -51,7 +51,7 @@ export interface MusubiConnection<R = Registry> {
  * usually go through `createMusubi<R>()` in `@musubi/react` instead, which
  * binds `R` once for the connection and all hooks.
  */
-export async function connect<R = Registry>(
+export async function connect<R>(
   socket: SocketLike,
   options: ConnectOptions = {}
 ): Promise<MusubiConnection<R>> {

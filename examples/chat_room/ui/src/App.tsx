@@ -9,9 +9,8 @@ import {
   useMusubiSnapshot
 } from "./musubi"
 
-type Registry = Musubi.Stores
 type RootModule = "ChatRoom.Stores.ChatRoomStore"
-type Store<M extends keyof Registry & string> = StoreProxy<M, Registry>
+type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
 
 export default function App() {
   const rootMount = useMusubiRoot(CHAT_ROOM_ROOT)
