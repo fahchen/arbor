@@ -154,6 +154,12 @@ export function createMusubi<R>(): MusubiFactory<R> {
       )
     }
 
+    if (props.connection === undefined && props.socket === undefined) {
+      throw new Error(
+        "<MusubiProvider> requires either `connection` or `socket`"
+      )
+    }
+
     if (props.connection !== undefined) {
       return (
         <StatusContext.Provider value={{ state: "ready", connection: props.connection }}>
@@ -625,10 +631,16 @@ function rootMountKey<M extends StoreModule<R>, R>(
 }
 
 function canonicalStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined"
+  // Mirror native JSON.stringify semantics for `undefined`:
+  // arrays render undefined slots as "null"; objects drop undefined-valued keys.
+  if (value === undefined) return "null"
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`
-  const keys = Object.keys(value as Record<string, unknown>).sort()
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort()
   return `{${keys
-    .map((k) => `${JSON.stringify(k)}:${canonicalStringify((value as Record<string, unknown>)[k])}`)
+    .map((k) => `${JSON.stringify(k)}:${canonicalStringify(obj[k])}`)
     .join(",")}}`
 }
