@@ -56,13 +56,16 @@ defmodule CartPage.Stores.CartStore do
 
   command :add_item do
     payload(:sku, String.t())
+    reply(%{ok: true} | %{error: String.t()})
   end
 
   command :remove_line do
     payload(:id, String.t())
   end
 
-  command(:checkout)
+  command :checkout do
+    reply(%{order_id: String.t()} | %{error: String.t()})
+  end
 
   @impl Musubi.Store
   def mount(socket) do
@@ -143,7 +146,7 @@ defmodule CartPage.Stores.CartStore do
           |> assign(:lines, next_lines)
           |> assign(:status, %{type: :open})
 
-        {:noreply, socket}
+        {:reply, %{"ok" => true}, socket}
 
       :error ->
         {:reply, %{"error" => "unknown_sku"}, socket}

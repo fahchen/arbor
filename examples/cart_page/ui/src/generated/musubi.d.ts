@@ -76,7 +76,7 @@ declare namespace Musubi {
       {
         add_item: {
           payload: { sku: string }
-          reply: unknown
+          reply: { ok: true } | { error: string }
         }
         remove_line: {
           payload: { id: string }
@@ -84,7 +84,7 @@ declare namespace Musubi {
         }
         checkout: {
           payload: {}
-          reply: unknown
+          reply: { order_id: string } | { error: string }
         }
       }
     >
