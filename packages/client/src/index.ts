@@ -1,4 +1,5 @@
 export { connect } from "./connect"
+export { keyOf } from "./keyof"
 export { MusubiCommandError } from "./error"
 export type { MusubiCommandErrorKind, MusubiCommandErrorOptions } from "./error"
 export type {

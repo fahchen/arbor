@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { SubmitEvent } from "react"
-import { MusubiCommandError, type StoreProxy } from "@musubi/react"
+import { MusubiCommandError, keyOf, type StoreProxy } from "@musubi/react"
 
 import {
   CART_PAGE_ROOT,
@@ -239,7 +239,7 @@ function CartPage({ root }: { root: Store<RootModule> }) {
             <ul className="lines">
               {cartProxy.lines.map((lineProxy) => (
                 <CartLine
-                  key={lineProxy.__musubi_store_id__.join("/")}
+                  key={keyOf(lineProxy)}
                   lineProxy={lineProxy}
                   busy={busy}
                   onRemove={(id) => void handleRemoveLine(id)}

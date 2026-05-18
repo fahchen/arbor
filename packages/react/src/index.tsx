@@ -25,8 +25,10 @@ import {
   type CommandReply
 } from "@musubi/client"
 
+import { shallowEqual } from "./shallow"
+
 export { shallowEqual } from "./shallow"
-export { MusubiCommandError } from "@musubi/client"
+export { MusubiCommandError, keyOf } from "@musubi/client"
 
 export type {
   AsyncResult,
@@ -64,13 +66,40 @@ export type UseMusubiRootOptions<
   unmountOnCleanup?: boolean
 }
 
+export type MusubiConnectionStatus<R> =
+  | { state: "connecting"; connection: null }
+  | { state: "ready"; connection: MusubiConnection<R> }
+  | { state: "error"; connection: null; error: Error }
+
+type ConnectionProviderProps<R> = {
+  connection: MusubiConnection<R>
+  socket?: never
+  topic?: never
+  children: ReactNode
+}
+
+type SocketProviderProps = {
+  socket: SocketLike
+  topic?: string
+  connection?: never
+  children: ReactNode
+}
+
+export type MusubiProviderProps<R> =
+  | ConnectionProviderProps<R>
+  | SocketProviderProps
+
 export interface MusubiFactory<R> {
   connect: (socket: SocketLike, options?: ConnectOptions) => Promise<MusubiConnection<R>>
-  MusubiProvider: FC<{ connection: MusubiConnection<R>; children: ReactNode }>
+  MusubiProvider: FC<MusubiProviderProps<R>>
   useMusubiConnection: () => MusubiConnection<R>
+  useMusubiConnectionStatus: () => MusubiConnectionStatus<R>
   useMusubiRoot: <M extends StoreModule<R>>(
     options: UseMusubiRootOptions<M, R>
   ) => MusubiRootMount<M, R>
+  useMusubiRootSuspense: <M extends StoreModule<R>>(
+    options: UseMusubiRootOptions<M, R>
+  ) => StoreProxy<M, R>
   useMusubiSnapshot: {
     <M extends StoreModule<R>>(proxy: StoreProxy<M, R>): StoreSnapshot<M, R>
     <M extends StoreModule<R>, Selected>(
@@ -110,32 +139,109 @@ export interface MusubiCommandResult<
  *       connect,
  *       MusubiProvider,
  *       useMusubiRoot,
+ *       useMusubiRootSuspense,
  *       useMusubiSnapshot,
  *       useMusubiCommand
  *     } = createMusubi<Musubi.Stores>()
- *
- * Each call returns a fresh React context and hook set, so multiple
- * factories can coexist (tests, multi-registry setups). `R` is required —
- * pass your generated `Musubi.Stores` type (or any store-map type).
  */
 export function createMusubi<R>(): MusubiFactory<R> {
-  const ConnectionContext = createContext<MusubiConnection<R> | null>(null)
+  const StatusContext = createContext<MusubiConnectionStatus<R> | null>(null)
 
-  const MusubiProvider: FC<{
-    connection: MusubiConnection<R>
-    children: ReactNode
-  }> = ({ connection, children }) => (
-    <ConnectionContext.Provider value={connection}>{children}</ConnectionContext.Provider>
-  )
-
-  function useMusubiConnection(): MusubiConnection<R> {
-    const connection = useContext(ConnectionContext)
-
-    if (!connection) {
-      throw new Error("useMusubiConnection must be used inside <MusubiProvider>")
+  const MusubiProvider: FC<MusubiProviderProps<R>> = (props) => {
+    if (props.connection !== undefined && props.socket !== undefined) {
+      throw new Error(
+        "<MusubiProvider> accepts either `connection` or `socket`, not both"
+      )
     }
 
-    return connection
+    if (props.connection === undefined && props.socket === undefined) {
+      throw new Error(
+        "<MusubiProvider> requires either `connection` or `socket`"
+      )
+    }
+
+    if (props.connection !== undefined) {
+      return (
+        <StatusContext.Provider value={{ state: "ready", connection: props.connection }}>
+          {props.children}
+        </StatusContext.Provider>
+      )
+    }
+
+    return <SocketProvider {...props}>{props.children}</SocketProvider>
+  }
+
+  const SocketProvider: FC<SocketProviderProps> = ({ socket, topic, children }) => {
+    const [status, setStatus] = useState<MusubiConnectionStatus<R>>({
+      state: "connecting",
+      connection: null
+    })
+
+    useEffect(() => {
+      let cancelled = false
+      let liveConnection: MusubiConnection<R> | null = null
+      setStatus({ state: "connecting", connection: null })
+
+      const options: ConnectOptions = topic !== undefined ? { topic } : {}
+
+      baseConnect<R>(socket, options)
+        .then((connection) => {
+          if (cancelled) {
+            // Race: parent unmounted (or socket/topic changed) before connect
+            // resolved. Tear the freshly opened connection down immediately
+            // so we don't leak a live channel.
+            void connection.disconnect()
+            return
+          }
+
+          liveConnection = connection
+          setStatus({ state: "ready", connection })
+        })
+        .catch((cause: unknown) => {
+          if (cancelled) return
+          const error = cause instanceof Error ? cause : new Error(String(cause))
+          setStatus({ state: "error", connection: null, error })
+        })
+
+      return () => {
+        cancelled = true
+        if (liveConnection) {
+          const c = liveConnection
+          liveConnection = null
+          void c.disconnect()
+        }
+      }
+    }, [socket, topic])
+
+    return <StatusContext.Provider value={status}>{children}</StatusContext.Provider>
+  }
+
+  function useMusubiConnectionStatus(): MusubiConnectionStatus<R> {
+    const status = useContext(StatusContext)
+    if (!status) {
+      throw new Error(
+        "useMusubiConnectionStatus must be used inside <MusubiProvider>"
+      )
+    }
+    return status
+  }
+
+  function useMusubiConnection(): MusubiConnection<R> {
+    const status = useContext(StatusContext)
+
+    if (!status) {
+      throw new Error(
+        "useMusubiConnection must be used inside <MusubiProvider> (or call useMusubiConnectionStatus() to observe connecting/error states)"
+      )
+    }
+
+    if (status.state !== "ready") {
+      throw new Error(
+        `useMusubiConnection requires a ready connection (current state: ${status.state}). Use useMusubiConnectionStatus() to observe connecting/error states.`
+      )
+    }
+
+    return status.connection
   }
 
   function connect(
@@ -155,6 +261,8 @@ export function createMusubi<R>(): MusubiFactory<R> {
       error: null
     })
 
+    const paramsKey = canonicalStringify(options.params ?? null)
+
     useEffect(() => {
       let cancelled = false
       const unmountOnCleanup = options.unmountOnCleanup ?? true
@@ -166,14 +274,12 @@ export function createMusubi<R>(): MusubiFactory<R> {
 
       setState({ status: "loading", store: null, error: null })
 
-      const sharedMount = acquireRootMount<M, R>(connection, mountOptions)
+      const sharedMount = ensureRootMount<M, R>(connection, mountOptions)
+      bumpMountRef(connection, sharedMount.key)
 
       sharedMount.promise
         .then((mounted) => {
-          if (cancelled) {
-            return
-          }
-
+          if (cancelled) return
           setState({
             status: "ready",
             store: mounted.store as StoreProxy<M, R>,
@@ -192,12 +298,58 @@ export function createMusubi<R>(): MusubiFactory<R> {
 
       return () => {
         cancelled = true
-
         releaseRootMount(connection, sharedMount.key, unmountOnCleanup)
       }
-    }, [connection, options.module, options.id, options.params, options.unmountOnCleanup])
+      // paramsKey collapses logically-equal params objects so that two
+      // callers passing {a:1,b:2} and {b:2,a:1} share a mount.
+    }, [connection, options.module, options.id, paramsKey, options.unmountOnCleanup])
 
     return state
+  }
+
+  function useMusubiRootSuspense<M extends StoreModule<R>>(
+    options: UseMusubiRootOptions<M, R>
+  ): StoreProxy<M, R> {
+    const connection = useMusubiConnection()
+    const unmountOnCleanup = options.unmountOnCleanup ?? true
+
+    const mountOptions: MountStoreOptions<M, R> = {
+      module: options.module,
+      id: options.id,
+      ...(options.params !== undefined ? { params: options.params } : {})
+    }
+
+    // Render-phase: lookup-or-create. DO NOT bump refs here — that happens
+    // in the commit-phase effect below. Suspense may discard this render.
+    const sharedMount = ensureRootMount<M, R>(connection, mountOptions)
+    const committedRef = useRef(false)
+
+    useEffect(() => {
+      // Commit-phase: this render won; take a ref.
+      bumpMountRef(connection, sharedMount.key)
+      committedRef.current = true
+      return () => {
+        committedRef.current = false
+        releaseRootMount(connection, sharedMount.key, unmountOnCleanup)
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [connection, sharedMount.key, unmountOnCleanup])
+
+    // Schedule orphan-cleanup sweep regardless of success/failure: if no
+    // commit-phase effect bumps refs by the time the promise settles, tear
+    // the mount down so a discarded Suspense render doesn't leak a live
+    // root, and clear the failed entry so a retry can run.
+    scheduleSuspenseOrphanSweep(connection, sharedMount.key, unmountOnCleanup)
+
+    if (sharedMount.failed) {
+      throw sharedMount.error
+    }
+
+    if (!sharedMount.settled) {
+      throw sharedMount.promise
+    }
+
+    return (sharedMount.value as unknown as MountedStore<M, R>).store
   }
 
   function useMusubiSnapshotImpl<M extends StoreModule<R>, Selected>(
@@ -209,13 +361,17 @@ export function createMusubi<R>(): MusubiFactory<R> {
     const getSnapshot = useCallback(() => proxy.snapshot(), [proxy])
     const resolvedSelector =
       selector ?? ((value: StoreSnapshot<M, R>) => value as unknown as Selected)
+    // Default to shallowEqual when a selector is supplied so callers that
+    // return fresh object/tuple literals don't re-render on every patch.
+    const resolvedEquality =
+      equalityFn ?? (selector ? (shallowEqual as (a: Selected, b: Selected) => boolean) : undefined)
 
     return useSyncExternalStoreWithSelector(
       subscribe,
       getSnapshot,
       getSnapshot,
       resolvedSelector,
-      equalityFn
+      resolvedEquality
     )
   }
 
@@ -289,7 +445,9 @@ export function createMusubi<R>(): MusubiFactory<R> {
     connect,
     MusubiProvider,
     useMusubiConnection,
+    useMusubiConnectionStatus,
     useMusubiRoot,
+    useMusubiRootSuspense,
     useMusubiSnapshot,
     useMusubiCommand
   }
@@ -302,8 +460,12 @@ export function createMusubi<R>(): MusubiFactory<R> {
 type SharedRootMount = {
   refs: number
   promise: Promise<MountedStore<never, unknown>>
+  settled: boolean
   failed: boolean
+  value: MountedStore<never, unknown> | null
+  error: Error | null
   cleanupTimer: ReturnType<typeof setTimeout> | null
+  orphanSweepScheduled: boolean
 }
 
 const pendingRootMounts: WeakMap<
@@ -311,7 +473,13 @@ const pendingRootMounts: WeakMap<
   Map<string, SharedRootMount>
 > = new WeakMap()
 
-function acquireRootMount<M extends StoreModule<R>, R>(
+/**
+ * Render-phase safe: returns the existing shared mount entry or creates a new
+ * one. Does NOT bump refs (the caller does that on commit). Cancels any
+ * pending cleanup timer so a re-mount during the cleanup grace period reuses
+ * the existing mount.
+ */
+function ensureRootMount<M extends StoreModule<R>, R>(
   connection: MusubiConnection<R>,
   options: MountStoreOptions<M, R>
 ): SharedRootMount & { key: string } {
@@ -324,28 +492,54 @@ function acquireRootMount<M extends StoreModule<R>, R>(
       clearTimeout(existing.cleanupTimer)
       existing.cleanupTimer = null
     }
-
-    existing.refs += 1
-    return { ...existing, key }
+    return Object.assign(existing, { key })
   }
 
   const shared: SharedRootMount = {
-    refs: 1,
+    refs: 0,
     promise: Promise.resolve(null as never),
+    settled: false,
     failed: false,
-    cleanupTimer: null
+    value: null,
+    error: null,
+    cleanupTimer: null,
+    orphanSweepScheduled: false
   }
 
   shared.promise = connection
     .mountStore(options)
-    .catch((error: unknown) => {
+    .then((mounted) => {
+      shared.settled = true
+      shared.value = mounted as unknown as MountedStore<never, unknown>
+      return mounted as unknown as MountedStore<never, unknown>
+    })
+    .catch((cause: unknown) => {
+      shared.settled = true
       shared.failed = true
-      mounts.delete(key)
-      throw error
-    }) as unknown as Promise<MountedStore<never, unknown>>
+      shared.error = cause instanceof Error ? cause : new Error(String(cause))
+      // Don't delete here: the failed entry has to stay long enough for
+      // Suspense/effect consumers to observe it. releaseRootMount removes
+      // the entry once the last ref drops, so future mounts retry cleanly
+      // (no poison).
+      throw shared.error
+    })
+  // Swallow the unhandled rejection from the bare promise; callers that
+  // .then() / .catch() this still observe the error normally.
+  shared.promise.catch(() => undefined)
 
   mounts.set(key, shared)
-  return { ...shared, key }
+  return Object.assign(shared, { key })
+}
+
+function bumpMountRef<R>(connection: MusubiConnection<R>, key: string): void {
+  const mounts = pendingRootMounts.get(connection as MusubiConnection<unknown>)
+  const shared = mounts?.get(key)
+  if (!shared) return
+  if (shared.cleanupTimer) {
+    clearTimeout(shared.cleanupTimer)
+    shared.cleanupTimer = null
+  }
+  shared.refs += 1
 }
 
 function releaseRootMount<R>(
@@ -378,10 +572,41 @@ function releaseRootMount<R>(
 
     mounts.delete(key)
 
-    if (!shared.failed) {
-      void shared.promise.then((mounted) => mounted.unmount())
+    if (!shared.failed && shared.value) {
+      void shared.value.unmount()
+    } else if (!shared.failed) {
+      void shared.promise.then((mounted) => mounted.unmount()).catch(() => undefined)
     }
   }, 0)
+}
+
+/**
+ * Suspense success-with-no-consumer path: if the promise resolves but no
+ * commit-phase effect ever bumped refs, the mount is orphaned. Sweep on a
+ * microtask after settle. Idempotent per (connection, key).
+ */
+function scheduleSuspenseOrphanSweep<R>(
+  connection: MusubiConnection<R>,
+  key: string,
+  unmountOnCleanup: boolean
+): void {
+  const mounts = pendingRootMounts.get(connection as MusubiConnection<unknown>)
+  const shared = mounts?.get(key)
+  if (!mounts || !shared || shared.orphanSweepScheduled) return
+  shared.orphanSweepScheduled = true
+
+  const sweep = () => {
+    setTimeout(() => {
+      shared.orphanSweepScheduled = false
+      if (shared.refs > 0) return
+      // No consumer ever committed: drop the entry. On success, also unmount.
+      mounts.delete(key)
+      if (!shared.failed && shared.value && unmountOnCleanup) {
+        void shared.value.unmount()
+      }
+    }, 0)
+  }
+  shared.promise.then(sweep, sweep)
 }
 
 function rootMountsFor<R>(
@@ -402,5 +627,20 @@ function rootMountsFor<R>(
 function rootMountKey<M extends StoreModule<R>, R>(
   options: MountStoreOptions<M, R>
 ): string {
-  return `${options.id}|${options.module}|${JSON.stringify(options.params ?? {})}`
+  return `${options.id}|${options.module}|${canonicalStringify(options.params ?? null)}`
+}
+
+function canonicalStringify(value: unknown): string {
+  // Mirror native JSON.stringify semantics for `undefined`:
+  // arrays render undefined slots as "null"; objects drop undefined-valued keys.
+  if (value === undefined) return "null"
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort()
+  return `{${keys
+    .map((k) => `${JSON.stringify(k)}:${canonicalStringify(obj[k])}`)
+    .join(",")}}`
 }

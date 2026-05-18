@@ -2,7 +2,8 @@ import { act, render, screen } from "@testing-library/react"
 import * as React from "react"
 import { describe, expect, test, vi } from "vitest"
 
-import { createMusubi, MusubiCommandError } from "../src"
+import { createMusubi, MusubiCommandError, keyOf, shallowEqual } from "../src"
+import * as clientModule from "@musubi/client"
 
 import { FakeStoreProxy } from "./setup"
 
@@ -35,7 +36,9 @@ const {
   MusubiProvider,
   useMusubiCommand,
   useMusubiConnection,
+  useMusubiConnectionStatus,
   useMusubiRoot,
+  useMusubiRootSuspense,
   useMusubiSnapshot
 } = createMusubi<ReactTestStores>()
 
@@ -51,10 +54,11 @@ describe("MusubiProvider + useMusubiRoot", () => {
   test("exposes the Musubi connection to descendants", () => {
     const fake = buildProxy()
     const connection = new FakeMusubiConnection(fake.asProxy())
+    let observed: unknown = null
 
     function Reader() {
-      const musubiConnection = useMusubiConnection()
-      return <span>{musubiConnection.topic}</span>
+      observed = useMusubiConnection()
+      return <span>ready</span>
     }
 
     render(
@@ -63,7 +67,8 @@ describe("MusubiProvider + useMusubiRoot", () => {
       </MusubiProvider>
     )
 
-    expect(screen.getByText("musubi:connection")).toBeTruthy()
+    expect(screen.getByText("ready")).toBeTruthy()
+    expect(observed).toBe(connection)
   })
 
   test("useMusubiConnection throws outside a provider", () => {
@@ -76,7 +81,7 @@ describe("MusubiProvider + useMusubiRoot", () => {
     const preventExpectedError = (event: ErrorEvent) => {
       if (
         event.error instanceof Error &&
-        event.error.message === "useMusubiConnection must be used inside <MusubiProvider>"
+        event.error.message.startsWith("useMusubiConnection must be used inside <MusubiProvider>")
       ) {
         event.preventDefault()
       }
@@ -93,7 +98,7 @@ describe("MusubiProvider + useMusubiRoot", () => {
       )
 
       expect(
-        screen.getByText("useMusubiConnection must be used inside <MusubiProvider>")
+        screen.getByText(/useMusubiConnection must be used inside <MusubiProvider>/)
       ).toBeTruthy()
     } finally {
       window.removeEventListener("error", preventExpectedError)
@@ -454,7 +459,9 @@ class FakeMusubiConnection implements MusubiConnection<ReactTestStores> {
   readonly unmounts: string[] = []
   disconnected = false
   mountError: Error | null = null
+  mountErrors: Array<Error | null> = []
   mountResult: Promise<StoreProxy<Root, ReactTestStores>> | null = null
+  mountResults: Array<Promise<StoreProxy<Root, ReactTestStores>>> = []
 
   constructor(private readonly store: StoreProxy<Root, ReactTestStores>) {}
 
@@ -463,12 +470,16 @@ class FakeMusubiConnection implements MusubiConnection<ReactTestStores> {
   ): Promise<MountedStore<M, ReactTestStores>> {
     this.mounts.push(options as unknown as MountStoreOptions<Root, ReactTestStores>)
 
-    if (this.mountError) {
-      throw this.mountError
+    const perCallError = this.mountErrors.shift()
+    const err = perCallError !== undefined ? perCallError : this.mountError
+    if (err) {
+      throw err
     }
 
-    const proxy = this.mountResult
-      ? ((await this.mountResult) as unknown as StoreProxy<M, ReactTestStores>)
+    const perCall = this.mountResults.shift()
+    const promise = perCall ?? this.mountResult
+    const proxy = promise
+      ? ((await promise) as unknown as StoreProxy<M, ReactTestStores>)
       : (this.store as unknown as StoreProxy<M, ReactTestStores>)
 
     return {
@@ -523,3 +534,425 @@ class TestErrorBoundary extends React.Component<
     return this.props.children
   }
 }
+
+// ---------------------------------------------------------------------------
+// useMusubiRootSuspense
+// ---------------------------------------------------------------------------
+
+describe("useMusubiRootSuspense", () => {
+  test("loading suspends, then resolves to ready store", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    const gate = deferred<StoreProxy<Root, ReactTestStores>>()
+    connection.mountResult = gate.promise
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "sus-1" })
+      return <span>{store.snapshot().title}</span>
+    }
+
+    render(
+      <MusubiProvider connection={connection}>
+        <React.Suspense fallback={<span>suspending</span>}>
+          <Reader />
+        </React.Suspense>
+      </MusubiProvider>
+    )
+
+    expect(screen.getByText("suspending")).toBeTruthy()
+
+    await act(async () => {
+      gate.resolve(fake.asProxy())
+      await gate.promise
+    })
+
+    expect(await screen.findByText("Inbox")).toBeTruthy()
+  })
+
+  test("mount failure is caught by an error boundary", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    connection.mountError = new Error("boom-suspense")
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "sus-fail" })
+      return <span>{store.snapshot().title}</span>
+    }
+
+    const originalError = console.error
+    console.error = () => {}
+    try {
+      render(
+        <MusubiProvider connection={connection}>
+          <TestErrorBoundary>
+            <React.Suspense fallback={<span>load</span>}>
+              <Reader />
+            </React.Suspense>
+          </TestErrorBoundary>
+        </MusubiProvider>
+      )
+
+      expect(await screen.findByText("boom-suspense")).toBeTruthy()
+    } finally {
+      console.error = originalError
+    }
+  })
+
+  test("cross-variant cache: root + suspense share one server mount", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+
+    function RegularReader() {
+      const root = useMusubiRoot({ module: "React.Test.Root", id: "shared-1" })
+      return <span>regular:{root.status}</span>
+    }
+
+    function SuspenseReader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "shared-1" })
+      return <span>suspense:{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <MusubiProvider connection={connection}>
+        <React.Suspense fallback={<span>fallback</span>}>
+          <RegularReader />
+          <SuspenseReader />
+        </React.Suspense>
+      </MusubiProvider>
+    )
+
+    await screen.findByText("suspense:Inbox")
+    expect(connection.mounts.length).toBe(1)
+
+    result.unmount()
+    await act(async () => {
+      await flushTimers()
+    })
+    expect(connection.unmounts).toEqual(["shared-1"])
+  })
+
+  test("suspense unmount before resolve cleans up (no leak)", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    const gate = deferred<StoreProxy<Root, ReactTestStores>>()
+    connection.mountResult = gate.promise
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "orphan-1" })
+      return <span>{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <MusubiProvider connection={connection}>
+        <React.Suspense fallback={<span>load</span>}>
+          <Reader />
+        </React.Suspense>
+      </MusubiProvider>
+    )
+
+    expect(screen.getByText("load")).toBeTruthy()
+    result.unmount()
+
+    await act(async () => {
+      gate.resolve(fake.asProxy())
+      await gate.promise
+      await flushTimers()
+    })
+
+    // Orphan sweep should have unmounted the abandoned root.
+    expect(connection.unmounts).toEqual(["orphan-1"])
+  })
+
+  test("failure variant: failed mount entry is removed (no poison) and retries", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    connection.mountErrors = [new Error("first-fail")]
+
+    function Reader() {
+      const root = useMusubiRoot({ module: "React.Test.Root", id: "retry-1" })
+      if (root.status === "error") return <span>err:{root.error.message}</span>
+      if (root.status === "ready") return <span>ok:{root.store.snapshot().title}</span>
+      return <span>load</span>
+    }
+
+    const first = render(
+      <MusubiProvider connection={connection}>
+        <Reader />
+      </MusubiProvider>
+    )
+    expect(await screen.findByText("err:first-fail")).toBeTruthy()
+    first.unmount()
+    await act(async () => { await flushTimers() })
+
+    const second = render(
+      <MusubiProvider connection={connection}>
+        <Reader />
+      </MusubiProvider>
+    )
+    expect(await screen.findByText("ok:Inbox")).toBeTruthy()
+    expect(connection.mounts.length).toBe(2)
+    second.unmount()
+    await act(async () => { await flushTimers() })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// MusubiProvider socket form
+// ---------------------------------------------------------------------------
+
+describe("MusubiProvider socket form", () => {
+  function buildFakeSocket() {
+    return {} as clientModule.SocketLike
+  }
+
+  test("connecting -> ready transitions and exposes status", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    const socket = buildFakeSocket()
+    const gate = deferred<MusubiConnection<ReactTestStores>>()
+    const spy = vi.spyOn(clientModule, "connect").mockReturnValue(gate.promise as Promise<MusubiConnection<unknown>>)
+
+    function StatusReader() {
+      const status = useMusubiConnectionStatus()
+      return <span>state:{status.state}</span>
+    }
+
+    try {
+      render(
+        <MusubiProvider socket={socket}>
+          <StatusReader />
+        </MusubiProvider>
+      )
+
+      expect(screen.getByText("state:connecting")).toBeTruthy()
+
+      await act(async () => {
+        gate.resolve(connection)
+        await gate.promise
+      })
+
+      expect(await screen.findByText("state:ready")).toBeTruthy()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("child useMusubiRoot mounts after ready", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    const gate = deferred<MusubiConnection<ReactTestStores>>()
+    const spy = vi.spyOn(clientModule, "connect").mockReturnValue(gate.promise as Promise<MusubiConnection<unknown>>)
+
+    function Reader() {
+      const status = useMusubiConnectionStatus()
+      if (status.state !== "ready") return <span>conn:{status.state}</span>
+      return <Inner />
+    }
+    function Inner() {
+      const root = useMusubiRoot({ module: "React.Test.Root", id: "from-socket" })
+      if (root.status !== "ready") return <span>root:{root.status}</span>
+      return <span>title:{root.store.snapshot().title}</span>
+    }
+
+    try {
+      render(
+        <MusubiProvider socket={buildFakeSocket()}>
+          <Reader />
+        </MusubiProvider>
+      )
+      expect(screen.getByText("conn:connecting")).toBeTruthy()
+
+      await act(async () => {
+        gate.resolve(connection)
+        await gate.promise
+      })
+
+      expect(await screen.findByText("title:Inbox")).toBeTruthy()
+      expect(connection.mounts.length).toBe(1)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("connect failure surfaces as error state", async () => {
+    const spy = vi.spyOn(clientModule, "connect").mockRejectedValue(new Error("socket-fail"))
+
+    function Reader() {
+      const status = useMusubiConnectionStatus()
+      if (status.state === "error") return <span>err:{status.error.message}</span>
+      return <span>{status.state}</span>
+    }
+
+    try {
+      render(
+        <MusubiProvider socket={{} as clientModule.SocketLike}>
+          <Reader />
+        </MusubiProvider>
+      )
+      expect(await screen.findByText("err:socket-fail")).toBeTruthy()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("unmount during connect disconnects the resolved connection", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    const gate = deferred<MusubiConnection<ReactTestStores>>()
+    const spy = vi.spyOn(clientModule, "connect").mockReturnValue(gate.promise as Promise<MusubiConnection<unknown>>)
+
+    try {
+      const result = render(
+        <MusubiProvider socket={{} as clientModule.SocketLike}>
+          <span>hi</span>
+        </MusubiProvider>
+      )
+      result.unmount()
+
+      await act(async () => {
+        gate.resolve(connection)
+        await gate.promise
+        await flushTimers()
+      })
+
+      expect(connection.disconnected).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("useMusubiConnection error message mentions useMusubiConnectionStatus when not ready", async () => {
+    const spy = vi.spyOn(clientModule, "connect").mockReturnValue(new Promise(() => {}) as Promise<MusubiConnection<unknown>>)
+
+    function Reader() {
+      useMusubiConnection()
+      return null
+    }
+
+    const originalError = console.error
+    console.error = () => {}
+    const onError = (e: ErrorEvent) => {
+      if (e.error instanceof Error && /useMusubiConnection/.test(e.error.message)) e.preventDefault()
+    }
+    window.addEventListener("error", onError)
+    try {
+      render(
+        <MusubiProvider socket={{} as clientModule.SocketLike}>
+          <TestErrorBoundary>
+            <Reader />
+          </TestErrorBoundary>
+        </MusubiProvider>
+      )
+      expect(await screen.findByText(/useMusubiConnectionStatus/)).toBeTruthy()
+    } finally {
+      window.removeEventListener("error", onError)
+      console.error = originalError
+      spy.mockRestore()
+    }
+  })
+
+  test("rejects when both connection and socket are supplied", () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    const originalError = console.error
+    console.error = () => {}
+    try {
+      expect(() =>
+        render(
+          // Type-level mutual exclusion: cast for runtime invariant check.
+          <MusubiProvider {...({ connection, socket: {} } as unknown as { connection: MusubiConnection<ReactTestStores>; children: React.ReactNode })}>
+            <span>x</span>
+          </MusubiProvider>
+        )
+      ).toThrow(/either `connection` or `socket`/)
+    } finally {
+      console.error = originalError
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// useMusubiSnapshot default equalityFn
+// ---------------------------------------------------------------------------
+
+describe("useMusubiSnapshot default shallowEqual", () => {
+  test("fresh-literal selector with same content does not re-render", () => {
+    const fake = buildProxy("Inbox", 0)
+    let renders = 0
+
+    function Reader() {
+      renders += 1
+      // Selector returns a fresh tuple every call; default shallowEqual
+      // should treat (0, "Inbox") === (0, "Inbox") as equal.
+      const view = useMusubiSnapshot(fake.asProxy(), (s) => ({
+        counter: s.counter,
+        title: s.title
+      }))
+      return <span>{view.title}:{view.counter}</span>
+    }
+
+    render(<Reader />)
+    expect(renders).toBe(1)
+
+    act(() => {
+      // Notify with same content
+      fake.setSnapshot({ __musubi_store_id__: [], title: "Inbox", counter: 0 })
+    })
+    expect(renders).toBe(1)
+  })
+
+  test("shallowEqual default is overridable", () => {
+    expect(shallowEqual({ a: 1 }, { a: 1 })).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// useMusubiRoot canonical params
+// ---------------------------------------------------------------------------
+
+describe("useMusubiRoot canonical params", () => {
+  test("logically-equal params share a single mount", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+
+    function A() {
+      const r = useMusubiRoot({ module: "React.Test.Root", id: "p-1", params: { a: 1, b: 2 } })
+      return <span>A:{r.status}</span>
+    }
+    function B() {
+      const r = useMusubiRoot({ module: "React.Test.Root", id: "p-1", params: { b: 2, a: 1 } })
+      return <span>B:{r.status}</span>
+    }
+
+    const result = render(
+      <MusubiProvider connection={connection}>
+        <A />
+        <B />
+      </MusubiProvider>
+    )
+
+    await screen.findByText("A:ready")
+    await screen.findByText("B:ready")
+    expect(connection.mounts.length).toBe(1)
+
+    result.unmount()
+    await act(async () => { await flushTimers() })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// keyOf
+// ---------------------------------------------------------------------------
+
+describe("keyOf", () => {
+  test("returns stable string from proxy id", () => {
+    const fake = new FakeStoreProxy<Root, ReactTestStores>({
+      __musubi_store_id__: ["root", "abc"] as unknown as string[],
+      title: "x",
+      counter: 0
+    })
+    Object.assign(fake, { __musubi_store_id__: ["root", "abc"] })
+    const proxy = fake.asProxy()
+    expect(keyOf(proxy)).toBe(JSON.stringify(["root", "abc"]))
+  })
+})

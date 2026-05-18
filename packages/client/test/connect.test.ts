@@ -25,6 +25,7 @@ class MockPush {
 class MockChannel {
   readonly pushes: Array<{ event: string; payload: unknown; push: MockPush }> = []
   readonly joinPayload: unknown
+  readonly topic: string
 
   private readonly eventHandlers = new Map<string, Array<(payload: unknown) => void>>()
   private readonly closeHandlers: Array<(reason: unknown) => void> = []
@@ -33,7 +34,8 @@ class MockChannel {
 
   left = false
 
-  constructor(_topic: string, joinPayload?: unknown) {
+  constructor(topic: string, joinPayload?: unknown) {
+    this.topic = topic
     this.joinPayload = joinPayload
   }
 
@@ -192,7 +194,8 @@ describe("connect", () => {
     channel.resolveJoin()
 
     const connection = await connectionPromise
-    expect(connection.topic).toBe("musubi:connection")
+    expect(channel.topic).toBe("musubi:connection")
+    expect(connection).toBeTruthy()
   })
 
   test("mountStore requires an explicit id at compile time", async () => {
@@ -208,7 +211,8 @@ describe("connect", () => {
       void connection.mountStore({ module: "Test.Store" })
     }
 
-    expect(connection.topic).toBe("musubi:connection")
+    expect(channel.topic).toBe("musubi:connection")
+    expect(connection).toBeTruthy()
   })
 
   test("mountStore resolves only after the root initial envelope is applied", async () => {
