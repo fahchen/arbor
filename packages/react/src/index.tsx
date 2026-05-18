@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState
 } from "react"
 import type { FC, ReactNode } from "react"
@@ -10,6 +11,7 @@ import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/w
 
 import {
   connect as baseConnect,
+  MusubiCommandError,
   type ConnectOptions,
   type MountStoreOptions,
   type MountedStore,
@@ -24,6 +26,7 @@ import {
 } from "@musubi/client"
 
 export { shallowEqual } from "./shallow"
+export { MusubiCommandError } from "@musubi/client"
 
 export type {
   AsyncResult,
@@ -33,6 +36,8 @@ export type {
   ConnectionPatchEnvelope,
   MountStoreOptions,
   MountedStore,
+  MusubiCommandErrorKind,
+  MusubiCommandErrorOptions,
   MusubiConnection,
   PatchEnvelope,
   StoreId,
@@ -77,7 +82,19 @@ export interface MusubiFactory<R> {
   useMusubiCommand: <M extends StoreModule<R>, K extends CommandName<M, R>>(
     proxy: StoreProxy<M, R>,
     name: K
-  ) => (payload: CommandPayload<M, K, R>) => Promise<CommandReply<M, K, R>>
+  ) => MusubiCommandResult<M, K, R>
+}
+
+export interface MusubiCommandResult<
+  M extends StoreModule<R>,
+  K extends CommandName<M, R>,
+  R
+> {
+  dispatch: (payload: CommandPayload<M, K, R>) => Promise<CommandReply<M, K, R>>
+  isPending: boolean
+  error: MusubiCommandError | null
+  data: CommandReply<M, K, R> | null
+  reset: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -207,11 +224,65 @@ export function createMusubi<R>(): MusubiFactory<R> {
   function useMusubiCommand<M extends StoreModule<R>, K extends CommandName<M, R>>(
     proxy: StoreProxy<M, R>,
     name: K
-  ): (payload: CommandPayload<M, K, R>) => Promise<CommandReply<M, K, R>> {
-    return useCallback(
-      (payload: CommandPayload<M, K, R>) => proxy.dispatchCommand(name, payload),
+  ): MusubiCommandResult<M, K, R> {
+    type Reply = CommandReply<M, K, R>
+    const [state, setState] = useState<{
+      isPending: boolean
+      error: MusubiCommandError | null
+      data: Reply | null
+    }>({ isPending: false, error: null, data: null })
+
+    const requestIdRef = useRef(0)
+    const mountedRef = useRef(true)
+
+    useEffect(() => {
+      mountedRef.current = true
+      return () => {
+        mountedRef.current = false
+      }
+    }, [])
+
+    const dispatch = useCallback(
+      async (payload: CommandPayload<M, K, R>): Promise<Reply> => {
+        const requestId = ++requestIdRef.current
+        if (mountedRef.current) {
+          setState({ isPending: true, error: null, data: null })
+        }
+
+        try {
+          const reply = (await proxy.dispatchCommand(name, payload)) as Reply
+          if (mountedRef.current && requestId === requestIdRef.current) {
+            setState({ isPending: false, error: null, data: reply })
+          }
+          return reply
+        } catch (cause) {
+          const error = MusubiCommandError.is(cause)
+            ? cause
+            : new MusubiCommandError({
+                kind: "failed",
+                command: String(name),
+                storeId: [...proxy.__musubi_store_id__],
+                reply: { error: cause instanceof Error ? cause.message : String(cause) },
+                cause
+              })
+
+          if (mountedRef.current && requestId === requestIdRef.current) {
+            setState({ isPending: false, error, data: null })
+          }
+          throw error
+        }
+      },
       [proxy, name]
     )
+
+    const reset = useCallback(() => {
+      requestIdRef.current += 1
+      if (mountedRef.current) {
+        setState({ isPending: false, error: null, data: null })
+      }
+    }, [])
+
+    return { dispatch, isPending: state.isPending, error: state.error, data: state.data, reset }
   }
 
   return {

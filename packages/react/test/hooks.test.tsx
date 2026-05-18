@@ -2,7 +2,7 @@ import { act, render, screen } from "@testing-library/react"
 import * as React from "react"
 import { describe, expect, test, vi } from "vitest"
 
-import { createMusubi } from "../src"
+import { createMusubi, MusubiCommandError } from "../src"
 
 import { FakeStoreProxy } from "./setup"
 
@@ -266,24 +266,185 @@ describe("useMusubiSnapshot", () => {
 })
 
 describe("useMusubiCommand", () => {
-  test("returns a stable dispatcher bound to the proxy", async () => {
+  type Cmd = ReturnType<
+    typeof useMusubiCommand<"React.Test.Root", "rename">
+  >
+
+  function CommandHarness({
+    proxy,
+    onResult
+  }: {
+    proxy: ReturnType<FakeStoreProxy<Root, ReactTestStores>["asProxy"]>
+    onResult: (cmd: Cmd) => void
+  }) {
+    const cmd = useMusubiCommand(proxy, "rename")
+    onResult(cmd)
+    return (
+      <span>
+        {cmd.isPending ? "pending" : cmd.error ? `err:${cmd.error.kind}` : cmd.data ? "ok" : "idle"}
+      </span>
+    )
+  }
+
+  test("dispatch identity is stable across renders for same proxy+name", () => {
     const fake = buildProxy()
-    const handler = vi.fn(async () => ({ ok: true as const }))
-    fake.onDispatch(handler)
-
-    let dispatcher: ((payload: { title: string }) => Promise<unknown>) | undefined
-
+    let captured: Cmd | undefined
     function Reader() {
-      dispatcher = useMusubiCommand(fake.asProxy(), "rename")
+      captured = useMusubiCommand(fake.asProxy(), "rename")
       return null
     }
+    const { rerender } = render(<Reader />)
+    const first = captured!.dispatch
+    rerender(<Reader />)
+    expect(captured!.dispatch).toBe(first)
+  })
 
-    render(<Reader />)
+  test("isPending + data populate on success", async () => {
+    const fake = buildProxy()
+    const gate = deferred<{ ok: true }>()
+    fake.onDispatch(() => gate.promise)
+    let cmd: Cmd | undefined
+    render(<CommandHarness proxy={fake.asProxy()} onResult={(c) => (cmd = c)} />)
 
-    await dispatcher?.({ title: "Outbox" })
+    let dispatchPromise: Promise<unknown> | undefined
+    await act(async () => {
+      dispatchPromise = cmd!.dispatch({ title: "x" })
+    })
+    expect(cmd!.isPending).toBe(true)
 
-    expect(handler).toHaveBeenCalledWith("rename", { title: "Outbox" })
-    expect(fake.dispatchCalls).toEqual([{ name: "rename", payload: { title: "Outbox" } }])
+    await act(async () => {
+      gate.resolve({ ok: true })
+      await dispatchPromise
+    })
+    expect(cmd!.isPending).toBe(false)
+    expect(cmd!.data).toEqual({ ok: true })
+    expect(cmd!.error).toBeNull()
+  })
+
+  test("error is MusubiCommandError on failure", async () => {
+    const fake = buildProxy()
+    const original = new MusubiCommandError({
+      kind: "failed",
+      command: "rename",
+      storeId: [],
+      reply: { code: "boom" }
+    })
+    fake.onDispatch(async () => {
+      throw original
+    })
+    let cmd: Cmd | undefined
+    render(<CommandHarness proxy={fake.asProxy()} onResult={(c) => (cmd = c)} />)
+
+    await act(async () => {
+      await cmd!.dispatch({ title: "x" }).catch(() => undefined)
+    })
+    expect(cmd!.error).toBe(original)
+    expect(cmd!.error?.code).toBe("boom")
+    expect(cmd!.isPending).toBe(false)
+  })
+
+  test("non-MusubiCommandError throws are wrapped with structured fields + cause", async () => {
+    const fake = buildProxy()
+    const raw = new Error("network exploded")
+    fake.onDispatch(async () => {
+      throw raw
+    })
+    let cmd: Cmd | undefined
+    render(<CommandHarness proxy={fake.asProxy()} onResult={(c) => (cmd = c)} />)
+
+    await act(async () => {
+      await cmd!.dispatch({ title: "x" }).catch(() => undefined)
+    })
+    expect(cmd!.error).toBeInstanceOf(MusubiCommandError)
+    expect(cmd!.error?.kind).toBe("failed")
+    expect(cmd!.error?.command).toBe("rename")
+    expect(cmd!.error?.storeId).toEqual([])
+    expect((cmd!.error as Error & { cause?: unknown }).cause).toBe(raw)
+  })
+
+  test("reset() clears state", async () => {
+    const fake = buildProxy()
+    fake.onDispatch(async () => ({ ok: true as const }))
+    let cmd: Cmd | undefined
+    render(<CommandHarness proxy={fake.asProxy()} onResult={(c) => (cmd = c)} />)
+    await act(async () => {
+      await cmd!.dispatch({ title: "x" })
+    })
+    expect(cmd!.data).toEqual({ ok: true })
+    await act(async () => {
+      cmd!.reset()
+    })
+    expect(cmd!.data).toBeNull()
+    expect(cmd!.error).toBeNull()
+    expect(cmd!.isPending).toBe(false)
+  })
+
+  test("overlapping dispatches: only latest commits state", async () => {
+    const fake = buildProxy()
+    const calls: Array<{ payload: unknown; gate: ReturnType<typeof deferred<{ tag: string }>> }> = []
+    fake.onDispatch(async (_name, payload) => {
+      const gate = deferred<{ tag: string }>()
+      calls.push({ payload, gate })
+      return gate.promise
+    })
+    let cmd: Cmd | undefined
+    render(<CommandHarness proxy={fake.asProxy()} onResult={(c) => (cmd = c)} />)
+
+    let p1: Promise<unknown> | undefined
+    let p2: Promise<unknown> | undefined
+    await act(async () => {
+      p1 = cmd!.dispatch({ title: "a" }).catch(() => undefined)
+      p2 = cmd!.dispatch({ title: "b" }).catch(() => undefined)
+    })
+
+    await act(async () => {
+      calls[1]!.gate.resolve({ tag: "second" })
+      await p2
+    })
+    expect(cmd!.data).toEqual({ tag: "second" })
+    expect(cmd!.isPending).toBe(false)
+
+    await act(async () => {
+      calls[0]!.gate.resolve({ tag: "first" })
+      await p1
+    })
+    expect(cmd!.data).toEqual({ tag: "second" })
+  })
+
+  test("reset() while in-flight invalidates the dispatch", async () => {
+    const fake = buildProxy()
+    const gate = deferred<{ ok: true }>()
+    fake.onDispatch(() => gate.promise)
+    let cmd: Cmd | undefined
+    render(<CommandHarness proxy={fake.asProxy()} onResult={(c) => (cmd = c)} />)
+
+    let p: Promise<unknown> | undefined
+    await act(async () => {
+      p = cmd!.dispatch({ title: "x" }).catch(() => undefined)
+    })
+    expect(cmd!.isPending).toBe(true)
+
+    await act(async () => {
+      cmd!.reset()
+    })
+    expect(cmd!.isPending).toBe(false)
+    expect(cmd!.data).toBeNull()
+
+    await act(async () => {
+      gate.resolve({ ok: true })
+      await p
+    })
+    expect(cmd!.data).toBeNull()
+    expect(cmd!.isPending).toBe(false)
+  })
+
+  test("MusubiCommandError.is detects cross-module instances", async () => {
+    vi.resetModules()
+    const fresh = await import("@musubi/client")
+    const other = new fresh.MusubiCommandError({
+      kind: "failed", command: "rename", storeId: [], reply: { code: "x" }
+    })
+    expect(MusubiCommandError.is(other)).toBe(true)
   })
 })
 
