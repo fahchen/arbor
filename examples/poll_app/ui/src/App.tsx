@@ -201,7 +201,7 @@ function PollRoomView({
     if (isClosed || busy) return
 
     try {
-      const reply = (await voteCmd.dispatch({ option_id: optionId })) as { status: string }
+      const reply = await voteCmd.dispatch({ option_id: optionId })
       if (reply.status === "closed") setFeedback("Poll is closed.")
       else if (reply.status === "voted") {
         setFeedback("Vote cast.")
