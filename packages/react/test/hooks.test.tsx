@@ -2,17 +2,17 @@ import { act, render, screen } from "@testing-library/react"
 import * as React from "react"
 import { describe, expect, test, vi } from "vitest"
 
-import {
-  MusubiProvider,
-  useMusubiCommand,
-  useMusubiRoot,
-  useMusubiConnection,
-  useMusubiSnapshot
-} from "../src"
+import { createMusubi } from "../src"
 
 import { FakeStoreProxy } from "./setup"
 
-import type { MusubiConnection, MountStoreOptions, StoreModule, StoreProxy } from "../src"
+import type {
+  MountStoreOptions,
+  MountedStore,
+  MusubiConnection,
+  StoreModule,
+  StoreProxy
+} from "../src"
 
 void React
 
@@ -31,8 +31,16 @@ type ReactTestStores = {
 
 type Root = "React.Test.Root"
 
-function buildProxy(title = "Inbox", counter = 0): FakeStoreProxy<ReactTestStores, Root> {
-  return new FakeStoreProxy<ReactTestStores, Root>({
+const {
+  MusubiProvider,
+  useMusubiCommand,
+  useMusubiConnection,
+  useMusubiRoot,
+  useMusubiSnapshot
+} = createMusubi<ReactTestStores>()
+
+function buildProxy(title = "Inbox", counter = 0): FakeStoreProxy<Root, ReactTestStores> {
+  return new FakeStoreProxy<Root, ReactTestStores>({
     __musubi_store_id__: [],
     title,
     counter
@@ -99,7 +107,7 @@ describe("MusubiProvider + useMusubiRoot", () => {
     const params = { filter: "active" }
 
     function Reader() {
-      const root = useMusubiRoot<ReactTestStores, Root>({
+      const root = useMusubiRoot({
         module: "React.Test.Root",
         id: "dashboard-1",
         params
@@ -136,11 +144,11 @@ describe("MusubiProvider + useMusubiRoot", () => {
   test("useMusubiRoot reuses a pending mount during StrictMode effect replay", async () => {
     const fake = buildProxy()
     const connection = new FakeMusubiConnection(fake.asProxy())
-    const mount = deferred<StoreProxy<unknown, never>>()
+    const mount = deferred<StoreProxy<Root, ReactTestStores>>()
     connection.mountResult = mount.promise
 
     function Reader() {
-      const root = useMusubiRoot<ReactTestStores, Root>({
+      const root = useMusubiRoot({
         module: "React.Test.Root",
         id: "dashboard-1"
       })
@@ -186,7 +194,7 @@ describe("MusubiProvider + useMusubiRoot", () => {
     connection.mountError = new Error("Root id is already mounted: dashboard-1")
 
     function Reader() {
-      const root = useMusubiRoot<ReactTestStores, Root>({
+      const root = useMusubiRoot({
         module: "React.Test.Root",
         id: "dashboard-1"
       })
@@ -279,37 +287,38 @@ describe("useMusubiCommand", () => {
   })
 })
 
-class FakeMusubiConnection implements MusubiConnection {
+class FakeMusubiConnection implements MusubiConnection<ReactTestStores> {
   readonly topic = "musubi:connection"
-  readonly mounts: MountStoreOptions[] = []
+  readonly mounts: Array<MountStoreOptions<Root, ReactTestStores>> = []
   readonly unmounts: string[] = []
   disconnected = false
   mountError: Error | null = null
-  mountResult: Promise<StoreProxy<unknown, never>> | null = null
+  mountResult: Promise<StoreProxy<Root, ReactTestStores>> | null = null
 
-  constructor(private readonly store: StoreProxy<unknown, never>) {}
+  constructor(private readonly store: StoreProxy<Root, ReactTestStores>) {}
 
-  async mountStore<R, M extends StoreModule<R> = StoreModule<R>>(
-    options: MountStoreOptions
-  ): Promise<StoreProxy<R, M>> {
-    this.mounts.push(options)
+  async mountStore<M extends StoreModule<ReactTestStores>>(
+    options: MountStoreOptions<M, ReactTestStores>
+  ): Promise<MountedStore<M, ReactTestStores>> {
+    this.mounts.push(options as unknown as MountStoreOptions<Root, ReactTestStores>)
 
     if (this.mountError) {
       throw this.mountError
     }
 
-    if (this.mountResult) {
-      return (await this.mountResult) as StoreProxy<R, M>
+    const proxy = this.mountResult
+      ? ((await this.mountResult) as unknown as StoreProxy<M, ReactTestStores>)
+      : (this.store as unknown as StoreProxy<M, ReactTestStores>)
+
+    return {
+      store: proxy,
+      unmount: async () => {
+        this.unmounts.push(options.id)
+      }
     }
-
-    return this.store as StoreProxy<R, M>
   }
 
-  async unmountStore(rootId: string): Promise<void> {
-    this.unmounts.push(rootId)
-  }
-
-  disconnect(): void {
+  async disconnect(): Promise<void> {
     this.disconnected = true
   }
 }

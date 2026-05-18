@@ -7,33 +7,27 @@ defmodule Musubi.Codegen.TypeScript do
 
   One file (`priv/codegen/ts/musubi.d.ts` by default) containing:
 
-    * one top-level `namespace <Root>` block (root namespace configurable
-      via `config :musubi, :ts_codegen_root_namespace, "Musubi"`) carrying
-      shared marker types (`StoreId`, `AsyncResult`, `StoreDef`,
-      `StoreField`, `StreamField`, `AsyncField`) and an `interface
-      Stores` populated with one entry per Musubi.Store module
-    * one top-level `namespace <Path>` block per Musubi.State module,
-      nested to mirror the Elixir module tree, each holding an
+    * one top-level `declare namespace <Root>` block (root namespace
+      configurable via `config :musubi, :ts_codegen_root_namespace,
+      "Musubi"`) carrying shared marker types (`StoreId`, `AsyncResult`,
+      `StoreDef`, `StoreField`, `StreamField`, `AsyncField`) and an
+      `interface Stores` populated with one entry per Musubi.Store
+      module
+    * one top-level `declare namespace <Path>` block per Musubi.State
+      module, nested to mirror the Elixir module tree, each holding an
       `interface <Name> { ... }` declaration
 
-  The file is an ambient `.d.ts` (no top-level `import` / `export`),
-  so tsc picks it up automatically when the file falls under the
-  project's `include` glob. Consumers reference generated types as e.g.
-  `<Root>.Stores`, `MyApp.States.LineItemState`, without any side-effect
+  The file is an ambient `.d.ts` (no top-level `import` / `export`), so
+  tsc picks it up automatically when the file falls under the project's
+  `include` glob. Consumers reference generated types as e.g.
+  `Musubi.Stores`, `MyApp.States.LineItemState`, without any side-effect
   import.
 
-  Consumers thread the generated `<Root>.Stores` type through the
-  `@musubi/client` API as the registry generic:
-
-      const connection = await connect(socket)
-
-      const cart = await connection.mountStore<
-        MyApp.Stores,
-        "MyApp.Stores.CartPageStore"
-      >({
-        module: "MyApp.Stores.CartPageStore",
-        id: "cart:demo"
-      })
+  Consumers thread the generated `Musubi.Stores` type into the
+  `createMusubi<R>()` factory (from `@musubi/react`) or `connect<R>()`
+  (from `@musubi/client`) exactly once; every returned hook / API closes
+  over `R` so subsequent calls infer the store type from the `module`
+  string literal alone.
 
   ## Type mapping
 

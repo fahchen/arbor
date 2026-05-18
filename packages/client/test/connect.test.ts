@@ -166,10 +166,10 @@ type Equal<Left, Right> =
 type Assert<T extends true> = T
 
 type PlainObjectSnapshot = Assert<
-  Equal<SnapshotValue<TestStores, { title: string }>, { title: string }>
+  Equal<SnapshotValue<{ title: string }>, { title: string }>
 >
 
-type EmptyObjectSnapshot = Assert<Equal<SnapshotValue<TestStores, {}>, {}>>
+type EmptyObjectSnapshot = Assert<Equal<SnapshotValue<{}>, {}>>
 
 describe("connect", () => {
   beforeEach(() => {
@@ -183,7 +183,7 @@ describe("connect", () => {
   test("joins one Musubi connection channel", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
 
     const channel = lastChannel(socket)
     expect(channel.joinPayload).toEqual({})
@@ -195,23 +195,39 @@ describe("connect", () => {
     expect(connection.topic).toBe("musubi:connection")
   })
 
+  test("mountStore requires an explicit id at compile time", async () => {
+    const { connect } = await import("../src/connect")
+    const socket = new MockSocket()
+    const connectionPromise = connect<TestStores>(socket)
+    const channel = lastChannel(socket)
+    channel.resolveJoin()
+    const connection = await connectionPromise
+
+    if (false) {
+      // @ts-expect-error -- id is required
+      void connection.mountStore({ module: "Test.Store" })
+    }
+
+    expect(connection.topic).toBe("musubi:connection")
+  })
+
   test("mountStore resolves only after the root initial envelope is applied", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
     const channel = lastChannel(socket)
     channel.resolveJoin()
     const connection = await connectionPromise
     let resolved = false
 
-    const proxyPromise = connection.mountStore<TestStores, "Test.Store">({
+    const mountedPromise = connection.mountStore({
       module: "Test.Store",
       id: "alpha-1",
       params: { room_id: "general" }
     })
     await Promise.resolve()
 
-    void proxyPromise.then(() => {
+    void mountedPromise.then(() => {
       resolved = true
     })
 
@@ -229,7 +245,7 @@ describe("connect", () => {
 
     channel.emit("patch", initialConnectionEnvelope("alpha-1", rootState()))
 
-    const proxy = await proxyPromise
+    const { store: proxy } = await mountedPromise
     expect(proxy.title).toBe("Inbox")
     expect(proxy.counter).toBe(1)
     expect(proxy.__musubi_store_id__).toEqual([])
@@ -238,11 +254,11 @@ describe("connect", () => {
   test("nested store field returns a stable child proxy", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
     const channel = lastChannel(socket)
     channel.resolveJoin()
     const connection = await connectionPromise
-    const proxyPromise = connection.mountStore<TestStores, "Test.Store">({
+    const mountedPromise = connection.mountStore({
       module: "Test.Store",
       id: "alpha-1"
     })
@@ -251,7 +267,7 @@ describe("connect", () => {
     lastPush(channel).push.resolve("ok", { root_id: "alpha-1" })
     channel.emit("patch", initialConnectionEnvelope("alpha-1", rootState()))
 
-    const proxy = await proxyPromise
+    const { store: proxy } = await mountedPromise
 
     expect(proxy.child).toBe(proxy.child)
     expect(proxy.child.count).toBe(1)
@@ -260,11 +276,11 @@ describe("connect", () => {
   test("dispatchCommand sends root_id with the command", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
     const channel = lastChannel(socket)
     channel.resolveJoin()
     const connection = await connectionPromise
-    const proxyPromise = connection.mountStore<TestStores, "Test.Store">({
+    const mountedPromise = connection.mountStore({
       module: "Test.Store",
       id: "alpha-1"
     })
@@ -273,7 +289,7 @@ describe("connect", () => {
     lastPush(channel).push.resolve("ok", { root_id: "alpha-1" })
     channel.emit("patch", initialConnectionEnvelope("alpha-1", rootState()))
 
-    const proxy = await proxyPromise
+    const { store: proxy } = await mountedPromise
     const replyPromise = proxy.dispatchCommand("rename", { title: "Outbox" })
 
     const commandPush = lastPush(channel)
@@ -292,28 +308,28 @@ describe("connect", () => {
   test("patches are routed by root_id", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
     const channel = lastChannel(socket)
     channel.resolveJoin()
     const connection = await connectionPromise
 
-    const alphaPromise = connection.mountStore<TestStores, "Test.Store">({
+    const alphaMountedPromise = connection.mountStore({
       module: "Test.Store",
       id: "alpha-1"
     })
     await Promise.resolve()
     lastPush(channel).push.resolve("ok", { root_id: "alpha-1" })
     channel.emit("patch", initialConnectionEnvelope("alpha-1", rootState()))
-    const alpha = await alphaPromise
+    const { store: alpha } = await alphaMountedPromise
 
-    const betaPromise = connection.mountStore<TestStores, "Test.Store">({
+    const betaMountedPromise = connection.mountStore({
       module: "Test.Store",
       id: "beta-1"
     })
     await Promise.resolve()
     lastPush(channel).push.resolve("ok", { root_id: "beta-1" })
     channel.emit("patch", initialConnectionEnvelope("beta-1", rootState("Secondary")))
-    const beta = await betaPromise
+    const { store: beta } = await betaMountedPromise
 
     const alphaListener = vi.fn()
     const betaListener = vi.fn()
@@ -340,12 +356,12 @@ describe("connect", () => {
   test("mountStore reuses the existing root for duplicate ids in one connection", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
     const channel = lastChannel(socket)
     channel.resolveJoin()
     const connection = await connectionPromise
 
-    const firstPromise = connection.mountStore<TestStores, "Test.Store">({
+    const firstPromise = connection.mountStore({
       module: "Test.Store",
       id: "shared-root"
     })
@@ -353,27 +369,66 @@ describe("connect", () => {
     const firstPushCount = channel.pushes.length
     lastPush(channel).push.resolve("ok", { root_id: "shared-root" })
     channel.emit("patch", initialConnectionEnvelope("shared-root", rootState()))
-    const firstProxy = await firstPromise
+    const firstMounted = await firstPromise
 
-    const secondProxy = await connection.mountStore<TestStores, "Test.Store">({
+    const secondMounted = await connection.mountStore({
       module: "Test.Store",
       id: "shared-root"
     })
 
-    expect(secondProxy).toBe(firstProxy)
+    expect(secondMounted.store).toBe(firstMounted.store)
     // No second mount push: dedup reuses the in-memory entry. The server is
     // the source of truth for duplicate-mount errors; locally we just attach.
     expect(channel.pushes.length).toBe(firstPushCount)
   })
 
-  test("snapshot returns a plain object tree", async () => {
+  test("shared root unmount waits for the last caller handle", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
     const channel = lastChannel(socket)
     channel.resolveJoin()
     const connection = await connectionPromise
-    const proxyPromise = connection.mountStore<TestStores, "Test.Store">({
+
+    const firstPromise = connection.mountStore({
+      module: "Test.Store",
+      id: "shared-root"
+    })
+    await Promise.resolve()
+    lastPush(channel).push.resolve("ok", { root_id: "shared-root" })
+    channel.emit("patch", initialConnectionEnvelope("shared-root", rootState()))
+
+    const firstMounted = await firstPromise
+    const secondMounted = await connection.mountStore({
+      module: "Test.Store",
+      id: "shared-root"
+    })
+    const pushCountBeforeUnmount = channel.pushes.length
+
+    await firstMounted.unmount()
+    expect(channel.pushes.length).toBe(pushCountBeforeUnmount)
+    expect(firstMounted.store.title).toBe("Inbox")
+
+    const secondUnmountPromise = secondMounted.unmount()
+    const unmountPush = lastPush(channel)
+
+    expect(unmountPush.event).toBe("unmount")
+    expect(unmountPush.payload).toEqual({ root_id: "shared-root" })
+
+    unmountPush.push.resolve("ok", {})
+    await secondUnmountPromise
+
+    expect(firstMounted.store.title).toBeUndefined()
+  })
+
+  test("snapshot returns a plain object tree", async () => {
+    const { connect } = await import("../src/connect")
+    const socket = new MockSocket()
+    const connectionPromise = connect<TestStores>(socket)
+    const channel = lastChannel(socket)
+    channel.resolveJoin()
+    const connection = await connectionPromise
+    const mountedPromise = connection.mountStore({
       module: "Test.Store",
       id: "alpha-1"
     })
@@ -382,7 +437,7 @@ describe("connect", () => {
     lastPush(channel).push.resolve("ok", { root_id: "alpha-1" })
     channel.emit("patch", initialConnectionEnvelope("alpha-1", rootState()))
 
-    const proxy = await proxyPromise
+    const { store: proxy } = await mountedPromise
     const snapshot = proxy.snapshot()
 
     expect(snapshot).toEqual({
@@ -400,11 +455,11 @@ describe("connect", () => {
   test("stream markers resolve at nested paths", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
     const channel = lastChannel(socket)
     channel.resolveJoin()
     const connection = await connectionPromise
-    const proxyPromise = connection.mountStore<TestStores, "Test.Store">({
+    const mountedPromise = connection.mountStore({
       module: "Test.Store",
       id: "alpha-1"
     })
@@ -453,7 +508,7 @@ describe("connect", () => {
       )
     )
 
-    const proxy = await proxyPromise
+    const { store: proxy } = await mountedPromise
 
     expect(proxy.feed.messages).toEqual([{ body: "hello" }])
     expect(proxy.async_messages).toEqual({
@@ -472,14 +527,14 @@ describe("connect", () => {
     expect(proxy.snapshot().metadata.messages).toBe("literal")
   })
 
-  test("unmountStore sends an unmount push and resets the root runtime", async () => {
+  test("unmount sends an unmount push and resets the root runtime", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
     const channel = lastChannel(socket)
     channel.resolveJoin()
     const connection = await connectionPromise
-    const proxyPromise = connection.mountStore<TestStores, "Test.Store">({
+    const mountedPromise = connection.mountStore({
       module: "Test.Store",
       id: "alpha-1"
     })
@@ -488,8 +543,8 @@ describe("connect", () => {
     lastPush(channel).push.resolve("ok", { root_id: "alpha-1" })
     channel.emit("patch", initialConnectionEnvelope("alpha-1", rootState()))
 
-    const proxy = await proxyPromise
-    const unmountPromise = connection.unmountStore("alpha-1")
+    const { store: proxy, unmount } = await mountedPromise
+    const unmountPromise = unmount()
     const unmountPush = lastPush(channel)
 
     expect(unmountPush.event).toBe("unmount")
@@ -507,12 +562,12 @@ describe("connect", () => {
   test("disconnect leaves the connection channel", async () => {
     const { connect } = await import("../src/connect")
     const socket = new MockSocket()
-    const connectionPromise = connect(socket)
+    const connectionPromise = connect<TestStores>(socket)
     const channel = lastChannel(socket)
     channel.resolveJoin()
     const connection = await connectionPromise
 
-    connection.disconnect()
+    await connection.disconnect()
 
     expect(channel.left).toBe(true)
   })

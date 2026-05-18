@@ -1,12 +1,16 @@
-// Public types for `@musubi/client`. Consumers thread their generated
-// `<Root>.Stores` type (emitted by `mix compile.musubi_ts` into an ambient
-// `.d.ts` bundle) through `connection.mountStore` and friends as the `Registry`
-// generic — every other helper (`ShapeOf`, `CommandsOf`, `StoreSnapshot`,
-// `StoreProxy`, …) derives from it.
+// Public types for `@musubi/client`.
 //
-// This package does not declare `Musubi.Stores` in the global namespace; the
-// generated bundle owns those declarations and is auto-loaded by tsc as an
-// ambient module.
+// The default `Registry` is empty. Consumers thread their generated
+// `Musubi.Stores` type into the API exactly once via the `createMusubi<R>()`
+// factory (from `@musubi/react`) or the `connect<R>()` generic (from
+// `@musubi/client`). Every returned handle closes over `R`, so subsequent
+// calls infer the store type from the `module` string literal without
+// re-threading the registry generic.
+//
+// All helpers (`ShapeOf`, `CommandsOf`, `StoreSnapshot`, `StoreProxy`, …)
+// take the module key first and default the registry parameter to
+// `Registry`. Tests or advanced multi-registry setups can pass an explicit
+// registry as the second generic.
 
 // ---------------------------------------------------------------------------
 // Public runtime types
@@ -24,12 +28,21 @@ export type AsyncResult<T> =
   | { status: "failed"; data: T | null; error: AsyncError | unknown }
 
 // ---------------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------------
+
+// Empty default. Users supply their generated `Musubi.Stores` type as the
+// registry parameter via `createMusubi<Musubi.Stores>()` or
+// `connect<Musubi.Stores>(socket)`.
+export interface Registry {}
+
+// ---------------------------------------------------------------------------
 // Registry-driven accessors
 // ---------------------------------------------------------------------------
 
-export type StoreModule<R> = Extract<keyof R, string>
+export type StoreModule<R = Registry> = Extract<keyof R, string>
 
-export type DefOf<R, M extends StoreModule<R>> = R[M & keyof R]
+export type DefOf<M extends StoreModule<R>, R = Registry> = R[M & keyof R]
 
 type SymbolMarker<T> = T extends object
   ? NonNullable<T[Extract<keyof T, symbol>]>
@@ -45,33 +58,33 @@ type FieldMarker<T> = Extract<
   { readonly kind: "store" | "stream" | "async" }
 >
 
-export type ShapeOf<R, M extends StoreModule<R>> =
-  [StoreDefMarker<DefOf<R, M>>] extends [never]
+export type ShapeOf<M extends StoreModule<R>, R = Registry> =
+  [StoreDefMarker<DefOf<M, R>>] extends [never]
     ? never
-    : StoreDefMarker<DefOf<R, M>> extends { readonly shape: infer Shape }
+    : StoreDefMarker<DefOf<M, R>> extends { readonly shape: infer Shape }
       ? Shape
       : never
 
-export type CommandsOf<R, M extends StoreModule<R>> =
-  [StoreDefMarker<DefOf<R, M>>] extends [never]
+export type CommandsOf<M extends StoreModule<R>, R = Registry> =
+  [StoreDefMarker<DefOf<M, R>>] extends [never]
     ? never
-    : StoreDefMarker<DefOf<R, M>> extends { readonly commands: infer Commands }
+    : StoreDefMarker<DefOf<M, R>> extends { readonly commands: infer Commands }
       ? Commands
       : never
 
-export type CommandName<R, M extends StoreModule<R>> = keyof CommandsOf<R, M>
+export type CommandName<M extends StoreModule<R>, R = Registry> = keyof CommandsOf<M, R>
 
 export type CommandPayload<
-  R,
   M extends StoreModule<R>,
-  K extends CommandName<R, M>
-> = CommandsOf<R, M>[K] extends { payload: infer Payload } ? Payload : never
+  K extends CommandName<M, R>,
+  R = Registry
+> = CommandsOf<M, R>[K] extends { payload: infer Payload } ? Payload : never
 
 export type CommandReply<
-  R,
   M extends StoreModule<R>,
-  K extends CommandName<R, M>
-> = CommandsOf<R, M>[K] extends { reply: infer Reply } ? Reply : unknown
+  K extends CommandName<M, R>,
+  R = Registry
+> = CommandsOf<M, R>[K] extends { reply: infer Reply } ? Reply : unknown
 
 // ---------------------------------------------------------------------------
 // Snapshot and proxy projection (symbol-branded generated marker matching)
@@ -105,63 +118,63 @@ type AsyncFieldValue<T> =
       ? Value
       : never
 
-type SnapshotAsyncValue<R, T> =
+type SnapshotAsyncValue<T, R> =
   IsStreamField<T> extends true
-    ? SnapshotValue<R, StreamFieldItem<T>>[]
-    : SnapshotValue<R, T>
+    ? SnapshotValue<StreamFieldItem<T>, R>[]
+    : SnapshotValue<T, R>
 
-export type SnapshotValue<R, T> =
+export type SnapshotValue<T, R = Registry> =
   IsStoreField<T> extends true
     ? StoreFieldModule<T> extends infer M
       ? M extends StoreModule<R>
-        ? StoreSnapshot<R, M>
+        ? StoreSnapshot<M, R>
         : never
       : never
     : IsAsyncField<T> extends true
-      ? AsyncResult<SnapshotAsyncValue<R, AsyncFieldValue<T>>>
+      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
       : IsStreamField<T> extends true
-        ? SnapshotValue<R, StreamFieldItem<T>>[]
+        ? SnapshotValue<StreamFieldItem<T>, R>[]
         : T extends readonly (infer U)[]
-          ? SnapshotValue<R, U>[]
+          ? SnapshotValue<U, R>[]
           : T extends object
-            ? { [K in keyof T]: SnapshotValue<R, T[K]> }
+            ? { [K in keyof T]: SnapshotValue<T[K], R> }
             : T
 
-export type StoreSnapshot<R, M extends StoreModule<R>> = {
+export type StoreSnapshot<M extends StoreModule<R>, R = Registry> = {
   readonly __musubi_store_id__: StoreId
 } & {
-  [K in keyof ShapeOf<R, M>]: SnapshotValue<R, ShapeOf<R, M>[K]>
+  [K in keyof ShapeOf<M, R>]: SnapshotValue<ShapeOf<M, R>[K], R>
 }
 
-export type ProxyValue<R, T> =
+export type ProxyValue<T, R = Registry> =
   IsStoreField<T> extends true
     ? StoreFieldModule<T> extends infer M
       ? M extends StoreModule<R>
-        ? StoreProxy<R, M>
+        ? StoreProxy<M, R>
         : never
       : never
     : IsAsyncField<T> extends true
-      ? AsyncResult<SnapshotAsyncValue<R, AsyncFieldValue<T>>>
+      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
       : IsStreamField<T> extends true
-        ? SnapshotValue<R, StreamFieldItem<T>>[]
+        ? SnapshotValue<StreamFieldItem<T>, R>[]
         : T extends readonly (infer U)[]
-          ? ProxyValue<R, U>[]
+          ? ProxyValue<U, R>[]
           : T extends object
-            ? { [K in keyof T]: ProxyValue<R, T[K]> }
+            ? { [K in keyof T]: ProxyValue<T[K], R> }
             : T
 
-export interface StoreRuntime<R, M extends StoreModule<R>> {
+export interface StoreRuntime<M extends StoreModule<R>, R = Registry> {
   readonly __musubi_store_id__: StoreId
-  dispatchCommand<K extends CommandName<R, M>>(
+  dispatchCommand<K extends CommandName<M, R>>(
     name: K,
-    payload: CommandPayload<R, M, K>
-  ): Promise<CommandReply<R, M, K>>
+    payload: CommandPayload<M, K, R>
+  ): Promise<CommandReply<M, K, R>>
   subscribe(listener: () => void): () => void
-  snapshot(): StoreSnapshot<R, M>
+  snapshot(): StoreSnapshot<M, R>
 }
 
-export type StoreProxy<R, M extends StoreModule<R>> = StoreRuntime<R, M> & {
-  [K in keyof ShapeOf<R, M>]: ProxyValue<R, ShapeOf<R, M>[K]>
+export type StoreProxy<M extends StoreModule<R>, R = Registry> = StoreRuntime<M, R> & {
+  [K in keyof ShapeOf<M, R>]: ProxyValue<ShapeOf<M, R>[K], R>
 }
 
 // ---------------------------------------------------------------------------
