@@ -96,9 +96,9 @@ function CartPage({ root }: { root: Store<RootModule> }) {
   async function handleAddItem(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     try {
-      const reply = (await addItem.dispatch({ sku })) as Record<string, never> | { error: string }
+      const reply = await addItem.dispatch({ sku })
       setFeedback(
-        "error" in reply
+        reply && "error" in reply
           ? `Add failed: ${reply.error}`
           : `Added ${selectedProduct.label} to demo-cart.`
       )
@@ -109,14 +109,12 @@ function CartPage({ root }: { root: Store<RootModule> }) {
 
   async function handleCheckout() {
     try {
-      const reply = (await checkout.dispatch({})) as { order_id?: string; error?: string }
+      const reply = await checkout.dispatch({})
 
-      if (reply.order_id) {
+      if ("order_id" in reply) {
         setFeedback(`Checkout succeeded: ${reply.order_id}`)
-      } else if (reply.error) {
-        setFeedback(`Checkout blocked: ${reply.error}`)
       } else {
-        setFeedback("Checkout completed.")
+        setFeedback(`Checkout blocked: ${reply.error}`)
       }
     } catch (error) {
       setFeedback(formatCommandError(error, "Checkout"))

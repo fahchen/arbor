@@ -56,13 +56,16 @@ defmodule CartPage.Stores.CartStore do
 
   command :add_item do
     payload(:sku, String.t())
+    reply(%{error: String.t()} | nil)
   end
 
   command :remove_line do
     payload(:id, String.t())
   end
 
-  command(:checkout)
+  command :checkout do
+    reply(%{order_id: String.t()} | %{error: String.t()})
+  end
 
   @impl Musubi.Store
   def mount(socket) do
