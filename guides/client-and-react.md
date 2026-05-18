@@ -75,13 +75,19 @@ export const {
   connect,
   MusubiProvider,
   useMusubiConnection,
+  useMusubiConnectionStatus,
   useMusubiRoot,
+  useMusubiRootSuspense,
   useMusubiSnapshot,
   useMusubiCommand,
 } = createMusubi<Musubi.Stores>()
 ```
 
-Open the connection once at app boot and pass it to `MusubiProvider`:
+`MusubiProvider` accepts either a pre-opened `connection` or a raw
+`socket`. The two props are mutually exclusive (enforced at the type
+level and at runtime).
+
+Variant A — open the connection at app boot, pass `connection`:
 
 ```tsx
 // src/main.tsx
@@ -98,6 +104,42 @@ root.render(
   </MusubiProvider>,
 )
 ```
+
+Variant B — pass `socket`; the provider opens the connection itself and
+exposes its lifecycle through `useMusubiConnectionStatus()`:
+
+```tsx
+import { MusubiProvider, socket } from "./musubi"
+
+root.render(
+  <MusubiProvider socket={socket}>
+    <App />
+  </MusubiProvider>,
+)
+```
+
+### Observe Connection Status
+
+`useMusubiConnectionStatus()` returns
+`{ state: "connecting" | "ready" | "error", connection, error? }`. Use
+it to render a fallback while the socket-prop provider is connecting, or
+to surface a connect failure:
+
+```tsx
+import { useMusubiConnectionStatus } from "./musubi"
+
+function AppShell({ children }: { children: React.ReactNode }) {
+  const status = useMusubiConnectionStatus()
+
+  if (status.state === "connecting") return <Spinner />
+  if (status.state === "error") return <p>Connect failed: {status.error.message}</p>
+  return <>{children}</>
+}
+```
+
+`useMusubiConnection()` returns the live `MusubiConnection<R>` once
+ready and throws if called before ready — use `useMusubiConnectionStatus()`
+when the calling component must tolerate the pre-ready states.
 
 ## Mount Roots In React
 
@@ -128,6 +170,42 @@ export function Dashboard() {
 `useMusubiRoot` unmounts the root when the component unmounts by default. Pass
 `unmountOnCleanup: false` when a mounted root should outlive the component.
 
+Mount cache keying is canonical: `params` are stringified with sorted
+keys, so `{ a: 1, b: 2 }` and `{ b: 2, a: 1 }` resolve to the same
+mounted root. Two components requesting the same `{module, id, params}`
+share one server-side mount and ref-count its lifetime.
+
+### Suspense Variant
+
+`useMusubiRootSuspense(options)` returns the `StoreProxy` directly. It
+throws the in-flight Promise for `<Suspense>` and a cached Error for
+the nearest error boundary, and shares the same root-mount cache as
+`useMusubiRoot` (Suspense-safe orphan cleanup on abort):
+
+```tsx
+import { Suspense } from "react"
+import { ErrorBoundary } from "react-error-boundary"
+import { useMusubiRootSuspense } from "./musubi"
+
+function Dashboard() {
+  const store = useMusubiRootSuspense({
+    module: "MyApp.Stores.DashboardStore",
+    id: "dashboard",
+  })
+  return <DashboardContent store={store} />
+}
+
+export function DashboardPage() {
+  return (
+    <ErrorBoundary fallback={<p>Failed to load dashboard</p>}>
+      <Suspense fallback={<Spinner />}>
+        <Dashboard />
+      </Suspense>
+    </ErrorBoundary>
+  )
+}
+```
+
 ## Subscribe To Snapshots
 
 `useMusubiSnapshot` subscribes to proxy updates and returns an immutable
@@ -135,24 +213,85 @@ snapshot:
 
 ```tsx
 import type { StoreProxy } from "@musubi/react"
+import { keyOf } from "@musubi/react"
 import { useMusubiCommand, useMusubiSnapshot } from "./musubi"
 
 type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
 
 function DashboardContent({ store }: { store: Store<"MyApp.Stores.DashboardStore"> }) {
   const title = useMusubiSnapshot(store, (snapshot) => snapshot.header.title)
-  const refresh = useMusubiCommand(store, "refresh")
+  const { dispatch: refresh, isPending, error } = useMusubiCommand(store, "refresh")
 
   return (
-    <button onClick={() => void refresh({})}>
-      {title}
-    </button>
+    <>
+      <button disabled={isPending} onClick={() => void refresh({})}>
+        {title}
+      </button>
+      {error && <p role="alert">{error.code ?? error.message}</p>}
+    </>
   )
 }
 ```
 
 Use selectors to keep React renders focused. A component that selects
 `snapshot.header.title` does not need to re-render for unrelated store fields.
+When a selector is supplied, `useMusubiSnapshot` defaults `equalityFn`
+to `shallowEqual`, so selectors that return an object/tuple of fields
+do not cause spurious re-renders when their elements are referentially
+equal. Pass an explicit `equalityFn` to override.
+
+### Commands And Structured Errors
+
+`useMusubiCommand(proxy, name)` returns a mutation-shaped result:
+
+```ts
+interface MusubiCommandResult<M, K, R> {
+  dispatch: (payload) => Promise<Reply>
+  isPending: boolean
+  error: MusubiCommandError | null
+  data: Reply | null
+  reset: () => void
+}
+```
+
+Concurrent `dispatch` calls are sequenced by a monotonic request token —
+only the latest call's outcome lands in `data` / `error`. Call `reset()`
+to clear `data` / `error` and return to the idle state.
+
+Both `dispatch` rejection and the hook's `error` field carry a
+`MusubiCommandError` (re-exported from `@musubi/client`):
+
+```ts
+import { MusubiCommandError } from "@musubi/client"
+
+class MusubiCommandError extends Error {
+  kind: "failed" | "timeout"     // server reply error vs. dispatch timeout
+  command: string                 // command name
+  storeId: readonly string[]      // target store path
+  reply: unknown                  // raw server reply (failed kind only)
+  code: string | undefined        // extracted from reply.code/error/reason
+}
+```
+
+`MusubiCommandError.is(value)` is a cross-module-safe type guard (uses
+`name` rather than `instanceof`, so it works across bundle boundaries).
+Use `error.code` for routing to user-visible copy; fall back to
+`error.message` for unstructured cases. `dispatchConnectionCommand` from
+`@musubi/client` throws the same class for direct-proxy callers.
+
+```tsx
+const { dispatch, error } = useMusubiCommand(cart, "checkout")
+
+async function onSubmit() {
+  try {
+    await dispatch({})
+  } catch (e) {
+    if (MusubiCommandError.is(e) && e.kind === "timeout") {
+      toast("Took too long — try again")
+    }
+  }
+}
+```
 
 ## Target Child Stores
 
@@ -197,13 +336,13 @@ proxy per element. Each carries its own `dispatchCommand`:
 
 ```tsx
 function HeaderRename({ root }: { root: Store<"MyApp.Stores.CartPageStore"> }) {
-  const setName = useMusubiCommand(root.header, "rename")
+  const { dispatch: setName } = useMusubiCommand(root.header, "rename")
   return <button onClick={() => void setName({ name: "Ada" })}>Rename</button>
 }
 
 function CartLine({ lineProxy }: { lineProxy: Store<"MyApp.Stores.CartLineStore"> }) {
   const line = useMusubiSnapshot(lineProxy)
-  const inc = useMusubiCommand(lineProxy, "inc_qty")
+  const { dispatch: inc } = useMusubiCommand(lineProxy, "inc_qty")
   return <button onClick={() => void inc({})}>{line.qty}</button>
 }
 
@@ -211,12 +350,17 @@ function CartLines({ root }: { root: Store<"MyApp.Stores.CartPageStore"> }) {
   return (
     <ul>
       {root.cart.lines.map((lineProxy) => (
-        <CartLine key={lineProxy.__musubi_store_id__.join("/")} lineProxy={lineProxy} />
+        <CartLine key={keyOf(lineProxy)} lineProxy={lineProxy} />
       ))}
     </ul>
   )
 }
 ```
+
+`keyOf(proxy)` returns a stable string derived from the proxy's
+`store_id` path. Use it as a React list `key`; do not read
+`__musubi_store_id__` directly. `keyOf` is exported from `@musubi/client`
+and re-exported by `@musubi/react`.
 
 The wire payload carries the full `store_id` path, so the page server routes
 `inc_qty` directly to the addressed `CartLineStore` instance. Authorization

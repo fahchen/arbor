@@ -34,7 +34,7 @@ Add Musubi to your Phoenix application:
 ```elixir
 def deps do
   [
-    {:musubi, "~> 0.1.0"}
+    {:musubi, "~> 0.2.0"}
   ]
 end
 ```
@@ -149,9 +149,18 @@ await unmount()
 ```
 
 The `R` generic is bound once on `connect`; the `module` string literal
-drives type inference for every later `mountStore` call. React consumers
-typically go through `createMusubi<Musubi.Stores>()` from `@musubi/react`,
-which binds `R` once for the connection and every hook.
+drives type inference for every later `mountStore` call. Command
+failures and timeouts throw a `MusubiCommandError` (from
+`@musubi/client`) with `kind`, `command`, `storeId`, `reply`, and an
+extracted `code`.
+
+React consumers typically go through `createMusubi<Musubi.Stores>()`
+from `@musubi/react`, which binds `R` once and returns the full hook
+set — `MusubiProvider` (accepts `connection` or `socket`),
+`useMusubiConnectionStatus`, `useMusubiRoot`, `useMusubiRootSuspense`,
+`useMusubiSnapshot`, and `useMusubiCommand` (mutation-shaped:
+`{ dispatch, isPending, error, data, reset }`). Use `keyOf(proxy)` for
+stable React list keys over child proxies.
 
 ## Documentation
 
