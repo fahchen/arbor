@@ -136,19 +136,22 @@ import { Socket } from "phoenix"
 import { connect } from "@musubi/client"
 
 const socket = new Socket("/socket", { params: { token: window.userToken } })
-const connection = await connect(socket)
+const connection = await connect<Musubi.Stores>(socket)
 
-const counter = await connection.mountStore<
-  Musubi.Stores,
-  "MyAppWeb.Stores.CounterStore"
->({
+const { store: counter, unmount } = await connection.mountStore({
   module: "MyAppWeb.Stores.CounterStore",
   id: "counter",
   params: { count: 1 },
 })
 
 await counter.dispatchCommand("increment", { amount: 1 })
+await unmount()
 ```
+
+The `R` generic is bound once on `connect`; the `module` string literal
+drives type inference for every later `mountStore` call. React consumers
+typically go through `createMusubi<Musubi.Stores>()` from `@musubi/react`,
+which binds `R` once for the connection and every hook.
 
 ## Documentation
 

@@ -53,6 +53,7 @@ export interface RootConnection {
   readonly mountParams: Record<string, unknown>
 
   // Mutable runtime state — read by the proxy on every property access.
+  refCount: number
   channel: ChannelLike | undefined
   channelGeneration: number
   root: unknown
@@ -151,6 +152,7 @@ export function mountConnectionRoot(
   // attempts (e.g. React StrictMode effect replay, HMR remounts) attach
   // to the in-flight mount instead of crashing on a stale local view.
   if (existing) {
+    existing.refCount += 1
     return { connection: existing, ready: ensureConnectionRootMounted(existing) }
   }
 
@@ -159,6 +161,7 @@ export function mountConnectionRoot(
     id: options.id,
     connection: connectionState,
     mountParams: options.params ?? {},
+    refCount: 1,
     channel: undefined,
     channelGeneration: 0,
     root: undefined,
@@ -197,6 +200,12 @@ export async function unmountConnectionRoot(
     return
   }
 
+  connection.refCount -= 1
+
+  if (connection.refCount > 0) {
+    return
+  }
+
   connection.pendingConnect?.reject(new Error("Unmounted"))
   connection.pendingConnect = null
   rejectPendingCommands(connection, new Error("Unmounted"))
@@ -214,7 +223,9 @@ export async function unmountConnectionRoot(
   )
 }
 
-export function disconnectConnectionState(connectionState: ConnectionState): void {
+export async function disconnectConnectionState(
+  connectionState: ConnectionState
+): Promise<void> {
   for (const root of connectionState.roots.values()) {
     root.pendingConnect?.reject(new Error("Disconnected"))
     root.pendingConnect = null

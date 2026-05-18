@@ -8,22 +8,22 @@ afterEach(() => {
 })
 
 /**
- * Minimal stand-in for a real `StoreProxy<R, M>` used by the React adapter
+ * Minimal stand-in for a real `StoreProxy<M, R>` used by the React adapter
  * tests. The fake exposes the four reserved runtime members and a settable
  * snapshot/dispatch impl, but skips proxy field access — tests assert on
  * snapshot values, not on bracket-style field reads through the proxy.
  */
-export class FakeStoreProxy<R, M extends StoreModule<R>> {
+export class FakeStoreProxy<M extends StoreModule<R>, R> {
   readonly __musubi_store_id__: string[] = []
 
-  private snapshotValue: StoreSnapshot<R, M>
+  private snapshotValue: StoreSnapshot<M, R>
   private readonly subscribers = new Set<() => void>()
 
   readonly dispatchCalls: Array<{ name: string; payload: unknown }> = []
   private dispatchImpl: (name: string, payload: unknown) => Promise<unknown> = async () =>
     undefined
 
-  constructor(initialSnapshot: StoreSnapshot<R, M>) {
+  constructor(initialSnapshot: StoreSnapshot<M, R>) {
     this.snapshotValue = initialSnapshot
   }
 
@@ -34,14 +34,14 @@ export class FakeStoreProxy<R, M extends StoreModule<R>> {
     }
   }
 
-  snapshot = (): StoreSnapshot<R, M> => this.snapshotValue
+  snapshot = (): StoreSnapshot<M, R> => this.snapshotValue
 
   dispatchCommand = async (name: string, payload: unknown): Promise<unknown> => {
     this.dispatchCalls.push({ name, payload })
     return this.dispatchImpl(name, payload)
   }
 
-  setSnapshot(next: StoreSnapshot<R, M>): void {
+  setSnapshot(next: StoreSnapshot<M, R>): void {
     this.snapshotValue = next
     for (const listener of this.subscribers) listener()
   }
@@ -50,7 +50,7 @@ export class FakeStoreProxy<R, M extends StoreModule<R>> {
     this.dispatchImpl = impl
   }
 
-  asProxy(): StoreProxy<R, M> {
-    return this as StoreProxy<R, M>
+  asProxy(): StoreProxy<M, R> {
+    return this as StoreProxy<M, R>
   }
 }

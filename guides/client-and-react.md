@@ -8,7 +8,10 @@ The TypeScript packages mirror the backend connection model:
 
 ## Plain TypeScript
 
-Create one Phoenix socket and one Musubi connection:
+Create one Phoenix socket, then call `connect<Musubi.Stores>(socket)` once.
+The generic argument binds the generated registry for the connection;
+every later `mountStore` call infers the store type from the `module`
+string literal alone.
 
 ```ts
 import { Socket } from "phoenix"
@@ -18,16 +21,14 @@ const socket = new Socket("/socket", {
   params: { token: window.userToken },
 })
 
-const connection = await connect(socket)
+const connection = await connect<Musubi.Stores>(socket)
 ```
 
-Mount a declared root store:
+Mount a declared root store. `mountStore` returns a
+`{ store, unmount }` pair:
 
 ```ts
-const dashboard = await connection.mountStore<
-  Musubi.Stores,
-  "MyApp.Stores.DashboardStore"
->({
+const { store: dashboard, unmount } = await connection.mountStore({
   module: "MyApp.Stores.DashboardStore",
   id: "dashboard",
 })
@@ -46,72 +47,68 @@ Dispatch a declared command:
 await dashboard.dispatchCommand("refresh", {})
 ```
 
-Unmount when the root is no longer needed:
+Unmount when the root is no longer needed by calling the `unmount`
+closure returned from `mountStore`:
 
 ```ts
-await connection.unmountStore("dashboard")
+await unmount()
 ```
 
-## React Provider
+## React: createMusubi
 
-Create the connection once and pass it to `MusubiProvider`:
+`@musubi/react` exports a `createMusubi<R>()` factory. Call it exactly
+once per app, alongside the Phoenix socket. The factory closes over the
+generated registry `R` and returns a `connect`, `MusubiProvider`, and
+hook set whose closures all know `R` without any further generic
+threading:
+
+```ts
+// src/musubi.ts
+import { Socket } from "phoenix"
+import { createMusubi } from "@musubi/react"
+
+export const socket = new Socket("/socket", {
+  params: { token: window.userToken },
+})
+
+export const {
+  connect,
+  MusubiProvider,
+  useMusubiConnection,
+  useMusubiRoot,
+  useMusubiSnapshot,
+  useMusubiCommand,
+} = createMusubi<Musubi.Stores>()
+```
+
+Open the connection once at app boot and pass it to `MusubiProvider`:
 
 ```tsx
-import { Socket } from "phoenix"
-import { connect, type MusubiConnection } from "@musubi/client"
-import { MusubiProvider } from "@musubi/react"
-import { useEffect, useState } from "react"
+// src/main.tsx
+import { createRoot } from "react-dom/client"
+import App from "./App"
+import { connect, MusubiProvider, socket } from "./musubi"
 
-export function App() {
-  const [connection, setConnection] = useState<MusubiConnection | null>(null)
+const root = createRoot(document.getElementById("root")!)
+const connection = await connect(socket)
 
-  useEffect(() => {
-    const socket = new Socket("/socket", {
-      params: { token: window.userToken },
-    })
-
-    let cancelled = false
-    let current: MusubiConnection | null = null
-
-    connect(socket).then((next) => {
-      current = next
-
-      if (!cancelled) {
-        setConnection(next)
-      }
-    })
-
-    return () => {
-      cancelled = true
-      current?.disconnect()
-    }
-  }, [])
-
-  if (!connection) {
-    return null
-  }
-
-  return (
-    <MusubiProvider connection={connection}>
-      <Dashboard />
-    </MusubiProvider>
-  )
-}
+root.render(
+  <MusubiProvider connection={connection}>
+    <App />
+  </MusubiProvider>,
+)
 ```
 
 ## Mount Roots In React
 
-Use `useMusubiRoot` to mount a declared root under the nearest provider:
+Use the factory's `useMusubiRoot` to mount a declared root under the
+nearest provider. The `module` literal alone drives inference:
 
 ```tsx
-import { useMusubiCommand, useMusubiRoot, useMusubiSnapshot } from "@musubi/react"
-import type { StoreProxy } from "@musubi/client"
-
-type Registry = Musubi.Stores
-type DashboardModule = "MyApp.Stores.DashboardStore"
+import { useMusubiRoot } from "./musubi"
 
 export function Dashboard() {
-  const root = useMusubiRoot<Registry, DashboardModule>({
+  const root = useMusubiRoot({
     module: "MyApp.Stores.DashboardStore",
     id: "dashboard",
   })
@@ -137,7 +134,12 @@ export function Dashboard() {
 snapshot:
 
 ```tsx
-function DashboardContent({ store }: { store: StoreProxy<Registry, DashboardModule> }) {
+import type { StoreProxy } from "@musubi/react"
+import { useMusubiCommand, useMusubiSnapshot } from "./musubi"
+
+type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
+
+function DashboardContent({ store }: { store: Store<"MyApp.Stores.DashboardStore"> }) {
   const title = useMusubiSnapshot(store, (snapshot) => snapshot.header.title)
   const refresh = useMusubiCommand(store, "refresh")
 
@@ -194,18 +196,18 @@ Field access returns a single child proxy; iterating a list field returns one
 proxy per element. Each carries its own `dispatchCommand`:
 
 ```tsx
-function HeaderRename({ root }: { root: StoreProxy<Registry, "MyApp.Stores.CartPageStore"> }) {
+function HeaderRename({ root }: { root: Store<"MyApp.Stores.CartPageStore"> }) {
   const setName = useMusubiCommand(root.header, "rename")
   return <button onClick={() => void setName({ name: "Ada" })}>Rename</button>
 }
 
-function CartLine({ lineProxy }: { lineProxy: StoreProxy<Registry, "MyApp.Stores.CartLineStore"> }) {
+function CartLine({ lineProxy }: { lineProxy: Store<"MyApp.Stores.CartLineStore"> }) {
   const line = useMusubiSnapshot(lineProxy)
   const inc = useMusubiCommand(lineProxy, "inc_qty")
   return <button onClick={() => void inc({})}>{line.qty}</button>
 }
 
-function CartLines({ root }: { root: StoreProxy<Registry, "MyApp.Stores.CartPageStore"> }) {
+function CartLines({ root }: { root: Store<"MyApp.Stores.CartPageStore"> }) {
   return (
     <ul>
       {root.cart.lines.map((lineProxy) => (

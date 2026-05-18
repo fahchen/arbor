@@ -1,15 +1,14 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import { MusubiProvider } from "@musubi/react"
 
 import App from "./App"
-import { connectMusubi } from "./musubi"
+import { connect, MusubiProvider, socket } from "./musubi"
 import "./App.css"
 
 const root = createRoot(document.getElementById("root")!)
 
 try {
-  const connection = await connectMusubi()
+  const connection = await connect(socket)
 
   root.render(
     <StrictMode>

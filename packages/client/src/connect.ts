@@ -13,21 +13,25 @@ export interface ConnectOptions {
 }
 
 export interface MountStoreOptions<
-  R = Record<string, unknown>,
-  M extends StoreModule<R> = StoreModule<R>
+  M extends StoreModule<R>,
+  R
 > {
   module: M
   id: string
   params?: Record<string, unknown>
 }
 
-export interface MusubiConnection {
+export interface MountedStore<M extends StoreModule<R>, R> {
+  readonly store: StoreProxy<M, R>
+  readonly unmount: () => Promise<void>
+}
+
+export interface MusubiConnection<R> {
   readonly topic: string
-  mountStore<R, M extends StoreModule<R> = StoreModule<R>>(
-    options: MountStoreOptions<R, M>
-  ): Promise<StoreProxy<R, M>>
-  unmountStore(rootId: string): Promise<void>
-  disconnect(): void
+  mountStore<M extends StoreModule<R>>(
+    options: MountStoreOptions<M, R>
+  ): Promise<MountedStore<M, R>>
+  disconnect(): Promise<void>
 }
 
 /**
@@ -35,54 +39,35 @@ export interface MusubiConnection {
  *
  * Usage:
  *
- *     const connection = await connect(socket)
+ *     const connection = await connect<Musubi.Stores>(socket)
  *
- *     const dashboard = await connection.mountStore<
- *       MyApp.Stores,
- *       "MyApp.Stores.DashboardStore"
- *     >({
+ *     const { store, unmount } = await connection.mountStore({
  *       module: "MyApp.Stores.DashboardStore",
  *       id: "dashboard"
  *     })
+ *
+ * The `R` generic is bound once on `connect`; the `module` literal then
+ * drives type inference for every later `mountStore` call. React consumers
+ * usually go through `createMusubi<R>()` in `@musubi/react` instead, which
+ * binds `R` once for the connection and all hooks.
  */
-export async function connect(
+export async function connect<R>(
   socket: SocketLike,
   options: ConnectOptions = {}
-): Promise<MusubiConnection> {
+): Promise<MusubiConnection<R>> {
   const { connection, ready } = openConnectionState(socket, options)
   await ready
 
-  return buildConnectionApi(connection)
+  return buildConnectionApi<R>(connection)
 }
 
-export async function mountStore<
-  R,
-  M extends StoreModule<R> = StoreModule<R>
->(
-  connection: MusubiConnection,
-  options: MountStoreOptions<R, M>
-): Promise<StoreProxy<R, M>> {
-  return connection.mountStore<R, M>(options)
-}
-
-export async function unmountStore(
-  connection: MusubiConnection,
-  rootId: string
-): Promise<void> {
-  await connection.unmountStore(rootId)
-}
-
-export function disconnect(connection: MusubiConnection): void {
-  connection.disconnect()
-}
-
-function buildConnectionApi(connectionState: ConnectionState): MusubiConnection {
+function buildConnectionApi<R>(connectionState: ConnectionState): MusubiConnection<R> {
   return {
     topic: connectionState.topic,
 
-    async mountStore<R, M extends StoreModule<R> = StoreModule<R>>(
-      options: MountStoreOptions<R, M>
-    ): Promise<StoreProxy<R, M>> {
+    async mountStore<M extends StoreModule<R>>(
+      options: MountStoreOptions<M, R>
+    ): Promise<MountedStore<M, R>> {
       const { connection, ready } = mountConnectionRoot(connectionState, {
         module: options.module,
         id: options.id,
@@ -91,15 +76,22 @@ function buildConnectionApi(connectionState: ConnectionState): MusubiConnection 
 
       await ready
 
-      return getRootProxy<R, M>(connection)
+      const store = getRootProxy<M, R>(connection)
+      let unmounted = false
+      const unmount = (): Promise<void> => {
+        if (unmounted) {
+          return Promise.resolve()
+        }
+
+        unmounted = true
+        return unmountConnectionRoot(connectionState, options.id)
+      }
+
+      return { store, unmount }
     },
 
-    async unmountStore(rootId: string): Promise<void> {
-      await unmountConnectionRoot(connectionState, rootId)
-    },
-
-    disconnect(): void {
-      disconnectConnectionState(connectionState)
+    async disconnect(): Promise<void> {
+      await disconnectConnectionState(connectionState)
     }
   }
 }

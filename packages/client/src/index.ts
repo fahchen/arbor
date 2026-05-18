@@ -1,5 +1,10 @@
-export { connect, disconnect, mountStore, unmountStore } from "./connect"
-export type { MusubiConnection, ConnectOptions, MountStoreOptions } from "./connect"
+export { connect } from "./connect"
+export type {
+  ConnectOptions,
+  MountStoreOptions,
+  MountedStore,
+  MusubiConnection
+} from "./connect"
 export type { ChannelLike, PushLike, SocketLike } from "./runtime"
 
 export { applyPatch, parsePointer } from "./patch"

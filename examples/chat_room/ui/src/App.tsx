@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react"
 import type { SubmitEvent } from "react"
-import { useMusubiCommand, useMusubiRoot, useMusubiSnapshot } from "@musubi/react"
 import type { StoreProxy } from "@musubi/react"
 
-import { CHAT_ROOM_ROOT } from "./musubi"
+import {
+  CHAT_ROOM_ROOT,
+  useMusubiCommand,
+  useMusubiRoot,
+  useMusubiSnapshot
+} from "./musubi"
 
-type Registry = Musubi.Stores
 type RootModule = "ChatRoom.Stores.ChatRoomStore"
+type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
 
 export default function App() {
-  const rootMount = useMusubiRoot<Registry, RootModule>(CHAT_ROOM_ROOT)
+  const rootMount = useMusubiRoot(CHAT_ROOM_ROOT)
 
   if (rootMount.status === "loading") {
     return <main className="chat-shell">Connecting...</main>
@@ -23,7 +27,7 @@ export default function App() {
   return <ChatRoom root={root} />
 }
 
-function ChatRoom({ root }: { root: StoreProxy<Registry, RootModule> }) {
+function ChatRoom({ root }: { root: Store<RootModule> }) {
   const room = useMusubiSnapshot(root)
 
   const setName = useMusubiCommand(root, "set_name")

@@ -1,11 +1,16 @@
 import { useMemo, useState } from "react"
 import type { SubmitEvent } from "react"
-import { useMusubiCommand, useMusubiRoot, useMusubiSnapshot } from "@musubi/react"
 import type { StoreProxy } from "@musubi/react"
 
-import { DASHBOARD_ROOT, pollRoomRoot } from "./musubi"
+import {
+  DASHBOARD_ROOT,
+  pollRoomRoot,
+  useMusubiCommand,
+  useMusubiRoot,
+  useMusubiSnapshot
+} from "./musubi"
 
-type Registry = Musubi.Stores
+type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
 
 // ---------------------------------------------------------------------------
 // Root shell — connects the Phoenix socket once, then switches between pages
@@ -41,7 +46,7 @@ export default function App() {
 // ---------------------------------------------------------------------------
 
 function DashboardPage({ onEnterPoll }: { onEnterPoll: (pollId: string) => void }) {
-  const root = useMusubiRoot<Registry, "PollApp.Stores.DashboardStore">(DASHBOARD_ROOT)
+  const root = useMusubiRoot(DASHBOARD_ROOT)
 
   if (root.status === "error") return <ConnectionError error={root.error.message} />
   if (root.status === "loading") return <LoadingShell />
@@ -53,7 +58,7 @@ function DashboardView({
   root,
   onEnterPoll
 }: {
-  root: StoreProxy<Registry, "PollApp.Stores.DashboardStore">
+  root: Store<"PollApp.Stores.DashboardStore">
   onEnterPoll: (pollId: string) => void
 }) {
   const page = useMusubiSnapshot(root)
@@ -128,7 +133,7 @@ function MetricBadge({ label, value, tone }: { label: string; value: number; ton
 
 function PollRoomPage({ pollId, onBack }: { pollId: string; onBack: () => void }) {
   const rootOptions = useMemo(() => pollRoomRoot(pollId), [pollId])
-  const root = useMusubiRoot<Registry, "PollApp.Stores.PollRoomStore">(rootOptions)
+  const root = useMusubiRoot(rootOptions)
 
   if (root.status === "error") return <ConnectionError error={root.error.message} />
   if (root.status === "loading") return <LoadingShell />
@@ -141,7 +146,7 @@ function PollRoomView({
   pollId,
   onBack
 }: {
-  root: StoreProxy<Registry, "PollApp.Stores.PollRoomStore">
+  root: Store<"PollApp.Stores.PollRoomStore">
   pollId: string
   onBack: () => void
 }) {

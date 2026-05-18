@@ -1,12 +1,16 @@
 import { useMemo, useState } from "react"
 import type { SubmitEvent } from "react"
-import { useMusubiCommand, useMusubiRoot, useMusubiSnapshot } from "@musubi/react"
 import type { StoreProxy } from "@musubi/react"
 
-import { CART_PAGE_ROOT } from "./musubi"
+import {
+  CART_PAGE_ROOT,
+  useMusubiCommand,
+  useMusubiRoot,
+  useMusubiSnapshot
+} from "./musubi"
 
-type Registry = Musubi.Stores
 type RootModule = "CartPage.Stores.CartPageStore"
+type Store<M extends keyof Musubi.Stores & string> = StoreProxy<M, Musubi.Stores>
 
 const PRODUCT_OPTIONS = [
   {
@@ -33,7 +37,7 @@ const PRODUCT_OPTIONS = [
 ] as const
 
 export default function App() {
-  const rootMount = useMusubiRoot<Registry, RootModule>(CART_PAGE_ROOT)
+  const rootMount = useMusubiRoot(CART_PAGE_ROOT)
 
   if (rootMount.status === "loading") {
     return <main className="shell">Connecting...</main>
@@ -46,7 +50,7 @@ export default function App() {
   return <CartPage root={rootMount.store} />
 }
 
-function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
+function CartPage({ root }: { root: Store<RootModule> }) {
   const page = useMusubiSnapshot(root)
 
   const cartProxy = root.cart
@@ -272,7 +276,7 @@ function CartPage({ root }: { root: StoreProxy<Registry, RootModule> }) {
   )
 }
 
-type LineProxy = StoreProxy<Registry, "CartPage.Stores.CartLineStore">
+type LineProxy = Store<"CartPage.Stores.CartLineStore">
 
 function CartLine({
   lineProxy,

@@ -18,26 +18,26 @@ import { STORE_ID_KEY, STREAM_MARKER_KEY, storeIdKey } from "./types"
 const ROOT_STORE_ID: StoreId = []
 const RESERVED = new Set(["__musubi_store_id__", "dispatchCommand", "subscribe", "snapshot"])
 
-export function getRootProxy<R, M extends StoreModule<R>>(
+export function getRootProxy<M extends StoreModule<R>, R = unknown>(
   connection: RootConnection
-): StoreProxy<R, M> {
-  return getProxyForStore<R, M>(connection, ROOT_STORE_ID)
+): StoreProxy<M, R> {
+  return getProxyForStore<M, R>(connection, ROOT_STORE_ID)
 }
 
-function getProxyForStore<R, M extends StoreModule<R>>(
+function getProxyForStore<M extends StoreModule<R>, R = unknown>(
   connection: RootConnection,
   storeId: StoreId
-): StoreProxy<R, M> {
+): StoreProxy<M, R> {
   const key = storeIdKey(storeId)
   const cached = connection.proxyCache.get(key)
 
   if (cached) {
-    return cached as StoreProxy<R, M>
+    return cached as StoreProxy<M, R>
   }
 
   const proxy = buildProxy(connection, storeId)
   connection.proxyCache.set(key, proxy)
-  return proxy as StoreProxy<R, M>
+  return proxy as StoreProxy<M, R>
 }
 
 function buildProxy(connection: RootConnection, storeId: StoreId): object {
@@ -250,21 +250,21 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 // snapshot()
 // ---------------------------------------------------------------------------
 
-export function snapshotStore<R, M extends StoreModule<R>>(
+export function snapshotStore<M extends StoreModule<R>, R = unknown>(
   connection: RootConnection,
   storeId: StoreId
-): StoreSnapshot<R, M> {
+): StoreSnapshot<M, R> {
   const key = storeIdKey(storeId)
   const cached = connection.snapshotCache.get(key)
 
   if (cached) {
-    return cached as StoreSnapshot<R, M>
+    return cached as StoreSnapshot<M, R>
   }
 
   const node = connection.storeIndex.get(key) as Record<string, unknown> | undefined
 
   if (!node) {
-    const missing = { __musubi_store_id__: storeId } as StoreSnapshot<R, M>
+    const missing = { __musubi_store_id__: storeId } as StoreSnapshot<M, R>
     connection.snapshotCache.set(key, missing)
     return missing
   }
@@ -276,7 +276,7 @@ export function snapshotStore<R, M extends StoreModule<R>>(
     out[fieldName] = snapshotField(connection, storeId, wireValue)
   }
 
-  const snapshot = out as StoreSnapshot<R, M>
+  const snapshot = out as StoreSnapshot<M, R>
   connection.snapshotCache.set(key, snapshot)
   return snapshot
 }
