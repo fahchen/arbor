@@ -82,10 +82,24 @@ Public rules:
 - callers do not decode patches, streams, or async wire values manually
 - callers may explicitly unmount a mounted root by awaiting the `unmount`
   closure returned from `mountStore`
+- mounts are ref-counted: each `mountStore` caller receives its own
+  `unmount` handle; the underlying root tears down only when the last
+  caller unmounts
 - `connection.disconnect()` returns `Promise<void>`
 - child stores are exposed as nested proxies
 - streams are exposed as materialized arrays
 - async values are exposed as normalized `AsyncResult<T>`
+- command failures and timeouts surface as `MusubiCommandError` (see
+  below); the public `MusubiConnection<R>` interface exposes only
+  `mountStore` and `disconnect` — the connection topic is not part of
+  the public surface
+
+```ts
+interface MountedStore<M, R> {
+  readonly store: StoreProxy<M, R>
+  readonly unmount: () => Promise<void>
+}
+```
 
 ## Identity
 
@@ -254,6 +268,95 @@ Normalization rules:
 - `AsyncResult.of(stream(T))` projects to `AsyncResult<T[]>`; on the wire the
   async `result` is the stream marker, and item content still arrives through
   `stream_ops`
+
+## Command Errors
+
+`dispatchCommand` and the React `useMusubiCommand` dispatcher both
+surface failures and timeouts as a single class exported from
+`@musubi/client`:
+
+```ts
+class MusubiCommandError extends Error {
+  readonly name: "MusubiCommandError"
+  readonly kind: "failed" | "timeout"
+  readonly command: string
+  readonly storeId: readonly string[]
+  readonly reply: unknown
+  readonly code: string | undefined
+
+  static is(value: unknown): value is MusubiCommandError
+}
+```
+
+Rules:
+
+- `kind: "failed"` carries the raw server `reply`; `kind: "timeout"`
+  has `reply: undefined`
+- `code` is extracted from the reply by checking string `code`, `error`,
+  then `reason` fields (in that order)
+- `cause` is preserved via `Error.cause` when supplied
+- `MusubiCommandError.is(value)` is name-based and cross-module safe
+
+## Stable List Keys
+
+`keyOf(proxy)` (exported from `@musubi/client`, re-exported from
+`@musubi/react`) returns a stable string identity for a store proxy
+derived from its `store_id` path. It is the supported way to key React
+lists of child proxies; callers must not synthesize keys from
+`__musubi_store_id__` directly.
+
+## React Surface
+
+`@musubi/react` exposes `createMusubi<R>()`, which closes over the
+registry once and returns the full hook set bound to `R`:
+
+```ts
+interface MusubiFactory<R> {
+  connect: (socket: SocketLike, options?: ConnectOptions) => Promise<MusubiConnection<R>>
+  MusubiProvider: FC<MusubiProviderProps<R>>
+  useMusubiConnection: () => MusubiConnection<R>
+  useMusubiConnectionStatus: () => MusubiConnectionStatus<R>
+  useMusubiRoot: <M>(options: UseMusubiRootOptions<M, R>) => MusubiRootMount<M, R>
+  useMusubiRootSuspense: <M>(options: UseMusubiRootOptions<M, R>) => StoreProxy<M, R>
+  useMusubiSnapshot: { /* selector + optional equalityFn (defaults to shallowEqual) */ }
+  useMusubiCommand: <M, K>(proxy: StoreProxy<M, R>, name: K) => MusubiCommandResult<M, K, R>
+}
+
+type MusubiConnectionStatus<R> =
+  | { state: "connecting"; connection: null }
+  | { state: "ready"; connection: MusubiConnection<R> }
+  | { state: "error"; connection: null; error: Error }
+
+type MusubiProviderProps<R> =
+  | { connection: MusubiConnection<R>; socket?: never; children: ReactNode }
+  | { socket: SocketLike; topic?: string; connection?: never; children: ReactNode }
+
+interface MusubiCommandResult<M, K, R> {
+  dispatch: (payload: CommandPayload<M, K, R>) => Promise<CommandReply<M, K, R>>
+  isPending: boolean
+  error: MusubiCommandError | null
+  data: CommandReply<M, K, R> | null
+  reset: () => void
+}
+```
+
+Rules:
+
+- `MusubiProvider` accepts either `connection` or `socket`, never both;
+  with `socket`, the provider owns the connect/disconnect lifecycle
+- `useMusubiConnectionStatus()` is the only safe hook inside the
+  "connecting" / "error" states; `useMusubiConnection()` throws unless
+  the status is "ready"
+- `useMusubiRoot` and `useMusubiRootSuspense` share one ref-counted
+  root-mount cache keyed by `{module, id, canonical(params)}`; params
+  are stringified with sorted keys so literal-equal params share mounts
+- `useMusubiRootSuspense` throws an in-flight Promise for `<Suspense>`
+  and a cached Error for the nearest error boundary
+- `useMusubiSnapshot` defaults `equalityFn` to `shallowEqual` when a
+  selector is supplied; pass an explicit `equalityFn` to override
+- `useMusubiCommand` sequences concurrent `dispatch` calls with a
+  monotonic request token: only the latest call's outcome lands in
+  `data` / `error`; `reset()` clears both
 
 ## Generated TypeScript
 
