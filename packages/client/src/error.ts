@@ -35,7 +35,15 @@ export class MusubiCommandError extends Error {
   private static buildMessage(opts: MusubiCommandErrorOptions): string {
     if (opts.kind === "timeout") return `Command "${opts.command}" timed out`
     const code = MusubiCommandError.extractCode(opts.reply)
-    return `Command "${opts.command}" failed: ${code ?? JSON.stringify(opts.reply)}`
+    return `Command "${opts.command}" failed: ${code ?? MusubiCommandError.safeStringify(opts.reply)}`
+  }
+
+  private static safeStringify(value: unknown): string {
+    try {
+      return JSON.stringify(value) ?? String(value)
+    } catch {
+      return String(value)
+    }
   }
 
   private static extractCode(reply: unknown): string | undefined {

@@ -170,6 +170,18 @@ describe("MusubiCommandError class", () => {
     ).toBeUndefined()
   })
 
+  test("construction is safe for non-JSON-stringifiable replies (bigint, circular)", () => {
+    const circular: Record<string, unknown> = {}
+    circular.self = circular
+    expect(() =>
+      new MusubiCommandError({ kind: "failed", command: "x", storeId: [], reply: circular })
+    ).not.toThrow()
+
+    expect(() =>
+      new MusubiCommandError({ kind: "failed", command: "x", storeId: [], reply: { n: 1n } })
+    ).not.toThrow()
+  })
+
   test("preserves cause via Error options", () => {
     const original = new Error("root")
     const err = new MusubiCommandError({

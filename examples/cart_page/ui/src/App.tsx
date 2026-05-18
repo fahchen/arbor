@@ -12,7 +12,7 @@ import {
 function formatCommandError(error: unknown, label: string): string {
   if (MusubiCommandError.is(error)) {
     if (error.kind === "timeout") return `${label} timed out`
-    return `${label} failed: ${error.code ?? error.message}`
+    return error.code ? `${label} failed: ${error.code}` : error.message
   }
   return error instanceof Error ? error.message : `${label} failed.`
 }
