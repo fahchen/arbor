@@ -98,9 +98,9 @@ function CartPage({ root }: { root: Store<RootModule> }) {
     try {
       const reply = await addItem.dispatch({ sku })
       setFeedback(
-        reply && "error" in reply
-          ? `Add failed: ${reply.error}`
-          : `Added ${selectedProduct.label} to demo-cart.`
+        "ok" in reply
+          ? `Added ${selectedProduct.label} to demo-cart.`
+          : `Add failed: ${reply.error}`
       )
     } catch (error) {
       setFeedback(formatCommandError(error, "Add"))

@@ -56,7 +56,7 @@ defmodule CartPage.Stores.CartStore do
 
   command :add_item do
     payload(:sku, String.t())
-    reply(%{error: String.t()} | nil)
+    reply(%{ok: true} | %{error: String.t()})
   end
 
   command :remove_line do
@@ -146,7 +146,7 @@ defmodule CartPage.Stores.CartStore do
           |> assign(:lines, next_lines)
           |> assign(:status, %{type: :open})
 
-        {:noreply, socket}
+        {:reply, %{"ok" => true}, socket}
 
       :error ->
         {:reply, %{"error" => "unknown_sku"}, socket}
