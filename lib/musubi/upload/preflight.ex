@@ -14,7 +14,13 @@ defmodule Musubi.Upload.Preflight do
 
   @type accepted() ::
           %{type: :channel, entry_ref: String.t(), token: String.t(), entry: Entry.t()}
-          | %{type: :external, entry_ref: String.t(), uploader: String.t(), meta: map(), entry: Entry.t()}
+          | %{
+              type: :external,
+              entry_ref: String.t(),
+              uploader: String.t(),
+              meta: map(),
+              entry: Entry.t()
+            }
 
   @type errored() :: %{client_ref: String.t(), error: Error.t()}
 
@@ -135,8 +141,8 @@ defmodule Musubi.Upload.Preflight do
         rest = Map.drop(meta, [:uploader, "uploader"])
         external_entry = %{entry | mode: :external, external_meta: meta}
 
-        {:ok, external_entry,
-         %{type: :external, uploader: to_string(uploader), meta: rest}, next_socket}
+        {:ok, external_entry, %{type: :external, uploader: to_string(uploader), meta: rest},
+         next_socket}
 
       :channel ->
         token =

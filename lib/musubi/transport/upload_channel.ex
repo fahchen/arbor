@@ -257,7 +257,8 @@ defmodule Musubi.Transport.UploadChannel do
   defp compute_progress(_bytes, 0), do: 0
   defp compute_progress(bytes, total) when bytes >= total, do: 100
 
-  defp compute_progress(bytes, total) when is_integer(bytes) and is_integer(total) and total > 0 do
+  defp compute_progress(bytes, total)
+       when is_integer(bytes) and is_integer(total) and total > 0 do
     div(bytes * 100, total)
   end
 

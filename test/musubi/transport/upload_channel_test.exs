@@ -27,12 +27,13 @@ defmodule Musubi.Transport.UploadChannelTest do
       field :title, String.t() | nil
     end
 
-    upload :avatar,
+    upload(:avatar,
       accept: ~w(.png),
       max_entries: 2,
       max_file_size: 1_000_000,
       chunk_size: 1_024,
       chunk_timeout: 200
+    )
 
     @impl Musubi.Store
     def render(socket), do: %{title: socket.assigns[:title]}
@@ -119,6 +120,7 @@ defmodule Musubi.Transport.UploadChannelTest do
       Process.sleep(20)
 
       {:ok, %{socket: page_socket}} = Musubi.Page.Server.peek(page.pid, [])
+
       {:ok, %Musubi.Upload.Entry{path: path, upload_channel_pid: pid}} =
         Musubi.Upload.fetch_entry(page_socket, :avatar, entry["entry_ref"])
 
@@ -141,10 +143,10 @@ defmodule Musubi.Transport.UploadChannelTest do
         )
 
       ref = push(channel_socket, "chunk", :binary.copy(<<0>>, 128))
-      assert_reply ref, :ok, %{progress: 50}
+      assert_reply(ref, :ok, %{progress: 50})
 
       ref = push(channel_socket, "chunk", :binary.copy(<<0>>, 128))
-      assert_reply ref, :ok, %{progress: 100}
+      assert_reply(ref, :ok, %{progress: 100})
     end
 
     test "final chunk completes the upload without any close event", %{page: page} do
@@ -160,15 +162,20 @@ defmodule Musubi.Transport.UploadChannelTest do
         )
 
       ref = push(channel_socket, "chunk", :binary.copy(<<7>>, 64))
-      assert_reply ref, :ok, %{progress: 100}
+      assert_reply(ref, :ok, %{progress: 100})
 
       assert_receive {:patch, envelope}, 500
-      assert Enum.any?(envelope.upload_ops, &(&1.op == "complete" and &1.ref == entry["entry_ref"]))
+
+      assert Enum.any?(
+               envelope.upload_ops,
+               &(&1.op == "complete" and &1.ref == entry["entry_ref"])
+             )
 
       # Channel terminates cleanly with the file still on disk; the entry
       # owns it and consume will move/delete it.
       Process.sleep(30)
       {:ok, %{socket: page_socket}} = Musubi.Page.Server.peek(page.pid, [])
+
       {:ok, %Musubi.Upload.Entry{path: path, status: status}} =
         Musubi.Upload.fetch_entry(page_socket, :avatar, entry["entry_ref"])
 
@@ -191,8 +198,10 @@ defmodule Musubi.Transport.UploadChannelTest do
 
       Process.sleep(20)
       {:ok, %{socket: page_socket}} = Musubi.Page.Server.peek(page.pid, [])
+
       {:ok, %Musubi.Upload.Entry{path: path}} =
         Musubi.Upload.fetch_entry(page_socket, :avatar, entry["entry_ref"])
+
       assert File.exists?(path)
 
       _ = leave(channel_socket)
@@ -230,7 +239,11 @@ defmodule Musubi.Transport.UploadChannelTest do
         end)
 
       assert error_op
-      assert error_op.error == %{"code" => "chunk_timeout", "message" => "upload timed out between chunks"}
+
+      assert error_op.error == %{
+               "code" => "chunk_timeout",
+               "message" => "upload timed out between chunks"
+             }
     end
   end
 

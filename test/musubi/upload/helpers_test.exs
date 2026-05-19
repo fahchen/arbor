@@ -17,10 +17,11 @@ defmodule Musubi.Upload.HelpersTest do
       field :avatar_url, String.t() | nil
     end
 
-    upload :avatar, accept: ~w(.png), max_entries: 3
+    upload(:avatar, accept: ~w(.png), max_entries: 3)
 
     command :peek
     command :consume
+
     command :cancel do
       payload :ref, String.t()
     end
@@ -31,7 +32,12 @@ defmodule Musubi.Upload.HelpersTest do
     @impl Musubi.Store
     def handle_command(:peek, _payload, socket) do
       {completed, in_progress} = uploaded_entries(socket, :avatar)
-      reply = %{completed: Enum.map(completed, & &1.ref), in_progress: Enum.map(in_progress, & &1.ref)}
+
+      reply = %{
+        completed: Enum.map(completed, & &1.ref),
+        in_progress: Enum.map(in_progress, & &1.ref)
+      }
+
       {:reply, reply, socket}
     end
 
@@ -58,7 +64,7 @@ defmodule Musubi.Upload.HelpersTest do
       field :avatar_url, String.t() | nil
     end
 
-    upload :avatar, accept: ~w(.png), max_entries: 1
+    upload(:avatar, accept: ~w(.png), max_entries: 1)
 
     command :postpone_consume
     command :real_consume

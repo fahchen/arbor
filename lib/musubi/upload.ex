@@ -101,7 +101,11 @@ defmodule Musubi.Upload do
 
         socket
         |> put_index(Map.put(index, name, new_bucket))
-        |> enqueue_op(%{op: "config", upload: Atom.to_string(name), config: Config.to_wire(config)})
+        |> enqueue_op(%{
+          op: "config",
+          upload: Atom.to_string(name),
+          config: Config.to_wire(config)
+        })
         |> mark_seen(name)
 
       MapSet.member?(seen_configs(socket), name) ->
@@ -109,7 +113,11 @@ defmodule Musubi.Upload do
 
       true ->
         socket
-        |> enqueue_op(%{op: "config", upload: Atom.to_string(name), config: Config.to_wire(config)})
+        |> enqueue_op(%{
+          op: "config",
+          upload: Atom.to_string(name),
+          config: Config.to_wire(config)
+        })
         |> mark_seen(name)
     end
   end

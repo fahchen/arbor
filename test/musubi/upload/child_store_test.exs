@@ -20,7 +20,7 @@ defmodule Musubi.Upload.ChildStoreTest do
       field :line_id, String.t()
     end
 
-    upload :attachment, accept: ~w(.pdf), max_entries: 1, max_file_size: 1_000_000
+    upload(:attachment, accept: ~w(.pdf), max_entries: 1, max_file_size: 1_000_000)
 
     @impl Musubi.Store
     def init(socket) do
@@ -110,7 +110,9 @@ defmodule Musubi.Upload.ChildStoreTest do
     page = Musubi.Testing.mount(CartStore)
     assert_receive {:patch, _initial}
 
-    entries = [%{"client_ref" => "0", "name" => "spec.pdf", "size" => 1000, "type" => "application/pdf"}]
+    entries = [
+      %{"client_ref" => "0", "name" => "spec.pdf", "size" => 1000, "type" => "application/pdf"}
+    ]
 
     {:ok, reply} =
       Musubi.Testing.allow_upload(

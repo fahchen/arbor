@@ -14,10 +14,11 @@ defmodule Musubi.Upload.LifecycleTest do
       field :title, String.t() | nil
     end
 
-    upload :avatar,
+    upload(:avatar,
       accept: ~w(.jpg .jpeg .png),
       max_entries: 1,
       max_file_size: 5_000_000
+    )
 
     def render(socket), do: %{title: socket.assigns[:title]}
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
@@ -30,8 +31,8 @@ defmodule Musubi.Upload.LifecycleTest do
       field :title, String.t() | nil
     end
 
-    upload :avatar, accept: ~w(.png)
-    upload :cover, accept: ~w(.jpg)
+    upload(:avatar, accept: ~w(.png))
+    upload(:cover, accept: ~w(.jpg))
 
     def render(_socket), do: %{title: "Hi"}
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
@@ -44,7 +45,7 @@ defmodule Musubi.Upload.LifecycleTest do
       field :title, String.t() | nil
     end
 
-    upload :doc, accept: ~w(.pdf)
+    upload(:doc, accept: ~w(.pdf))
 
     def render(socket), do: %{title: socket.assigns[:title]}
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
@@ -57,7 +58,7 @@ defmodule Musubi.Upload.LifecycleTest do
       field :title, String.t() | nil
     end
 
-    upload :anything, accept: :any
+    upload(:anything, accept: :any)
 
     def render(socket), do: %{title: socket.assigns[:title]}
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
@@ -70,7 +71,7 @@ defmodule Musubi.Upload.LifecycleTest do
       field :title, String.t() | nil
     end
 
-    upload :avatar, accept: ~w(.png)
+    upload(:avatar, accept: ~w(.png))
 
     def render(_socket) do
       %{title: "Hi", avatar: %{"__musubi_upload__" => "avatar"}}
@@ -130,7 +131,7 @@ defmodule Musubi.Upload.LifecycleTest do
             field :title, String.t()
           end
 
-          upload :doc, max_entries: 1
+          upload(:doc, max_entries: 1)
 
           def render(_socket), do: %{title: "x"}
           def handle_command(_n, _p, s), do: {:noreply, s}
@@ -147,8 +148,8 @@ defmodule Musubi.Upload.LifecycleTest do
             field :title, String.t()
           end
 
-          upload :avatar, accept: ~w(.png)
-          upload :avatar, accept: ~w(.jpg)
+          upload(:avatar, accept: ~w(.png))
+          upload(:avatar, accept: ~w(.jpg))
 
           def render(_socket), do: %{title: "x"}
           def handle_command(_n, _p, s), do: {:noreply, s}
@@ -165,7 +166,7 @@ defmodule Musubi.Upload.LifecycleTest do
             field :avatar, String.t()
           end
 
-          upload :avatar, accept: ~w(.png)
+          upload(:avatar, accept: ~w(.png))
 
           def render(_socket), do: %{avatar: "x"}
           def handle_command(_n, _p, s), do: {:noreply, s}
@@ -180,7 +181,7 @@ defmodule Musubi.Upload.LifecycleTest do
 
           state do
             field :title, String.t()
-            upload :avatar, accept: ~w(.png)
+            upload(:avatar, accept: ~w(.png))
           end
 
           def render(_socket), do: %{title: "x"}

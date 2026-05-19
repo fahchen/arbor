@@ -20,7 +20,7 @@ defmodule Musubi.Upload.WireProtocolTest do
       field :title, String.t() | nil
     end
 
-    upload :avatar, accept: ~w(.png), max_entries: 5, max_file_size: 5_000_000
+    upload(:avatar, accept: ~w(.png), max_entries: 5, max_file_size: 5_000_000)
 
     def render(socket), do: %{title: socket.assigns[:title]}
     def handle_command(_name, _payload, socket), do: {:noreply, socket}
@@ -72,7 +72,10 @@ defmodule Musubi.Upload.WireProtocolTest do
       page = Musubi.Testing.mount(AvatarStore)
       assert_receive {:patch, _initial}
 
-      entries = [%{"client_ref" => "0", "name" => "me.png", "size" => 1234, "type" => "image/png"}]
+      entries = [
+        %{"client_ref" => "0", "name" => "me.png", "size" => 1234, "type" => "image/png"}
+      ]
+
       {:ok, reply} = Musubi.Testing.allow_upload(page, :avatar, entries, endpoint: TestEndpoint)
 
       assert reply["errors"] == []
@@ -148,7 +151,9 @@ defmodule Musubi.Upload.WireProtocolTest do
       page = Musubi.Testing.mount(AvatarStore)
       assert_receive {:patch, _initial}
 
-      entries = [%{"client_ref" => "0", "name" => "big.png", "size" => 10_000_000, "type" => "image/png"}]
+      entries = [
+        %{"client_ref" => "0", "name" => "big.png", "size" => 10_000_000, "type" => "image/png"}
+      ]
 
       {:ok, reply} = Musubi.Testing.allow_upload(page, :avatar, entries, endpoint: TestEndpoint)
 

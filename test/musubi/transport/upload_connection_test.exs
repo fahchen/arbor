@@ -28,7 +28,7 @@ defmodule Musubi.Transport.UploadConnectionTest do
       field :line_id, String.t()
     end
 
-    upload :attachment, accept: ~w(.pdf), max_entries: 1, max_file_size: 1_000
+    upload(:attachment, accept: ~w(.pdf), max_entries: 1, max_file_size: 1_000)
 
     @impl Musubi.Store
     def init(socket) do
@@ -101,7 +101,7 @@ defmodule Musubi.Transport.UploadConnectionTest do
         "params" => %{}
       })
 
-    assert_reply mount_ref, :ok, _
+    assert_reply(mount_ref, :ok, _)
 
     {:ok, socket: socket}
   end
@@ -117,7 +117,7 @@ defmodule Musubi.Transport.UploadConnectionTest do
         ]
       })
 
-    assert_reply push_ref, :ok, reply
+    assert_reply(push_ref, :ok, reply)
     assert reply["ref"] == "attachment"
     assert reply["errors"] == []
     [{"0", entry}] = Enum.to_list(reply["entries"])
@@ -136,7 +136,7 @@ defmodule Musubi.Transport.UploadConnectionTest do
         ]
       })
 
-    assert_reply push_ref, :error, %{reason: reason}
+    assert_reply(push_ref, :error, %{reason: reason})
     assert reason =~ "unknown"
   end
 
@@ -151,7 +151,7 @@ defmodule Musubi.Transport.UploadConnectionTest do
         ]
       })
 
-    assert_reply push_ref, :ok, reply
+    assert_reply(push_ref, :ok, reply)
     [{_, %{"entry_ref" => entry_ref}}] = Enum.to_list(reply["entries"])
 
     push_ref =
@@ -162,7 +162,7 @@ defmodule Musubi.Transport.UploadConnectionTest do
         "ref" => entry_ref
       })
 
-    assert_reply push_ref, :ok, _
+    assert_reply(push_ref, :ok, _)
   end
 
   defp join_connection do
@@ -172,6 +172,11 @@ defmodule Musubi.Transport.UploadConnectionTest do
 
     {:ok, connected_socket} = MusubiSocket.connect(%{}, phoenix_socket, connect_info)
 
-    subscribe_and_join(connected_socket, Musubi.Transport.ConnectionChannel, "musubi:connection", %{})
+    subscribe_and_join(
+      connected_socket,
+      Musubi.Transport.ConnectionChannel,
+      "musubi:connection",
+      %{}
+    )
   end
 end

@@ -22,8 +22,7 @@ defmodule Musubi.Upload.Config do
 
     field :accept, accept(),
       enforce: true,
-      doc:
-        "List of accepted file extensions (each starting with `.`) or the atom `:any`."
+      doc: "List of accepted file extensions (each starting with `.`) or the atom `:any`."
 
     field :max_entries, pos_integer(),
       default: 1,

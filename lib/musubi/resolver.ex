@@ -618,7 +618,8 @@ defmodule Musubi.Resolver do
     end
   end
 
-  defp walk_for_upload_markers!(value, path, declared) when is_map(value) and not is_struct(value) do
+  defp walk_for_upload_markers!(value, path, declared)
+       when is_map(value) and not is_struct(value) do
     cond do
       Map.has_key?(value, @store_id_key) ->
         :ok

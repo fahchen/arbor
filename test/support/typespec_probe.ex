@@ -73,8 +73,8 @@ defmodule Musubi.TestSupport.TypespecProbeWithUpload do
     field :avatar_url, String.t() | nil
   end
 
-  upload :avatar, accept: ~w(.png)
-  upload :cover, accept: ~w(.jpg)
+  upload(:avatar, accept: ~w(.png))
+  upload(:cover, accept: ~w(.jpg))
 
   @impl Musubi.Store
   def render(socket), do: %{avatar_url: socket.assigns[:avatar_url]}

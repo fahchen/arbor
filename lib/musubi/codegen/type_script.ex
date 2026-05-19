@@ -59,8 +59,7 @@ defmodule Musubi.Codegen.TypeScript do
   module-callback lookups itself.
   """
   @type entry() ::
-          {module(),
-           %{kind: :state | :store, fields: list(), commands: list(), uploads: list()}}
+          {module(), %{kind: :state | :store, fields: list(), commands: list(), uploads: list()}}
 
   @doc """
   Renders one TypeScript bundle covering every `{module, data}` entry in

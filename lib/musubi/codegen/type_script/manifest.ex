@@ -23,8 +23,7 @@ defmodule Musubi.Codegen.TypeScript.Manifest do
   @subdir "musubi-codegen-ts"
 
   @type entry() ::
-          {module(),
-           %{kind: :state | :store, fields: list(), commands: list(), uploads: list()}}
+          {module(), %{kind: :state | :store, fields: list(), commands: list(), uploads: list()}}
 
   @doc false
   @spec __after_compile__(Macro.Env.t(), binary()) :: :ok
@@ -231,8 +230,7 @@ defmodule Musubi.Codegen.TypeScript.Manifest do
       uploads = Map.get(data, :uploads, []) |> List.wrap()
 
       [
-        {module,
-         %{kind: kind, fields: data.fields, commands: data.commands, uploads: uploads}}
+        {module, %{kind: kind, fields: data.fields, commands: data.commands, uploads: uploads}}
       ]
     else
       _failure -> []

@@ -20,7 +20,7 @@ defmodule Musubi.Upload.ExternalModeTest do
       field :title, String.t() | nil
     end
 
-    upload :avatar, accept: ~w(.png), max_entries: 1
+    upload(:avatar, accept: ~w(.png), max_entries: 1)
 
     @impl Musubi.Store
     def render(_socket), do: %{title: "Hi"}
@@ -103,8 +103,8 @@ defmodule Musubi.Upload.ExternalModeTest do
       field :title, String.t() | nil
     end
 
-    upload :avatar, accept: ~w(.png)
-    upload :receipt, accept: ~w(.pdf)
+    upload(:avatar, accept: ~w(.png))
+    upload(:receipt, accept: ~w(.pdf))
 
     @impl Musubi.Store
     def render(_socket), do: %{title: "Hi"}
@@ -116,6 +116,7 @@ defmodule Musubi.Upload.ExternalModeTest do
     def upload_external(:avatar, entry, socket) do
       {:ok, %{uploader: "S3", url: "https://x/" <> entry.ref}, socket}
     end
+
     # No clause for :receipt → per-name fallback to channel mode.
   end
 
@@ -145,7 +146,7 @@ defmodule Musubi.Upload.ExternalModeTest do
       field :last_uploader, String.t() | nil
     end
 
-    upload :avatar, accept: ~w(.png)
+    upload(:avatar, accept: ~w(.png))
 
     @impl Musubi.Store
     def render(socket), do: %{title: "Hi", last_uploader: socket.assigns[:last_uploader]}
@@ -203,6 +204,7 @@ defmodule Musubi.Upload.ExternalModeTest do
     assert_receive {:patch, envelope}
 
     assert Enum.any?(envelope.upload_ops, fn op -> op.op == "complete" and op.ref == entry_ref end)
+
     stop_page(page)
   end
 

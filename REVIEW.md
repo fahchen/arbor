@@ -38,3 +38,58 @@ The branch is not merge-ready. The highest-risk problems are that child-store up
 - `lib/musubi/upload/entry.ex` derives a wire whitelist that excludes `path`, `token`, `store_pid`, `upload_channel_pid`, `bytes_written`, `external_meta`, and `preflighted_at`.
 - `lib/musubi/page/patch_envelope.ex` serializes `upload_ops` alongside `ops` and `stream_ops`, and `PatchEnvelope.build/4` emits an envelope when `upload_ops` is the only non-empty op track.
 - `packages/client/src/uploads.ts` keeps one stable `UploadHandleImpl` instance per `{store_id, upload}` key and mutates it in place as `upload_ops` arrive.
+
+---
+
+## Addendum — Resolution of review findings
+
+Branch is now merge-ready. `mix test` → 12 doctests, 412 tests, 0 failures.
+`pnpm -w test` → client 48/48, react 30/30. `mix format --check-formatted`
+clean.
+
+### Blocking findings — resolved
+
+| # | Description | Commit |
+| :-- | :-- | :-- |
+| 1 | child-store upload resolution by `store_id` | `115860d` |
+| 2 | refuse `upload_progress` for channel-mode entries | `115860d` |
+| 3 | self-contained completion on final `"chunk"`, no `"close"` | `971b847` |
+| 4 | persist temp-file path on the entry; consume hands real `%{path: path}` | `971b847` |
+| 5 | `chunk_timeout` watchdog arms / resets / fires | `971b847` |
+| 6 | per-name external selection via callback dispatch (`:channel` / `FunctionClauseError`) | `6a5eb29` |
+| 7 | thread socket returned by `upload_external/3` back through preflight | `6a5eb29` |
+| 8 | TS codegen emits `UploadHandle`-typed fields per declared upload | `5ca99a5` |
+
+### Non-blocking findings — resolved
+
+| # | Description | Commit |
+| :-- | :-- | :-- |
+| 1 | reply progress 0..100 against `client_size`; reply shape `%{progress: integer}` | `971b847` |
+| 2 | `terminate/2` distinguishes succeeded / errored / cancel; no double-emit | `971b847` |
+| 3 | `IO.binwrite/2` wrapped; disk-write failure emits scrubbed `:internal` | `971b847` |
+| 4 | `PatchEnvelope.upload_ops` typed as required | `5ca99a5` |
+
+### Spec gaps — closed
+
+| # | Description | Commit |
+| :-- | :-- | :-- |
+| 1 | `spec/domains/uploads/features/external.feature` added | `4a77fa5` |
+| 2 | BDR-0026 + `docs/uploads.md` token payload list `store_id`, `client_size`, `chunk_timeout` | `4a77fa5` |
+| 3 | accept enforcement scope = preflight-only, documented in BDR-0026 + docs | `4a77fa5` |
+
+### Test gaps — closed
+
+| # | Description | Commit |
+| :-- | :-- | :-- |
+| 1 | real `UploadChannel` join test (binary chunks, reply shape, temp-file lifecycle, dead-pid / forged / unknown-topic rejection) | `5917bd2` |
+| 2 | `chunk_timeout` watchdog test | `5917bd2` |
+| 3 | `ConnectionChannel` child-store transport test (`upload_connection_test.exs`) | `5917bd2` |
+| 4 | `consume_uploaded_entries/3` real `%{path: path}` + postpone retention | `5917bd2` |
+| 5 | TS codegen test: upload handles emitted; collision rejected | `5917bd2` |
+| 6 | external-mode: cancel of in-flight, per-name fallback, socket persistence | `5917bd2` |
+| 7 | `mix test` red `child_store_test.exs` | already resolved in `8cdede9` (pre-review fix) — no fixture reshape needed because the existing commit already moved to `list(CartLineStore.state())` |
+
+### Deferred items
+
+None. All findings were addressed in-tree. Future hardening lives in
+`spec/backlog.md` under the existing "Uploads v2" section (no changes).

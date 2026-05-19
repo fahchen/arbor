@@ -21,7 +21,12 @@ defmodule Musubi.Upload.TransportTest do
       field :title, String.t() | nil
     end
 
-    upload :avatar, accept: ~w(.png), max_entries: 1, max_file_size: 5_000_000, chunk_size: 64_000
+    upload(:avatar,
+      accept: ~w(.png),
+      max_entries: 1,
+      max_file_size: 5_000_000,
+      chunk_size: 64_000
+    )
 
     def render(_socket), do: %{title: "Hi"}
     def handle_command(_n, _p, s), do: {:noreply, s}
@@ -44,7 +49,10 @@ defmodule Musubi.Upload.TransportTest do
       page = Musubi.Testing.mount(AvatarStore)
       assert_receive {:patch, _initial}
 
-      entries = [%{"client_ref" => "0", "name" => "me.png", "size" => 1234, "type" => "image/png"}]
+      entries = [
+        %{"client_ref" => "0", "name" => "me.png", "size" => 1234, "type" => "image/png"}
+      ]
+
       {:ok, reply} = Musubi.Testing.allow_upload(page, :avatar, entries, endpoint: TestEndpoint)
 
       assert reply["ref"] == "avatar"

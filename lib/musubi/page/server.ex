@@ -513,11 +513,17 @@ defmodule Musubi.Page.Server do
   end
 
   @impl GenServer
-  def handle_cast({:upload_channel_chunk, store_id, name, ref, bytes_written, complete?}, %State{} = state) do
+  def handle_cast(
+        {:upload_channel_chunk, store_id, name, ref, bytes_written, complete?},
+        %State{} = state
+      ) do
     apply_channel_chunk(state, store_id, name, ref, bytes_written, complete?)
   end
 
-  def handle_cast({:register_upload_channel, store_id, name, ref, channel_pid, path}, %State{} = state) do
+  def handle_cast(
+        {:register_upload_channel, store_id, name, ref, channel_pid, path},
+        %State{} = state
+      ) do
     next_state =
       mutate_upload_socket(state, store_id, fn socket ->
         Musubi.Upload.update_entry(socket, name, ref, fn entry ->
@@ -528,7 +534,10 @@ defmodule Musubi.Page.Server do
     {:noreply, next_state}
   end
 
-  def handle_cast({:upload_channel_error, store_id, name, ref, %Musubi.Upload.Error{} = error}, %State{} = state) do
+  def handle_cast(
+        {:upload_channel_error, store_id, name, ref, %Musubi.Upload.Error{} = error},
+        %State{} = state
+      ) do
     next_state =
       mutate_upload_socket(state, store_id, fn socket ->
         socket
@@ -1110,11 +1119,13 @@ defmodule Musubi.Page.Server do
             total = max(entry.client_size, bytes_written)
             progress = compute_progress(bytes_written, total)
             progress = if complete?, do: 100, else: progress
-            status = cond do
-              complete? or progress >= 100 -> :success
-              progress > 0 -> :uploading
-              true -> entry.status
-            end
+
+            status =
+              cond do
+                complete? or progress >= 100 -> :success
+                progress > 0 -> :uploading
+                true -> entry.status
+              end
 
             updated = %{entry | bytes_written: bytes_written, progress: progress, status: status}
 
@@ -1154,7 +1165,8 @@ defmodule Musubi.Page.Server do
 
   defp compute_progress(_bytes, 0), do: 0
 
-  defp compute_progress(bytes, total) when is_integer(bytes) and is_integer(total) and total > 0 do
+  defp compute_progress(bytes, total)
+       when is_integer(bytes) and is_integer(total) and total > 0 do
     div(bytes * 100, total) |> min(100)
   end
 
