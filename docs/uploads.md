@@ -243,14 +243,30 @@ Phoenix.Token.sign(endpoint, "musubi_upload", %{
   conf_ref:      String.t(),
   entry_ref:     String.t(),
   max_file_size: integer(),
+  client_size:   integer(),
   accept:        [String.t()] | :any,
-  chunk_size:    integer()
+  chunk_size:    integer(),
+  chunk_timeout: integer()
 })
 ```
 
 `store_id` is included so the sub-channel can route per-entry chunk
 notifications back to the correct store node without consulting any
 shared mutable state.
+
+`client_size` lets the sub-channel mark the upload complete on the
+final `"chunk"` frame (when bytes_written reaches client_size) — there
+is no separate `"close"` event. `chunk_timeout` arms the per-entry
+watchdog without an extra round-trip to the page server.
+
+`accept` enforcement is **preflight-only**: the page server validates
+`client_name`/`client_type` against `accept` before signing a token,
+and a live token is itself proof that those checks passed. The chunk
+sub-channel does not re-validate, since filename and MIME are not
+carried on chunk frames and re-checking would not add a security
+boundary (it would let a buggy client lie a second time about a value
+that has already been authorized). To change an entry's accept set,
+the application cancels the entry and re-issues `allow_upload`.
 
 - `max_age: 600` seconds (10 minutes)
 - HMAC signed with the endpoint secret

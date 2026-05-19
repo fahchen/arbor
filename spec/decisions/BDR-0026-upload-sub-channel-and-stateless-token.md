@@ -43,13 +43,36 @@ Three forces shape this decision:
    ```elixir
    %{
      store_pid:     pid(),
+     store_id:      [String.t()],
      conf_ref:      String.t(),
      entry_ref:     String.t(),
      max_file_size: integer(),
+     client_size:   integer(),
      accept:        [String.t()] | :any,
-     chunk_size:    integer()
+     chunk_size:    integer(),
+     chunk_timeout: integer()
    }
    ```
+
+   `store_id` is included so the sub-channel can attribute chunk
+   notifications back to the correct store node without consulting any
+   shared mutable table — required for the child-store dynamic pattern
+   in BDR-0028.
+
+   `client_size` lets the sub-channel detect completion on the final
+   `"chunk"` frame (bytes_written ≥ client_size) without an extra
+   client-side `"close"` event. `chunk_timeout` arms the per-entry
+   watchdog directly on the channel process.
+
+   The `accept` list rides in the token for completeness, but
+   `accept` enforcement is **preflight-only**: the page server has
+   already validated `client_name`/`client_type` before signing, and a
+   live token is itself proof that those checks passed. The
+   sub-channel does not re-validate per chunk (filename and MIME are
+   not carried on chunk frames; carrying them would only let a buggy
+   or malicious client lie a second time about a value that was
+   already authorized). If an entry's accept set needs to change, the
+   application should cancel the entry and re-preflight.
 
    The channel verifies on join (`max_age: 600`), recovers the payload,
    confirms the pid is alive, and rejects the join otherwise. Cancel is
