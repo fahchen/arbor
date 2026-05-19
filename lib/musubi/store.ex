@@ -133,13 +133,37 @@ defmodule Musubi.Store do
   """
   @callback terminate(reason :: terminate_reason(), socket :: Socket.t()) :: :ok
 
+  @doc """
+  Optional. Invoked when a chunk has been received (channel mode) or a
+  client `upload_progress` message arrived (external mode) for an
+  upload-tracked entry.
+  """
+  @callback handle_progress(
+              name :: atom(),
+              entry :: Musubi.Upload.Entry.t(),
+              socket :: Socket.t()
+            ) :: {:noreply, Socket.t()}
+
+  @doc """
+  Optional. When defined for an upload name, the preflight switches to
+  external mode and forwards the returned `meta` map to the client
+  uploader. Musubi treats `meta` opaquely.
+  """
+  @callback upload_external(
+              name :: atom(),
+              entry :: Musubi.Upload.Entry.t(),
+              socket :: Socket.t()
+            ) :: {:ok, map(), Socket.t()}
+
   @optional_callbacks mount: 2,
                       init: 1,
                       mount: 1,
                       update: 2,
                       handle_async: 3,
                       handle_info: 2,
-                      terminate: 2
+                      terminate: 2,
+                      handle_progress: 3,
+                      upload_external: 3
 
   # ---------------------------------------------------------------------------
   # Socket helpers (defdelegate -> Musubi.Socket)
@@ -184,6 +208,38 @@ defmodule Musubi.Store do
 
   @doc "See `Musubi.Stream.stream_delete_by_item_key/3`."
   defdelegate stream_delete_by_item_key(socket, name, item_key), to: Stream
+
+  # ---------------------------------------------------------------------------
+  # Upload helpers (defdelegate -> Musubi.Upload)
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Returns `{completed, in_progress}` for the upload named `name`.
+
+  ## Examples
+
+      {completed, _in_progress} = uploaded_entries(socket, :avatar)
+  """
+  defdelegate uploaded_entries(socket, name), to: Musubi.Upload
+
+  @doc """
+  Consumes the completed upload entries for `name` via `fun`.
+
+  `fun` receives `(meta, entry)` where `meta` is `%{path: path}` in
+  channel mode or `%{external: meta}` in external mode. Returns
+  `{:ok, val}` to consume the entry (removing it from internal state)
+  or `{:postpone, val}` to leave it in place.
+
+  Returns the updated socket and the list of `val`s produced.
+
+  Must be called from a command handler.
+  """
+  defdelegate consume_uploaded_entries(socket, name, fun), to: Musubi.Upload
+
+  @doc """
+  Cancels a single upload entry by `ref`, emitting `{op: cancel}`.
+  """
+  defdelegate cancel_upload(socket, name, ref), to: Musubi.Upload
 
   # ---------------------------------------------------------------------------
   # Lifecycle helpers (defdelegate -> Musubi.Lifecycle)

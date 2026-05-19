@@ -31,6 +31,7 @@ defmodule Musubi.Transport.Socket do
       @behaviour Musubi.Socket
 
       channel("musubi:*", Musubi.Transport.ConnectionChannel)
+      channel("musubi_upload:*", Musubi.Transport.UploadChannel)
 
       @__musubi_roots__ roots
 
