@@ -180,6 +180,132 @@ export type WireStreamMarker = {
   __musubi_stream__: string
 }
 
+export type WireUploadMarker = {
+  __musubi_upload__: string
+}
+
+export type UploadStatus =
+  | "idle"
+  | "selecting"
+  | "uploading"
+  | "success"
+  | "error"
+  | "cancelled"
+
+export type EntryStatus =
+  | "pending"
+  | "uploading"
+  | "success"
+  | "error"
+  | "cancelled"
+
+export interface UploadError {
+  code:
+    | "too_large"
+    | "too_many_files"
+    | "not_accepted"
+    | "chunk_timeout"
+    | "external_failed"
+    | "preflight_rejected"
+    | (string & {})
+  message: string
+}
+
+export interface UploadEntry {
+  ref: string
+  clientName: string
+  clientSize: number
+  clientType: string
+  progress: number
+  status: EntryStatus
+  errors: UploadError[]
+  readonly isPending: boolean
+  readonly isUploading: boolean
+  readonly isSuccess: boolean
+  readonly isError: boolean
+  readonly isCancelled: boolean
+}
+
+export interface UploadConfig {
+  accept: string[] | "any"
+  maxEntries: number
+  maxFileSize: number
+  chunkSize: number
+}
+
+export interface UploadHandle {
+  readonly config: UploadConfig
+  readonly status: UploadStatus
+  readonly entries: readonly UploadEntry[]
+  readonly errors: readonly UploadError[]
+  readonly progress: number
+  readonly isIdle: boolean
+  readonly isSelecting: boolean
+  readonly isUploading: boolean
+  readonly isSuccess: boolean
+  readonly isError: boolean
+  select(files: FileList | File[]): Promise<readonly UploadEntry[]>
+  start(): Promise<void>
+  cancel(entryRef?: string): Promise<void>
+  reset(): Promise<void>
+}
+
+export interface ExternalUploaderArgs {
+  entry: UploadEntry
+  file: File
+  meta: unknown
+  onProgress: (pct: number) => void
+  signal: AbortSignal
+}
+
+export type ExternalUploader = (args: ExternalUploaderArgs) => Promise<void>
+
+// Wire shapes for upload_ops
+export type UploadOp =
+  | {
+      op: "config"
+      upload: string
+      store_id: StoreId
+      config: {
+        accept: string[] | "any"
+        max_entries: number
+        max_file_size: number
+        chunk_size: number
+      }
+    }
+  | {
+      op: "add"
+      upload: string
+      store_id: StoreId
+      ref: string
+      entry: {
+        ref: string
+        client_name: string
+        client_size: number
+        client_type: string
+        progress: number
+        status: EntryStatus
+        errors: UploadError[]
+      }
+    }
+  | {
+      op: "progress"
+      upload: string
+      store_id: StoreId
+      ref: string
+      progress: number
+    }
+  | { op: "complete"; upload: string; store_id: StoreId; ref: string }
+  | {
+      op: "error"
+      upload: string
+      store_id: StoreId
+      ref?: string
+      error: UploadError
+    }
+  | { op: "cancel"; upload: string; store_id: StoreId; ref: string }
+  | { op: "reset"; upload: string; store_id: StoreId }
+
 export type JsonPatchOp =
   | { op: "add"; path: string; value: unknown }
   | { op: "remove"; path: string }
@@ -211,6 +337,7 @@ export type PatchEnvelope = {
   version: number
   ops: JsonPatchOp[]
   stream_ops: StreamOp[]
+  upload_ops?: UploadOp[]
 }
 
 export type ConnectionPatchEnvelope = PatchEnvelope & {
@@ -232,6 +359,13 @@ export type WireAsyncResult<T = unknown> =
 
 export const STORE_ID_KEY = "__musubi_store_id__" as const
 export const STREAM_MARKER_KEY = "__musubi_stream__" as const
+export const UPLOAD_MARKER_KEY = "__musubi_upload__" as const
+
+const UPLOAD_KEY_SEP = "\0"
+
+export function uploadStoreKey(storeId: StoreId, uploadName: string): string {
+  return `${storeIdKey(storeId)}${UPLOAD_KEY_SEP}${uploadName}`
+}
 
 export function storeIdKey(storeId: StoreId): string {
   return JSON.stringify(storeId)

@@ -4,6 +4,7 @@ import {
   type RootConnection
 } from "./runtime"
 import { getStream } from "./streams"
+import { getUploadHandle } from "./uploads"
 import type {
   AsyncResult,
   StoreId,
@@ -11,9 +12,10 @@ import type {
   StoreProxy,
   StoreSnapshot,
   WireAsyncResult,
-  WireStreamMarker
+  WireStreamMarker,
+  WireUploadMarker
 } from "./types"
-import { STORE_ID_KEY, STREAM_MARKER_KEY, storeIdKey } from "./types"
+import { STORE_ID_KEY, STREAM_MARKER_KEY, UPLOAD_MARKER_KEY, storeIdKey } from "./types"
 
 const ROOT_STORE_ID: StoreId = []
 const RESERVED = new Set(["__musubi_store_id__", "dispatchCommand", "subscribe", "snapshot"])
@@ -159,6 +161,10 @@ function resolveValue(
     return getMaterializedStreamItems(connection, storeId, wireValue[STREAM_MARKER_KEY])
   }
 
+  if (isWireUploadMarker(wireValue)) {
+    return getUploadHandle(connection, storeId, wireValue[UPLOAD_MARKER_KEY])
+  }
+
   if (isWireAsyncResult(wireValue)) {
     // Rule 3: async wire shape. The result may itself be a stream marker,
     // nested store node, array, or plain object, so resolve it recursively.
@@ -242,6 +248,14 @@ function isWireStreamMarker(value: unknown): value is WireStreamMarker {
   )
 }
 
+function isWireUploadMarker(value: unknown): value is WireUploadMarker {
+  return (
+    isPlainRecord(value) &&
+    typeof value[UPLOAD_MARKER_KEY] === "string" &&
+    Object.keys(value).length === 1
+  )
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -301,6 +315,10 @@ function snapshotValue(
 
   if (isWireStreamMarker(wireValue)) {
     return getMaterializedStreamItems(connection, storeId, wireValue[STREAM_MARKER_KEY])
+  }
+
+  if (isWireUploadMarker(wireValue)) {
+    return getUploadHandle(connection, storeId, wireValue[UPLOAD_MARKER_KEY])
   }
 
   if (isWireAsyncResult(wireValue)) {

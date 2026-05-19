@@ -28,7 +28,7 @@ import {
 import { shallowEqual } from "./shallow"
 
 export { shallowEqual } from "./shallow"
-export { MusubiCommandError, keyOf } from "@musubi/client"
+export { MusubiCommandError, keyOf, S3Uploader } from "@musubi/client"
 
 export type {
   AsyncResult,
@@ -36,6 +36,8 @@ export type {
   CommandPayload,
   CommandReply,
   ConnectionPatchEnvelope,
+  ExternalUploader,
+  ExternalUploaderArgs,
   MountStoreOptions,
   MountedStore,
   MusubiCommandErrorKind,
@@ -47,7 +49,12 @@ export type {
   StoreProxy,
   StoreSnapshot,
   StreamEntry,
-  StreamOp
+  StreamOp,
+  UploadConfig,
+  UploadEntry,
+  UploadError,
+  UploadHandle,
+  UploadStatus
 } from "@musubi/client"
 
 // ---------------------------------------------------------------------------

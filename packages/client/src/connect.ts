@@ -6,10 +6,11 @@ import {
   unmountConnectionRoot
 } from "./runtime"
 import type { ConnectionState, SocketLike } from "./runtime"
-import type { StoreModule, StoreProxy } from "./types"
+import type { ExternalUploader, StoreModule, StoreProxy } from "./types"
 
 export interface ConnectOptions {
   topic?: string
+  uploaders?: Record<string, ExternalUploader>
 }
 
 export interface MountStoreOptions<
@@ -54,7 +55,11 @@ export async function connect<R>(
   socket: SocketLike,
   options: ConnectOptions = {}
 ): Promise<MusubiConnection<R>> {
-  const { connection, ready } = openConnectionState(socket, options)
+  const openOptions: { topic?: string; uploaders?: Record<string, ExternalUploader> } = {}
+  if (options.topic !== undefined) openOptions.topic = options.topic
+  if (options.uploaders !== undefined) openOptions.uploaders = options.uploaders
+
+  const { connection, ready } = openConnectionState(socket, openOptions)
   await ready
 
   return buildConnectionApi<R>(connection)

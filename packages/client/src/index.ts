@@ -12,6 +12,8 @@ export type { ChannelLike, PushLike, SocketLike } from "./runtime"
 
 export { applyPatch, parsePointer } from "./patch"
 export { applyStreamOps, getStream, pruneStreams } from "./streams"
+export { applyUploadOps, getUploadHandle, pruneUploads, UploadHandleImpl } from "./uploads"
+export { S3Uploader } from "./s3-uploader"
 
 export type {
   AsyncError,
@@ -22,6 +24,9 @@ export type {
   CommandsOf,
   ConnectionPatchEnvelope,
   DefOf,
+  EntryStatus,
+  ExternalUploader,
+  ExternalUploaderArgs,
   JsonPatchOp,
   PatchEnvelope,
   ProxyValue,
@@ -34,8 +39,15 @@ export type {
   StoreSnapshot,
   StreamEntry,
   StreamOp,
+  UploadConfig,
+  UploadEntry,
+  UploadError,
+  UploadHandle,
+  UploadOp,
+  UploadStatus,
   WireAsyncError,
-  WireAsyncResult
+  WireAsyncResult,
+  WireUploadMarker
 } from "./types"
 
-export { STORE_ID_KEY, storeIdKey } from "./types"
+export { STORE_ID_KEY, UPLOAD_MARKER_KEY, storeIdKey, uploadStoreKey } from "./types"
