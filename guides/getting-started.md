@@ -110,12 +110,20 @@ connection-level authentication and assigns shared by every mounted root.
 
 ## 4. Wire The Phoenix Endpoint
 
-Register the Musubi socket in the Phoenix endpoint:
+Register the Musubi socket in the Phoenix endpoint. `MyAppWeb.UserSocket`
+(built with `use Musubi.Socket`) is a Phoenix socket — mount it like any
+other transport:
 
 ```elixir
-socket "/socket", MyAppWeb.UserSocket,
-  websocket: true,
-  longpoll: false
+defmodule MyAppWeb.Endpoint do
+  use Phoenix.Endpoint, otp_app: :my_app
+
+  socket "/socket", MyAppWeb.UserSocket,
+    websocket: true,
+    longpoll: false
+
+  # ... remaining plugs
+end
 ```
 
 If the application needs Phoenix session data in Musubi stores, configure
