@@ -137,8 +137,10 @@ defmodule Musubi.Upload.Preflight do
         conf_ref: Atom.to_string(name),
         entry_ref: entry.ref,
         max_file_size: config.max_file_size,
+        client_size: entry.client_size,
         accept: config.accept,
-        chunk_size: config.chunk_size
+        chunk_size: config.chunk_size,
+        chunk_timeout: config.chunk_timeout
       })
 
     {%{entry | token: token}, %{type: :channel, token: token}}

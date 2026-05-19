@@ -204,13 +204,22 @@ defmodule Musubi.Page.Server do
   end
 
   @doc """
-  Registers a sub-channel pid against the entry so subsequent `cancel`
-  operations can terminate it.
+  Registers a sub-channel pid and its open temp-file path against the
+  entry so chunk progress can be attributed and subsequent
+  `consume_uploaded_entries/3` callers see a usable `%{path: path}`.
   """
-  @spec register_upload_channel(GenServer.server(), store_id(), atom(), String.t(), pid()) :: :ok
-  def register_upload_channel(server, store_id, name, ref, channel_pid)
-      when is_list(store_id) and is_atom(name) and is_binary(ref) and is_pid(channel_pid) do
-    GenServer.cast(server, {:register_upload_channel, store_id, name, ref, channel_pid})
+  @spec register_upload_channel(
+          GenServer.server(),
+          store_id(),
+          atom(),
+          String.t(),
+          pid(),
+          String.t()
+        ) :: :ok
+  def register_upload_channel(server, store_id, name, ref, channel_pid, path)
+      when is_list(store_id) and is_atom(name) and is_binary(ref) and is_pid(channel_pid) and
+             is_binary(path) do
+    GenServer.cast(server, {:register_upload_channel, store_id, name, ref, channel_pid, path})
   end
 
   @impl GenServer
@@ -508,11 +517,11 @@ defmodule Musubi.Page.Server do
     apply_channel_chunk(state, store_id, name, ref, bytes_written, complete?)
   end
 
-  def handle_cast({:register_upload_channel, store_id, name, ref, channel_pid}, %State{} = state) do
+  def handle_cast({:register_upload_channel, store_id, name, ref, channel_pid, path}, %State{} = state) do
     next_state =
       mutate_upload_socket(state, store_id, fn socket ->
         Musubi.Upload.update_entry(socket, name, ref, fn entry ->
-          %{entry | upload_channel_pid: channel_pid}
+          %{entry | upload_channel_pid: channel_pid, path: path}
         end)
       end)
 

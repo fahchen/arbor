@@ -8,31 +8,31 @@ defmodule Musubi.Transport.UploadChannel do
   ## Statelessness
 
   The channel never consults a shared authorization table. Every
-  authority signal it enforces (`max_file_size`, `chunk_size`, owning
-  store pid, upload name) is recovered from the verified token payload
-  on `join/3`.
+  authority signal it enforces (`max_file_size`, `chunk_size`,
+  `client_size`, `chunk_timeout`, owning store pid, upload name) is
+  recovered from the verified token payload on `join/3`.
 
   ## Lifecycle
 
     * `join/3` — verifies the token, confirms `store_pid` is alive,
-      opens a `Plug.Upload.random_file/1` temp file.
+      opens a `Plug.Upload.random_file!/1` temp file, and arms the
+      `chunk_timeout` watchdog.
     * `handle_in("chunk", binary, socket)` — appends the binary frame
-      to the temp file, enforces the per-token chunk size and total
-      size, notifies the page server, and replies `%{progress: N}`.
-    * `terminate/2` — closes the temp file. On unexpected termination
-      (no consumption) the temp file is removed and the runtime sees a
-      `{:cancel}` op.
-
-  ## Mounting in a Phoenix UserSocket
-
-      defmodule MyAppWeb.UserSocket do
-        use Musubi.Socket, roots: [MyApp.Stores.AvatarStore]
-
-        channel "musubi_upload:*", Musubi.Transport.UploadChannel
-      end
+      to the temp file, enforces the per-token chunk and total size,
+      resets the chunk-timeout watchdog, notifies the page server, and
+      replies `%{progress: 0..100}`. The final chunk (when running
+      total reaches `client_size`) is self-contained: the channel marks
+      itself succeeded and stops cleanly without an extra event.
+    * `terminate/2` — closes the temp file. The branch on the final
+      flag (`:succeeded` / `:errored` / `:cancel`) decides whether to
+      delete the temp file and emit `{op: cancel}`. A successful
+      completion or an explicit error never produces a follow-up
+      cancel op.
   """
 
   use Phoenix.Channel
+
+  require Logger
 
   alias Musubi.Page.Server
   alias Musubi.Upload.Error
@@ -40,15 +40,22 @@ defmodule Musubi.Transport.UploadChannel do
 
   @topic_prefix "musubi_upload:"
 
-  # Phoenix socket assigns we own on this channel.
   @assigns %{
     payload: :__musubi_upload_payload__,
     name: :__musubi_upload_name__,
     file_pid: :__musubi_upload_file_pid__,
     file_path: :__musubi_upload_file_path__,
     bytes_written: :__musubi_upload_bytes_written__,
-    consumed: :__musubi_upload_consumed__
+    timeout_ref: :__musubi_upload_timeout_ref__,
+    terminal_state: :__musubi_upload_terminal__
   }
+
+  # Internal :timeout_ref values:
+  # nil → no armed timer; reference → an outstanding Process.send_after ref.
+  # Terminal states:
+  #   nil        → no terminal state recorded (disconnect → cancel)
+  #   :succeeded → upload reached client_size; do not cancel on terminate
+  #   :errored   → an error op was already emitted; do not cancel on terminate
 
   @impl Phoenix.Channel
   def join(@topic_prefix <> entry_ref, %{"token" => token}, %Phoenix.Socket{} = socket)
@@ -61,7 +68,9 @@ defmodule Musubi.Transport.UploadChannel do
       store_pid = payload.store_pid
       store_id = payload.store_id
 
-      Server.register_upload_channel(store_pid, store_id, name_atom, entry_ref, self())
+      Server.register_upload_channel(store_pid, store_id, name_atom, entry_ref, self(), file_path)
+
+      timeout_ref = arm_timeout(payload)
 
       socket =
         socket
@@ -70,7 +79,8 @@ defmodule Musubi.Transport.UploadChannel do
         |> Phoenix.Socket.assign(@assigns.file_pid, file_pid)
         |> Phoenix.Socket.assign(@assigns.file_path, file_path)
         |> Phoenix.Socket.assign(@assigns.bytes_written, 0)
-        |> Phoenix.Socket.assign(@assigns.consumed, false)
+        |> Phoenix.Socket.assign(@assigns.timeout_ref, timeout_ref)
+        |> Phoenix.Socket.assign(@assigns.terminal_state, nil)
 
       Process.flag(:trap_exit, true)
 
@@ -93,81 +103,120 @@ defmodule Musubi.Transport.UploadChannel do
     cond do
       byte_size(binary) > payload.chunk_size ->
         notify_error(payload.store_pid, store_id, name, payload.entry_ref, :chunk_too_large)
+
+        socket =
+          socket
+          |> cancel_timeout()
+          |> Phoenix.Socket.assign(@assigns.terminal_state, :errored)
+
         {:stop, :normal, {:error, %{reason: "chunk too large"}}, socket}
 
       bytes + byte_size(binary) > payload.max_file_size ->
         notify_error(payload.store_pid, store_id, name, payload.entry_ref, :too_large)
+
+        socket =
+          socket
+          |> cancel_timeout()
+          |> Phoenix.Socket.assign(@assigns.terminal_state, :errored)
+
         {:stop, :normal, {:error, %{reason: "upload too large"}}, socket}
 
       true ->
-        :ok = IO.binwrite(file_pid, binary)
-        next_bytes = bytes + byte_size(binary)
+        case safe_binwrite(file_pid, binary) do
+          :ok ->
+            next_bytes = bytes + byte_size(binary)
+            complete? = next_bytes >= payload.client_size
 
-        # Heuristic completion: when the running total matches an entry's
-        # client-reported `client_size`, the page server will set status to
-        # `:success`. The channel itself does not know the size; we report
-        # the chunk and let the page server compare.
-        Server.upload_channel_chunk(
-          payload.store_pid,
-          store_id,
-          name,
-          payload.entry_ref,
-          next_bytes,
-          false
-        )
+            Server.upload_channel_chunk(
+              payload.store_pid,
+              store_id,
+              name,
+              payload.entry_ref,
+              next_bytes,
+              complete?
+            )
 
-        progress = compute_progress(next_bytes, payload.max_file_size)
+            progress = compute_progress(next_bytes, payload.client_size)
 
-        socket = Phoenix.Socket.assign(socket, @assigns.bytes_written, next_bytes)
+            socket =
+              socket
+              |> cancel_timeout()
+              |> Phoenix.Socket.assign(@assigns.bytes_written, next_bytes)
 
-        {:reply, {:ok, %{progress: progress, bytes_written: next_bytes}}, socket}
+            if complete? do
+              socket = Phoenix.Socket.assign(socket, @assigns.terminal_state, :succeeded)
+              {:stop, :normal, {:ok, %{progress: 100}}, socket}
+            else
+              timeout_ref = arm_timeout(payload)
+              socket = Phoenix.Socket.assign(socket, @assigns.timeout_ref, timeout_ref)
+              {:reply, {:ok, %{progress: progress}}, socket}
+            end
+
+          {:error, _reason} ->
+            notify_error(payload.store_pid, store_id, name, payload.entry_ref, :internal)
+
+            socket =
+              socket
+              |> cancel_timeout()
+              |> Phoenix.Socket.assign(@assigns.terminal_state, :errored)
+
+            {:stop, :normal, {:error, %{reason: "write failed"}}, socket}
+        end
     end
   end
 
-  def handle_in("close", _payload, %Phoenix.Socket{} = socket) do
-    payload = socket.assigns[@assigns.payload]
-    name = socket.assigns[@assigns.name]
-    bytes = socket.assigns[@assigns.bytes_written]
-    store_id = payload.store_id
+  @impl Phoenix.Channel
+  def handle_info({:musubi_upload_chunk_timeout, ref}, %Phoenix.Socket{} = socket) do
+    case socket.assigns[@assigns.timeout_ref] do
+      ^ref ->
+        payload = socket.assigns[@assigns.payload]
+        name = socket.assigns[@assigns.name]
+        notify_error(payload.store_pid, payload.store_id, name, payload.entry_ref, :chunk_timeout)
 
-    socket = Phoenix.Socket.assign(socket, @assigns.consumed, true)
+        socket = Phoenix.Socket.assign(socket, @assigns.terminal_state, :errored)
 
-    Server.upload_channel_chunk(
-      payload.store_pid,
-      store_id,
-      name,
-      payload.entry_ref,
-      bytes,
-      true
-    )
+        {:stop, :normal, socket}
 
-    {:stop, :normal, {:ok, %{}}, socket}
+      _stale ->
+        {:noreply, socket}
+    end
   end
 
   @impl Phoenix.Channel
   def terminate(_reason, %Phoenix.Socket{} = socket) do
     file_pid = socket.assigns[@assigns.file_pid]
     file_path = socket.assigns[@assigns.file_path]
-    consumed? = socket.assigns[@assigns.consumed] || false
+    state = socket.assigns[@assigns.terminal_state]
 
     if is_pid(file_pid) and Process.alive?(file_pid), do: File.close(file_pid)
 
-    if not consumed? do
-      if is_binary(file_path), do: _ = File.rm(file_path)
+    case state do
+      :succeeded ->
+        # File has been registered with the page server and now belongs
+        # to the entry. Application code will delete it on consume.
+        :ok
 
-      payload = socket.assigns[@assigns.payload]
-      name = socket.assigns[@assigns.name]
+      :errored ->
+        # An error op was already emitted; clean up the temp file so we
+        # do not leak bytes but do not also emit a cancel.
+        if is_binary(file_path), do: _ = File.rm(file_path)
+        :ok
 
-      if payload && name do
-        store_id = payload.store_id
+      _ ->
+        # Treat anything else (client disconnect / leave without
+        # finishing) as a cancel. Page server is the source of truth on
+        # whether the entry still exists.
+        if is_binary(file_path), do: _ = File.rm(file_path)
 
-        if Process.alive?(payload.store_pid) do
-          Server.cancel_upload(payload.store_pid, store_id, name, payload.entry_ref)
+        payload = socket.assigns[@assigns.payload]
+        name = socket.assigns[@assigns.name]
+
+        if payload && name and Process.alive?(payload.store_pid) do
+          Server.cancel_upload(payload.store_pid, payload.store_id, name, payload.entry_ref)
         end
-      end
-    end
 
-    :ok
+        :ok
+    end
   end
 
   defp ensure_entry_ref(%{entry_ref: ref}, ref), do: :ok
@@ -199,5 +248,36 @@ defmodule Musubi.Transport.UploadChannel do
 
   defp compute_progress(bytes, total) when is_integer(bytes) and is_integer(total) and total > 0 do
     div(bytes * 100, total)
+  end
+
+  defp arm_timeout(%{chunk_timeout: ms}) when is_integer(ms) and ms > 0 do
+    ref = make_ref()
+    Process.send_after(self(), {:musubi_upload_chunk_timeout, ref}, ms)
+    ref
+  end
+
+  defp arm_timeout(_payload), do: nil
+
+  defp cancel_timeout(%Phoenix.Socket{} = socket) do
+    case socket.assigns[@assigns.timeout_ref] do
+      ref when is_reference(ref) ->
+        # Best-effort: the message may already be in the mailbox, but the
+        # stale-ref guard in `handle_info` drops it harmlessly.
+        Phoenix.Socket.assign(socket, @assigns.timeout_ref, nil)
+
+      _ ->
+        socket
+    end
+  end
+
+  defp safe_binwrite(file_pid, binary) do
+    try do
+      case IO.binwrite(file_pid, binary) do
+        :ok -> :ok
+        {:error, _reason} = err -> err
+      end
+    rescue
+      _ -> {:error, :write_failed}
+    end
   end
 end

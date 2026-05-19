@@ -30,8 +30,10 @@ defmodule Musubi.Upload.Token do
           required(:conf_ref) => String.t(),
           required(:entry_ref) => String.t(),
           required(:max_file_size) => pos_integer(),
+          required(:client_size) => non_neg_integer(),
           required(:accept) => [String.t()] | :any,
-          required(:chunk_size) => pos_integer()
+          required(:chunk_size) => pos_integer(),
+          required(:chunk_timeout) => pos_integer()
         }
 
   @doc "Returns the well-known salt used for token signing."

@@ -172,10 +172,16 @@ defmodule Musubi.Upload do
 
       case fun.(meta, entry) do
         {:ok, value} ->
+          # Application has taken ownership of the bytes (e.g. moved
+          # the temp file). Remove the entry and delete the temp file
+          # so the OS does not leak it.
+          cleanup_entry_path(entry)
           sock = remove_entry(sock, name, entry.ref)
           {sock, results ++ [value]}
 
         {:postpone, value} ->
+          # Leave both the index entry and the temp file in place so
+          # the application can retry consumption later.
           {sock, results ++ [value]}
 
         other ->
@@ -188,12 +194,15 @@ defmodule Musubi.Upload do
   end
 
   @doc """
-  Cancels a single upload entry by ref. Emits `{op: cancel}`.
+  Cancels a single upload entry by ref. Emits `{op: cancel}` and
+  removes any orphaned temp file (channel mode).
   """
   @spec cancel_upload(Socket.t(), atom(), String.t()) :: Socket.t()
   def cancel_upload(%Socket{} = socket, name, ref) when is_atom(name) and is_binary(ref) do
     case fetch_entry(socket, name, ref) do
-      {:ok, %Entry{}} ->
+      {:ok, %Entry{} = entry} ->
+        cleanup_entry_path(entry)
+
         socket
         |> remove_entry(name, ref)
         |> enqueue_op(%{op: "cancel", upload: Atom.to_string(name), ref: ref})
@@ -202,6 +211,13 @@ defmodule Musubi.Upload do
         socket
     end
   end
+
+  defp cleanup_entry_path(%Entry{mode: :channel, path: path}) when is_binary(path) do
+    _ = File.rm(path)
+    :ok
+  end
+
+  defp cleanup_entry_path(_entry), do: :ok
 
   # ---------------------------------------------------------------------------
   # Runtime mutation API (used by Transport.Channel and Transport.UploadChannel)
