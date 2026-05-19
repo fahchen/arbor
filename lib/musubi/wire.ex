@@ -29,14 +29,19 @@ defprotocol Musubi.Wire do
   def to_wire(value)
 
   @doc false
-  defmacro __deriving__(module, _options) do
-    quote do
-      defimpl Musubi.Wire, for: unquote(module) do
+  defmacro __deriving__(module, options) do
+    only = Keyword.get(options, :only)
+    take = if is_list(only), do: only, else: nil
+
+    quote bind_quoted: [module: module, take: take] do
+      defimpl Musubi.Wire, for: module do
         def to_wire(struct) do
           stream_field_names = Musubi.Wire.Encoder.stream_field_names(unquote(module))
+          take = unquote(take)
 
           struct
           |> Map.from_struct()
+          |> then(fn map -> if take, do: Map.take(map, take), else: map end)
           |> Map.new(fn {key, value} ->
             wire_value =
               if key in stream_field_names do

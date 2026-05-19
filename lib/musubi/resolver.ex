@@ -40,6 +40,7 @@ defmodule Musubi.Resolver do
   alias Musubi.Stream.Marker
   alias Musubi.Stream.Placeholder
   alias Musubi.Telemetry
+  alias Musubi.Upload.Marker, as: UploadMarker
   alias Musubi.Wire
 
   @store_id_key :__musubi_store_id__
@@ -120,6 +121,7 @@ defmodule Musubi.Resolver do
       resolve_value(raw_state, socket, registry, store_id, live_identities)
 
     resolved_state = normalize_stream_placeholders!(resolved_state, socket)
+    resolved_state = validate_and_inject_upload_markers!(resolved_state, socket)
     resolved_state = inject_store_id(resolved_state, store_id)
 
     wire_state = stitch_wire(resolved_state, resolved_registry, store_id)
@@ -592,5 +594,87 @@ defmodule Musubi.Resolver do
   @spec append_path_segment([String.t()], String.t()) :: [String.t()]
   defp append_path_segment(path, segment) when is_list(path) and is_binary(segment) do
     List.insert_at(path, -1, segment)
+  end
+
+  @spec validate_and_inject_upload_markers!(resolved_value(), Socket.t()) :: resolved_value()
+  defp validate_and_inject_upload_markers!(resolved_state, %Socket{} = socket) do
+    declared = declared_uploads_by_name(socket.module)
+
+    walk_for_upload_markers!(resolved_state, [], declared)
+
+    inject_upload_markers(resolved_state, declared, socket)
+  end
+
+  @spec declared_uploads_by_name(module() | nil) :: %{optional(atom()) => map()}
+  defp declared_uploads_by_name(nil), do: %{}
+
+  defp declared_uploads_by_name(module) when is_atom(module) do
+    if function_exported?(module, :__musubi__, 1) do
+      module.__musubi__(:uploads)
+      |> List.wrap()
+      |> Map.new(fn %{name: name} = config -> {name, config} end)
+    else
+      %{}
+    end
+  end
+
+  defp walk_for_upload_markers!(value, path, declared) when is_map(value) and not is_struct(value) do
+    cond do
+      Map.has_key?(value, @store_id_key) ->
+        :ok
+
+      UploadMarker.marker?(value) ->
+        name = UploadMarker.marker_name(value)
+        formatted = format_stream_path(Enum.reverse(path))
+
+        if Map.has_key?(declared, String.to_atom(name)) do
+          raise ArgumentError,
+                "hand-written upload marker at #{formatted}; remove it — the framework " <>
+                  "injects upload markers automatically"
+        else
+          raise ArgumentError,
+                "unknown upload #{inspect(name)} referenced at #{formatted}; declare it " <>
+                  "with `upload :#{name}, ...` at the top level of the store module"
+        end
+
+      true ->
+        Enum.each(value, fn {key, child} ->
+          walk_for_upload_markers!(child, [to_string(key) | path], declared)
+        end)
+    end
+  end
+
+  defp walk_for_upload_markers!(value, path, declared) when is_list(value) do
+    value
+    |> Enum.with_index()
+    |> Enum.each(fn {element, index} ->
+      walk_for_upload_markers!(element, [Integer.to_string(index) | path], declared)
+    end)
+  end
+
+  defp walk_for_upload_markers!(_value, _path, _declared), do: :ok
+
+  defp inject_upload_markers(resolved_state, declared, %Socket{} = _socket)
+       when map_size(declared) == 0 do
+    resolved_state
+  end
+
+  defp inject_upload_markers(resolved_state, declared, %Socket{module: module})
+       when is_map(resolved_state) and not is_struct(resolved_state) do
+    Enum.reduce(declared, resolved_state, fn {name, _config}, acc ->
+      if Map.has_key?(acc, name) or Map.has_key?(acc, Atom.to_string(name)) do
+        raise ArgumentError,
+              "upload :#{name} on #{inspect(module)} collides with a key returned by " <>
+                "render/1; rename either the upload or the render-output key"
+      else
+        Map.put(acc, name, UploadMarker.new(name))
+      end
+    end)
+  end
+
+  defp inject_upload_markers(_resolved_state, _declared, %Socket{module: module}) do
+    raise ArgumentError,
+          "uploads are declared on #{inspect(module)} but render/1 did not return a map; " <>
+            "upload markers can only be injected into a map-shaped render output"
   end
 end

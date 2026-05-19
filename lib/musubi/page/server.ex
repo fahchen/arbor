@@ -42,6 +42,7 @@ defmodule Musubi.Page.Server do
   alias Musubi.Socket
   alias Musubi.Stream
   alias Musubi.Telemetry
+  alias Musubi.Upload
 
   @type transport_opts() :: map()
   @type start_arg() ::
@@ -163,6 +164,7 @@ defmodule Musubi.Page.Server do
       |> mount_root_store(params)
       |> normalize_root_assigns()
       |> Reconciler.init_store()
+      |> Upload.ensure_configs()
 
     store_table =
       StoreTable.put(StoreTable.new(), [], %Entry{
@@ -174,8 +176,11 @@ defmodule Musubi.Page.Server do
 
     {wire_root, store_table} = root_wire(store_table, root_socket)
     {stream_ops, store_table} = flush_all_stream_ops(store_table)
+    {upload_ops_raw, store_table} = flush_all_upload_ops(store_table)
 
-    envelope = PatchEnvelope.initial(wire_root, stream_ops)
+    {upload_ops, upload_throttle} = throttle_progress(upload_ops_raw, %{})
+
+    envelope = PatchEnvelope.initial(wire_root, stream_ops, upload_ops)
 
     state =
       rebuild_async_index(%State{
@@ -184,12 +189,17 @@ defmodule Musubi.Page.Server do
         store_table: store_table,
         version: 1,
         previous_wire_root: wire_root,
-        transport: transport_opts
+        transport: transport_opts,
+        upload_progress_last_emitted: upload_throttle
       })
 
     Telemetry.emit(
       [:musubi, :patch, :stop],
-      %{count: length(envelope.ops), stream_count: length(envelope.stream_ops)},
+      %{
+        count: length(envelope.ops),
+        stream_count: length(envelope.stream_ops),
+        upload_count: length(envelope.upload_ops)
+      },
       %{module: root_module, version: state.version}
     )
 
@@ -449,6 +459,10 @@ defmodule Musubi.Page.Server do
 
     {wire_root, next_registry} = root_wire(next_registry, next_root_socket)
     {stream_ops, next_registry} = flush_all_stream_ops(next_registry)
+    {upload_ops_raw, next_registry} = flush_all_upload_ops(next_registry)
+
+    {upload_ops, next_throttle} =
+      throttle_progress(upload_ops_raw, state.upload_progress_last_emitted)
 
     diff_ops =
       if wire_root == state.previous_wire_root do
@@ -457,7 +471,7 @@ defmodule Musubi.Page.Server do
         Diff.diff(state.previous_wire_root, wire_root)
       end
 
-    envelope = PatchEnvelope.build(state.version, diff_ops, stream_ops)
+    envelope = PatchEnvelope.build(state.version, diff_ops, stream_ops, upload_ops)
 
     next_version = if envelope, do: envelope.version, else: state.version
 
@@ -467,7 +481,8 @@ defmodule Musubi.Page.Server do
         | root_socket: root_socket(next_registry, next_root_socket),
           store_table: next_registry,
           version: next_version,
-          previous_wire_root: wire_root
+          previous_wire_root: wire_root,
+          upload_progress_last_emitted: next_throttle
       })
 
     {next_state, envelope}
@@ -778,6 +793,59 @@ defmodule Musubi.Page.Server do
       nil ->
         {ops_acc, registry}
     end
+  end
+
+  @spec flush_all_upload_ops(StoreTable.t()) :: {[Upload.op()], StoreTable.t()}
+  defp flush_all_upload_ops(%StoreTable{} = registry) do
+    sorted_keys = registry |> StoreTable.keys() |> Enum.sort_by(&length/1)
+
+    Enum.reduce(sorted_keys, {[], registry}, fn store_id, {acc, reg_acc} ->
+      case StoreTable.get(reg_acc, store_id) do
+        %Entry{socket: socket} = entry ->
+          {ops, next_socket} = Upload.flush_pending_ops(socket)
+          stamped = Enum.map(ops, &Map.put(&1, :store_id, store_id))
+          next_reg = StoreTable.put(reg_acc, store_id, %{entry | socket: next_socket})
+          {acc ++ stamped, next_reg}
+
+        nil ->
+          {acc, reg_acc}
+      end
+    end)
+  end
+
+  # BDR-0025: cap progress-op emission rate per `{store_id, upload, ref}` at
+  # 10 Hz (one emission every 100 ms). Drops intermediate progress ops that
+  # arrive inside the window; non-progress ops bypass the throttle entirely
+  # (a `complete`/`error`/`cancel`/`reset` should never be suppressed).
+  @progress_throttle_ms 100
+
+  @spec throttle_progress([Upload.op()], map()) :: {[Upload.op()], map()}
+  defp throttle_progress(ops, last_emitted) when is_list(ops) and is_map(last_emitted) do
+    now = System.monotonic_time(:millisecond)
+
+    {kept, next_last} =
+      Enum.reduce(ops, {[], last_emitted}, fn op, {kept_acc, last_acc} ->
+        case op do
+          %{op: "progress", store_id: sid, upload: upload, ref: ref} ->
+            key = {sid, upload, ref}
+
+            case Map.get(last_acc, key) do
+              nil ->
+                {kept_acc ++ [op], Map.put(last_acc, key, now)}
+
+              ts when now - ts >= @progress_throttle_ms ->
+                {kept_acc ++ [op], Map.put(last_acc, key, now)}
+
+              _ts ->
+                {kept_acc, last_acc}
+            end
+
+          _other ->
+            {kept_acc ++ [op], last_acc}
+        end
+      end)
+
+    {kept, next_last}
   end
 
   @spec attach_default_hooks(Socket.t()) :: Socket.t()

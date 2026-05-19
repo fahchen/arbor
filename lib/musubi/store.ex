@@ -267,7 +267,30 @@ defmodule Musubi.Store do
             "declare `use Musubi.Store, root: true` before defining it"
     end
 
+    validate_uploads_against_fields!(env)
+
     quote(do: :ok)
+  end
+
+  @spec validate_uploads_against_fields!(Macro.Env.t()) :: :ok
+  defp validate_uploads_against_fields!(%Macro.Env{} = env) do
+    uploads = Module.get_attribute(env.module, :__musubi_uploads__) || []
+    fields = Module.get_attribute(env.module, :__musubi_fields__) || []
+    field_names = MapSet.new(fields, & &1.name)
+
+    Enum.each(uploads, fn {name, _config, file, line} ->
+      if MapSet.member?(field_names, name) do
+        raise CompileError,
+          file: file,
+          line: line,
+          description:
+            "upload :#{name} name collides with state field :#{name} on " <>
+              "#{inspect(env.module)}; uploads and state fields share the " <>
+              "`page.<name>` namespace and must be uniquely named"
+      end
+    end)
+
+    :ok
   end
 
   @spec __using__(keyword()) :: Macro.t()
@@ -286,6 +309,7 @@ defmodule Musubi.Store do
       import Musubi.DSL.Command, only: [command: 1, command: 2]
       import Musubi.DSL.State, only: [state: 1]
       import Musubi.DSL.Attr, only: [attr: 2, attr: 3]
+      import Musubi.DSL.Upload, only: [upload: 2]
 
       Module.register_attribute(__MODULE__, :__musubi_fields__, accumulate: false)
       Module.register_attribute(__MODULE__, :__musubi_commands__, accumulate: true)
@@ -293,6 +317,7 @@ defmodule Musubi.Store do
       Module.register_attribute(__MODULE__, :__musubi_command_reply_fields__, accumulate: true)
       Module.register_attribute(__MODULE__, :__musubi_command_field_target__, accumulate: false)
       Module.register_attribute(__MODULE__, :__musubi_attrs__, accumulate: true)
+      Module.register_attribute(__MODULE__, :__musubi_uploads__, accumulate: false)
       Module.put_attribute(__MODULE__, :__musubi_kind__, :store)
       Module.put_attribute(__MODULE__, :__musubi_root__, root?)
 

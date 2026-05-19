@@ -261,7 +261,8 @@ defmodule Musubi.Transport.ChannelTest do
       base_version: 4,
       version: 5,
       ops: [%{op: "remove", path: "/x"}],
-      stream_ops: []
+      stream_ops: [],
+      upload_ops: []
     }
 
     assert PatchEnvelope.to_wire(envelope) == %{
@@ -269,7 +270,8 @@ defmodule Musubi.Transport.ChannelTest do
              "base_version" => 4,
              "version" => 5,
              "ops" => [%{op: "remove", path: "/x"}],
-             "stream_ops" => []
+             "stream_ops" => [],
+             "upload_ops" => []
            }
   end
 end

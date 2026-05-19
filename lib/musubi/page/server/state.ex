@@ -46,5 +46,11 @@ defmodule Musubi.Page.Server.State do
           default: %{},
           doc:
             "Secondary index `task_ref => {store_id, name, kind}`, rebuilt after every handler call. Lets the page server route incoming `{ref, result}` and `{:DOWN, ref, ...}` messages to the originating store entry in O(1) without scanning the registry, and lets stale-ref lazy-discard telemetry attribute the dropped task to a specific node + family."
+
+    field :upload_progress_last_emitted,
+          %{required({[String.t()], String.t(), String.t()}) => integer()},
+          default: %{},
+          doc:
+            "Per-entry monotonic timestamp (milliseconds) of the last emitted `progress` upload op, used to enforce the 10 Hz default throttle (BDR-0025)."
   end
 end

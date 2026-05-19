@@ -35,6 +35,9 @@ defmodule Musubi.Page.PatchEnvelope do
   @typedoc "Wire stream-op shape produced by `Musubi.Page.Server` from the `Musubi.Stream` accumulator."
   @type stream_op() :: map()
 
+  @typedoc "Wire upload-op shape produced by `Musubi.Page.Server` from the `Musubi.Upload` accumulator (BDR-0025)."
+  @type upload_op() :: map()
+
   typed_structor do
     field :type, String.t(),
       default: "patch",
@@ -58,6 +61,11 @@ defmodule Musubi.Page.PatchEnvelope do
       default: [],
       doc:
         "Ordered wire ops for stream-typed slots (reset/insert/delete, each tagged with `store_id`). Applied after `ops` in array order on the client (BDR-0018)."
+
+    field :upload_ops, [upload_op()],
+      default: [],
+      doc:
+        "Ordered wire ops for upload-tracked entries (config/add/progress/complete/error/cancel/reset, each tagged with `store_id`). Independent of `stream_ops` (BDR-0025)."
   end
 
   @doc """
@@ -69,7 +77,7 @@ defmodule Musubi.Page.PatchEnvelope do
 
   ## Examples
 
-      iex> envelope = Musubi.Page.PatchEnvelope.initial(%{"title" => "Inbox"}, [])
+      iex> envelope = Musubi.Page.PatchEnvelope.initial(%{"title" => "Inbox"}, [], [])
       iex> envelope.base_version
       0
       iex> envelope.version
@@ -77,14 +85,16 @@ defmodule Musubi.Page.PatchEnvelope do
       iex> envelope.ops
       [%{op: "replace", path: "", value: %{"title" => "Inbox"}}]
   """
-  @spec initial(term(), [stream_op()]) :: t()
-  def initial(wire_root, stream_ops) when is_list(stream_ops) do
+  @spec initial(term(), [stream_op()], [upload_op()]) :: t()
+  def initial(wire_root, stream_ops, upload_ops \\ [])
+      when is_list(stream_ops) and is_list(upload_ops) do
     %__MODULE__{
       type: "patch",
       base_version: 0,
       version: 1,
       ops: [%{op: "replace", path: "", value: wire_root}],
-      stream_ops: stream_ops
+      stream_ops: stream_ops,
+      upload_ops: upload_ops
     }
   end
 
@@ -97,22 +107,26 @@ defmodule Musubi.Page.PatchEnvelope do
   ## Examples
 
       iex> Musubi.Page.PatchEnvelope.build(0, [%{op: "replace", path: "/a", value: 1}], [])
-      %Musubi.Page.PatchEnvelope{type: "patch", base_version: 0, version: 1, ops: [%{op: "replace", path: "/a", value: 1}], stream_ops: []}
+      %Musubi.Page.PatchEnvelope{type: "patch", base_version: 0, version: 1, ops: [%{op: "replace", path: "/a", value: 1}], stream_ops: [], upload_ops: []}
 
       iex> Musubi.Page.PatchEnvelope.build(3, [], [])
       nil
   """
-  @spec build(non_neg_integer(), [op()], [stream_op()]) :: t() | nil
-  def build(_base_version, [], []), do: nil
+  @spec build(non_neg_integer(), [op()], [stream_op()], [upload_op()]) :: t() | nil
+  def build(base_version, ops, stream_ops, upload_ops \\ [])
 
-  def build(base_version, ops, stream_ops)
-      when is_integer(base_version) and base_version >= 0 and is_list(ops) and is_list(stream_ops) do
+  def build(_base_version, [], [], []), do: nil
+
+  def build(base_version, ops, stream_ops, upload_ops)
+      when is_integer(base_version) and base_version >= 0 and is_list(ops) and
+             is_list(stream_ops) and is_list(upload_ops) do
     %__MODULE__{
       type: "patch",
       base_version: base_version,
       version: base_version + 1,
       ops: ops,
-      stream_ops: stream_ops
+      stream_ops: stream_ops,
+      upload_ops: upload_ops
     }
   end
 
@@ -124,9 +138,9 @@ defmodule Musubi.Page.PatchEnvelope do
 
   ## Examples
 
-      iex> envelope = %Musubi.Page.PatchEnvelope{base_version: 0, version: 1, ops: [], stream_ops: []}
+      iex> envelope = %Musubi.Page.PatchEnvelope{base_version: 0, version: 1, ops: [], stream_ops: [], upload_ops: []}
       iex> Musubi.Page.PatchEnvelope.to_wire(envelope)
-      %{"type" => "patch", "base_version" => 0, "version" => 1, "ops" => [], "stream_ops" => []}
+      %{"type" => "patch", "base_version" => 0, "version" => 1, "ops" => [], "stream_ops" => [], "upload_ops" => []}
   """
   @spec to_wire(t()) :: %{String.t() => term()}
   def to_wire(%__MODULE__{} = envelope) do
@@ -135,7 +149,8 @@ defmodule Musubi.Page.PatchEnvelope do
       "base_version" => envelope.base_version,
       "version" => envelope.version,
       "ops" => envelope.ops,
-      "stream_ops" => envelope.stream_ops
+      "stream_ops" => envelope.stream_ops,
+      "upload_ops" => envelope.upload_ops
     }
   end
 end
