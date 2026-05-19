@@ -129,6 +129,25 @@ defmodule MyAppWeb.UserSocket do
 end
 ```
 
+Wire the socket into your Phoenix endpoint. Your `UserSocket` (built with
+`use Musubi.Socket`) is a Phoenix socket — mount it on the endpoint like
+any other transport:
+
+```elixir
+defmodule MyAppWeb.Endpoint do
+  use Phoenix.Endpoint, otp_app: :my_app
+
+  socket "/socket", MyAppWeb.UserSocket,
+    websocket: true,
+    longpoll: false
+
+  # ... remaining plugs
+end
+```
+
+The mount path (`"/socket"`) is the same URL the TypeScript client passes
+to `new Socket(...)` below.
+
 Mount the root from TypeScript:
 
 ```ts
