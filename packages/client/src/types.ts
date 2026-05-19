@@ -45,7 +45,7 @@ type StoreDefMarker<T> = Extract<
 
 type FieldMarker<T> = Extract<
   SymbolMarker<T>,
-  { readonly kind: "store" | "stream" | "async" }
+  { readonly kind: "store" | "stream" | "async" | "upload" }
 >
 
 export type ShapeOf<M extends StoreModule<R>, R> =
@@ -80,7 +80,7 @@ export type CommandReply<
 // Snapshot and proxy projection (symbol-branded generated marker matching)
 // ---------------------------------------------------------------------------
 
-type FieldMarkerOfKind<T, Kind extends "store" | "stream" | "async"> = Extract<
+type FieldMarkerOfKind<T, Kind extends "store" | "stream" | "async" | "upload"> = Extract<
   FieldMarker<T>,
   { readonly kind: Kind }
 >
@@ -88,6 +88,7 @@ type FieldMarkerOfKind<T, Kind extends "store" | "stream" | "async"> = Extract<
 type IsStoreField<T> = [FieldMarkerOfKind<T, "store">] extends [never] ? false : true
 type IsStreamField<T> = [FieldMarkerOfKind<T, "stream">] extends [never] ? false : true
 type IsAsyncField<T> = [FieldMarkerOfKind<T, "async">] extends [never] ? false : true
+type IsUploadField<T> = [FieldMarkerOfKind<T, "upload">] extends [never] ? false : true
 
 type StoreFieldModule<T> =
   [FieldMarkerOfKind<T, "store">] extends [never]
@@ -120,15 +121,17 @@ export type SnapshotValue<T, R> =
         ? StoreSnapshot<M, R>
         : never
       : never
-    : IsAsyncField<T> extends true
-      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
-      : IsStreamField<T> extends true
-        ? SnapshotValue<StreamFieldItem<T>, R>[]
-        : T extends readonly (infer U)[]
-          ? SnapshotValue<U, R>[]
-          : T extends object
-            ? { [K in keyof T]: SnapshotValue<T[K], R> }
-            : T
+    : IsUploadField<T> extends true
+      ? UploadHandle
+      : IsAsyncField<T> extends true
+        ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
+        : IsStreamField<T> extends true
+          ? SnapshotValue<StreamFieldItem<T>, R>[]
+          : T extends readonly (infer U)[]
+            ? SnapshotValue<U, R>[]
+            : T extends object
+              ? { [K in keyof T]: SnapshotValue<T[K], R> }
+              : T
 
 export type StoreSnapshot<M extends StoreModule<R>, R> = {
   readonly __musubi_store_id__: StoreId
@@ -143,15 +146,17 @@ export type ProxyValue<T, R> =
         ? StoreProxy<M, R>
         : never
       : never
-    : IsAsyncField<T> extends true
-      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
-      : IsStreamField<T> extends true
-        ? SnapshotValue<StreamFieldItem<T>, R>[]
-        : T extends readonly (infer U)[]
-          ? ProxyValue<U, R>[]
-          : T extends object
-            ? { [K in keyof T]: ProxyValue<T[K], R> }
-            : T
+    : IsUploadField<T> extends true
+      ? UploadHandle
+      : IsAsyncField<T> extends true
+        ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
+        : IsStreamField<T> extends true
+          ? SnapshotValue<StreamFieldItem<T>, R>[]
+          : T extends readonly (infer U)[]
+            ? ProxyValue<U, R>[]
+            : T extends object
+              ? { [K in keyof T]: ProxyValue<T[K], R> }
+              : T
 
 export interface StoreRuntime<M extends StoreModule<R>, R> {
   readonly __musubi_store_id__: StoreId
@@ -337,7 +342,7 @@ export type PatchEnvelope = {
   version: number
   ops: JsonPatchOp[]
   stream_ops: StreamOp[]
-  upload_ops?: UploadOp[]
+  upload_ops: UploadOp[]
 }
 
 export type ConnectionPatchEnvelope = PatchEnvelope & {

@@ -22,7 +22,9 @@ defmodule Musubi.Codegen.TypeScript.Manifest do
 
   @subdir "musubi-codegen-ts"
 
-  @type entry() :: {module(), %{kind: :state | :store, fields: list(), commands: list()}}
+  @type entry() ::
+          {module(),
+           %{kind: :state | :store, fields: list(), commands: list(), uploads: list()}}
 
   @doc false
   @spec __after_compile__(Macro.Env.t(), binary()) :: :ok
@@ -43,14 +45,29 @@ defmodule Musubi.Codegen.TypeScript.Manifest do
   time.
   """
   @spec collect(Macro.Env.t()) ::
-          %{module: module(), kind: :state | :store, fields: list(), commands: list()}
+          %{
+            module: module(),
+            kind: :state | :store,
+            fields: list(),
+            commands: list(),
+            uploads: list()
+          }
   def collect(%Macro.Env{module: module} = env) do
     %{
       module: module,
       kind: env_kind(env) || module_kind(module),
       fields: expand_field_aliases(List.wrap(module.__musubi__(:fields)), env),
-      commands: expand_command_aliases(List.wrap(module.__musubi__(:commands)), env)
+      commands: expand_command_aliases(List.wrap(module.__musubi__(:commands)), env),
+      uploads: read_uploads(module)
     }
+  end
+
+  defp read_uploads(module) do
+    if function_exported?(module, :__musubi__, 1) do
+      List.wrap(module.__musubi__(:uploads))
+    else
+      []
+    end
   end
 
   defp env_kind(%Macro.Env{module: module}) when is_atom(module) do
@@ -69,7 +86,8 @@ defmodule Musubi.Codegen.TypeScript.Manifest do
       source: source_file,
       kind: module_kind(module),
       fields: List.wrap(module.__musubi__(:fields)),
-      commands: List.wrap(module.__musubi__(:commands))
+      commands: List.wrap(module.__musubi__(:commands)),
+      uploads: read_uploads(module)
     }
 
     write_state!(module, data, target)
@@ -210,7 +228,12 @@ defmodule Musubi.Codegen.TypeScript.Manifest do
          %{module: module} = data <- safe_term(bin),
          true <- Code.ensure_loaded?(module) do
       kind = Map.get(data, :kind) || module_kind(module)
-      [{module, %{kind: kind, fields: data.fields, commands: data.commands}}]
+      uploads = Map.get(data, :uploads, []) |> List.wrap()
+
+      [
+        {module,
+         %{kind: kind, fields: data.fields, commands: data.commands, uploads: uploads}}
+      ]
     else
       _failure -> []
     end
