@@ -27,6 +27,15 @@ defmodule Musubi.Upload.WireProtocolTest do
   end
 
   setup_all do
+    # Keyed by this test module's full `TestEndpoint` alias, so no other
+    # test reads or writes the same `:musubi` app env entry. Scoped
+    # per-test config rather than shared global state.
+    Application.put_env(:musubi, TestEndpoint,
+      secret_key_base: String.duplicate("a", 64),
+      server: false,
+      pubsub_server: __MODULE__.PubSub
+    )
+
     start_supervised!({Phoenix.PubSub, name: __MODULE__.PubSub})
     start_supervised!(TestEndpoint)
     :ok

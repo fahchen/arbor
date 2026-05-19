@@ -43,7 +43,7 @@ If the spec feels wrong, flag the discrepancy in the PR — never silently edit 
 - **Always** use pattern matching in test assertions — never `assert x.field == value`
 - **Test final socket state, not intermediate process.** Drive the command, sync on a barrier (terminal patch envelope or `[:musubi, :async, :stop | :exception]` telemetry), then assert directly on `socket.assigns.<field>` by reading `:sys.get_state(pid)` and walking the store registry. Don't pin patch-envelope sequencing, telemetry interleaving, or tracking-private-key shape mid-flight — those couple the suite to runtime plumbing. Lifecycle assertions (loading visibility, demonitor-before-kill) belong in small focused tests whose stated subject IS the lifecycle, not as asides in happy-path tests.
 - **Never** seed global/shared data in tests or `test/test_helper.exs` — each test must insert the rows it needs explicitly
-- **Never** use `Application.put_env` in tests — configure test values in `config/test.exs`
+- **Never** mutate runtime config keys that other tests read. `Application.put_env` IS allowed inside a single test's `setup_all` when the key is uniquely scoped to that test (e.g. `:musubi, TestModule.TestEndpoint`), since no sibling reads it; add a one-line comment at the call site noting the scoping. Shared / cross-test keys belong in `config/test.exs`
 - **Never** force-push (including `--force-with-lease`). To address review feedback, stack a new commit on the branch tip — do not amend and force
 - **Never** `git commit --amend` on a published commit — add a follow-up commit instead
 
