@@ -86,7 +86,7 @@ defmodule Musubi.Upload.Preflight do
       entry_ref = generate_ref()
       now = System.monotonic_time()
 
-      entry = %Entry{
+      base_entry = %Entry{
         ref: entry_ref,
         client_name: client_name,
         client_size: client_size,
@@ -94,21 +94,20 @@ defmodule Musubi.Upload.Preflight do
         progress: 0,
         status: :pending,
         errors: [],
-        mode: if(external?, do: :external, else: :channel),
         store_pid: store_pid,
         preflighted_at: now
       }
 
-      {entry, attach_meta} =
-        attach_mode_meta(entry, name, config, endpoint, external?, store_id, socket)
+      case attach_mode_meta(base_entry, name, config, endpoint, external?, store_id, socket) do
+        {:ok, entry, attach_meta, next_socket} ->
+          next_socket =
+            next_socket
+            |> Upload.put_entry(name, entry)
+            |> Upload.enqueue_add(name, entry)
 
-      socket =
-        socket
-        |> Upload.put_entry(name, entry)
-        |> Upload.enqueue_add(name, entry)
-
-      accepted_entry = build_accepted(attach_meta, entry)
-      {[{client_ref, accepted_entry} | acc], err, count + 1, socket}
+          accepted_entry = build_accepted(attach_meta, entry)
+          {[{client_ref, accepted_entry} | acc], err, count + 1, next_socket}
+      end
     else
       {:error, %Error{} = error} ->
         client_ref = Map.get(input, "client_ref", "")
@@ -126,44 +125,57 @@ defmodule Musubi.Upload.Preflight do
          name,
          config,
          endpoint,
-         false = _external?,
+         module_has_external?,
          store_id,
-         _socket
+         %Socket{} = socket
        ) do
-    token =
-      Token.sign(endpoint, %{
-        store_pid: entry.store_pid,
-        store_id: store_id,
-        conf_ref: Atom.to_string(name),
-        entry_ref: entry.ref,
-        max_file_size: config.max_file_size,
-        client_size: entry.client_size,
-        accept: config.accept,
-        chunk_size: config.chunk_size,
-        chunk_timeout: config.chunk_timeout
-      })
+    case maybe_invoke_external(module_has_external?, entry, name, socket) do
+      {:external, meta, next_socket} ->
+        uploader = Map.get(meta, :uploader) || Map.get(meta, "uploader") || "external"
+        rest = Map.drop(meta, [:uploader, "uploader"])
+        external_entry = %{entry | mode: :external, external_meta: meta}
 
-    {%{entry | token: token}, %{type: :channel, token: token}}
+        {:ok, external_entry,
+         %{type: :external, uploader: to_string(uploader), meta: rest}, next_socket}
+
+      :channel ->
+        token =
+          Token.sign(endpoint, %{
+            store_pid: entry.store_pid,
+            store_id: store_id,
+            conf_ref: Atom.to_string(name),
+            entry_ref: entry.ref,
+            max_file_size: config.max_file_size,
+            client_size: entry.client_size,
+            accept: config.accept,
+            chunk_size: config.chunk_size,
+            chunk_timeout: config.chunk_timeout
+          })
+
+        channel_entry = %{entry | mode: :channel, token: token}
+        {:ok, channel_entry, %{type: :channel, token: token}, socket}
+    end
   end
 
-  defp attach_mode_meta(
-         %Entry{} = entry,
-         name,
-         _config,
-         _endpoint,
-         true,
-         _store_id,
-         %Socket{module: module} = socket
-       ) do
-    case module.upload_external(name, entry, socket) do
-      {:ok, %{} = meta, %Socket{}} ->
-        uploader = Map.get(meta, :uploader) || Map.get(meta, "uploader") || "external"
-        rest = meta |> Map.drop([:uploader, "uploader"])
-        {%{entry | external_meta: meta}, %{type: :external, uploader: to_string(uploader), meta: rest}}
+  defp maybe_invoke_external(false, _entry, _name, _socket), do: :channel
 
-      other ->
-        raise ArgumentError,
-              "bad return from #{inspect(module)}.upload_external/3: expected {:ok, meta, socket}, got: #{inspect(other)}"
+  defp maybe_invoke_external(true, %Entry{} = entry, name, %Socket{module: module} = socket) do
+    try do
+      case module.upload_external(name, entry, socket) do
+        {:ok, %{} = meta, %Socket{} = next_socket} ->
+          {:external, meta, next_socket}
+
+        :channel ->
+          :channel
+
+        other ->
+          raise ArgumentError,
+                "bad return from #{inspect(module)}.upload_external/3 for upload " <>
+                  "#{inspect(name)}: expected {:ok, meta, socket} or :channel, got: " <>
+                  inspect(other)
+      end
+    rescue
+      FunctionClauseError -> :channel
     end
   end
 
@@ -192,16 +204,13 @@ defmodule Musubi.Upload.Preflight do
     end
   end
 
-  defp uses_external?(%Socket{module: module}, name) when is_atom(module) and is_atom(name) do
-    Code.ensure_loaded?(module) and
-      function_exported?(module, :upload_external, 3) and
-      function_uses_external_for_name?(module, name)
+  # Whether the module advertises any external-mode capability at all.
+  # The actual per-name decision happens during `attach_mode_meta/7` when
+  # the callback is invoked; a missing clause (`FunctionClauseError`) or
+  # an explicit `:channel` return falls back to channel mode.
+  defp uses_external?(%Socket{module: module}, _name) when is_atom(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :upload_external, 3)
   end
-
-  # `upload_external/3` may be defined for multiple uploads on a module; the
-  # default assumption is that any declared upload routes through it. The
-  # implementation guards inside the callback if it needs to vary per name.
-  defp function_uses_external_for_name?(_module, _name), do: true
 
   defp current_entry_count(%Socket{} = socket, name) do
     case Map.get(socket.assigns, Upload.assigns_key(), %{}) |> Map.get(name) do
