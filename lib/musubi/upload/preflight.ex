@@ -41,84 +41,55 @@ defmodule Musubi.Upload.Preflight do
   def run(%Socket{} = socket, name, entries, endpoint, store_pid, store_id)
       when is_atom(name) and is_list(entries) and is_atom(endpoint) and is_pid(store_pid) and
              is_list(store_id) do
-    config = fetch_config!(socket, name)
-    external? = uses_external?(socket, name)
+    ctx = %{
+      name: name,
+      config: fetch_config!(socket, name),
+      external?: uses_external?(socket, name),
+      endpoint: endpoint,
+      store_pid: store_pid,
+      store_id: store_id
+    }
+
     existing_count = current_entry_count(socket, name)
 
     {accepted, errors, _next_count, next_socket} =
-      Enum.reduce(
-        entries,
-        {[], [], existing_count, socket},
-        fn input, {acc, err, count, sock} ->
-          process_entry(
-            input,
-            name,
-            config,
-            count,
-            external?,
-            endpoint,
-            store_pid,
-            store_id,
-            sock,
-            acc,
-            err
-          )
-        end
-      )
+      Enum.reduce(entries, {[], [], existing_count, socket}, fn input, acc_state ->
+        process_entry(input, ctx, acc_state)
+      end)
 
     %{accepted: Enum.reverse(accepted), errors: Enum.reverse(errors), socket: next_socket}
   end
 
-  defp process_entry(
-         input,
-         name,
-         config,
-         count,
-         external?,
-         endpoint,
-         store_pid,
-         store_id,
-         socket,
-         acc,
-         err
-       ) do
+  defp process_entry(input, ctx, {acc, err, count, socket}) do
     with {:ok, client_ref} <- fetch_client_ref(input),
          {:ok, client_name} <- fetch_string(input, "name"),
          {:ok, client_size} <- fetch_size(input),
          client_type <- Map.get(input, "type", ""),
-         :ok <- check_max_entries(config, count),
-         :ok <- check_size(config, client_size),
-         :ok <- check_accept(config, client_name, client_type) do
-      entry_ref = generate_ref()
-      now = System.monotonic_time()
-
+         :ok <- check_max_entries(ctx.config, count),
+         :ok <- check_size(ctx.config, client_size),
+         :ok <- check_accept(ctx.config, client_name, client_type) do
       base_entry = %Entry{
-        ref: entry_ref,
+        ref: generate_ref(),
         client_name: client_name,
         client_size: client_size,
         client_type: client_type,
         progress: 0,
         status: :pending,
         errors: [],
-        store_pid: store_pid,
-        preflighted_at: now
+        store_pid: ctx.store_pid,
+        preflighted_at: System.monotonic_time()
       }
 
-      case attach_mode_meta(base_entry, name, config, endpoint, external?, store_id, socket) do
-        {:ok, entry, attach_meta, next_socket} ->
-          next_socket =
-            next_socket
-            |> Upload.put_entry(name, entry)
-            |> Upload.enqueue_add(name, entry)
+      {:ok, entry, attach_meta, next_socket} = attach_mode_meta(base_entry, ctx, socket)
 
-          accepted_entry = build_accepted(attach_meta, entry)
-          {[{client_ref, accepted_entry} | acc], err, count + 1, next_socket}
-      end
+      next_socket =
+        next_socket
+        |> Upload.put_entry(ctx.name, entry)
+        |> Upload.enqueue_add(ctx.name, entry)
+
+      accepted_entry = build_accepted(attach_meta, entry)
+      {[{client_ref, accepted_entry} | acc], err, count + 1, next_socket}
     else
-      {:error, %Error{} = error} ->
-        client_ref = Map.get(input, "client_ref", "")
-        {acc, [%{client_ref: client_ref, error: error} | err], count, socket}
-
       {:error, reason} when is_atom(reason) ->
         client_ref = Map.get(input, "client_ref", "")
         error = Error.new(reason)
@@ -126,16 +97,8 @@ defmodule Musubi.Upload.Preflight do
     end
   end
 
-  defp attach_mode_meta(
-         %Entry{} = entry,
-         name,
-         config,
-         endpoint,
-         module_has_external?,
-         store_id,
-         %Socket{} = socket
-       ) do
-    case maybe_invoke_external(module_has_external?, entry, name, socket) do
+  defp attach_mode_meta(%Entry{} = entry, ctx, %Socket{} = socket) do
+    case maybe_invoke_external(ctx.external?, entry, ctx.name, socket) do
       {:external, meta, next_socket} ->
         uploader = Map.get(meta, :uploader) || Map.get(meta, "uploader") || "external"
         rest = Map.drop(meta, [:uploader, "uploader"])
@@ -146,16 +109,16 @@ defmodule Musubi.Upload.Preflight do
 
       :channel ->
         token =
-          Token.sign(endpoint, %{
+          Token.sign(ctx.endpoint, %{
             store_pid: entry.store_pid,
-            store_id: store_id,
-            conf_ref: Atom.to_string(name),
+            store_id: ctx.store_id,
+            conf_ref: Atom.to_string(ctx.name),
             entry_ref: entry.ref,
-            max_file_size: config.max_file_size,
+            max_file_size: ctx.config.max_file_size,
             client_size: entry.client_size,
-            accept: config.accept,
-            chunk_size: config.chunk_size,
-            chunk_timeout: config.chunk_timeout
+            accept: ctx.config.accept,
+            chunk_size: ctx.config.chunk_size,
+            chunk_timeout: ctx.config.chunk_timeout
           })
 
         channel_entry = %{entry | mode: :channel, token: token}
@@ -166,23 +129,21 @@ defmodule Musubi.Upload.Preflight do
   defp maybe_invoke_external(false, _entry, _name, _socket), do: :channel
 
   defp maybe_invoke_external(true, %Entry{} = entry, name, %Socket{module: module} = socket) do
-    try do
-      case module.upload_external(name, entry, socket) do
-        {:ok, %{} = meta, %Socket{} = next_socket} ->
-          {:external, meta, next_socket}
+    case module.upload_external(name, entry, socket) do
+      {:ok, %{} = meta, %Socket{} = next_socket} ->
+        {:external, meta, next_socket}
 
-        :channel ->
-          :channel
+      :channel ->
+        :channel
 
-        other ->
-          raise ArgumentError,
-                "bad return from #{inspect(module)}.upload_external/3 for upload " <>
-                  "#{inspect(name)}: expected {:ok, meta, socket} or :channel, got: " <>
-                  inspect(other)
-      end
-    rescue
-      FunctionClauseError -> :channel
+      other ->
+        raise ArgumentError,
+              "bad return from #{inspect(module)}.upload_external/3 for upload " <>
+                "#{inspect(name)}: expected {:ok, meta, socket} or :channel, got: " <>
+                inspect(other)
     end
+  rescue
+    FunctionClauseError -> :channel
   end
 
   defp build_accepted(%{type: :channel, token: token}, %Entry{} = entry) do
@@ -194,9 +155,14 @@ defmodule Musubi.Upload.Preflight do
   end
 
   defp fetch_config!(%Socket{} = socket, name) do
-    case Map.get(socket.assigns, Upload.assigns_key(), %{}) |> Map.get(name) do
+    bucket =
+      socket.assigns
+      |> Map.get(Upload.assigns_key(), %{})
+      |> Map.get(name)
+
+    case bucket do
       %{config: %Config{} = config} -> config
-      _other -> compile_config!(socket, name)
+      _missing -> compile_config!(socket, name)
     end
   end
 
@@ -219,9 +185,14 @@ defmodule Musubi.Upload.Preflight do
   end
 
   defp current_entry_count(%Socket{} = socket, name) do
-    case Map.get(socket.assigns, Upload.assigns_key(), %{}) |> Map.get(name) do
+    bucket =
+      socket.assigns
+      |> Map.get(Upload.assigns_key(), %{})
+      |> Map.get(name)
+
+    case bucket do
       %{entries: entries} -> map_size(entries)
-      _other -> 0
+      _missing -> 0
     end
   end
 
@@ -242,25 +213,26 @@ defmodule Musubi.Upload.Preflight do
   defp fetch_client_ref(input) do
     case Map.get(input, "client_ref") do
       v when is_binary(v) and v != "" -> {:ok, v}
-      _ -> {:error, :preflight_rejected}
+      _other -> {:error, :preflight_rejected}
     end
   end
 
   defp fetch_string(input, key) do
     case Map.get(input, key) do
       v when is_binary(v) and v != "" -> {:ok, v}
-      _ -> {:error, :preflight_rejected}
+      _other -> {:error, :preflight_rejected}
     end
   end
 
   defp fetch_size(input) do
     case Map.get(input, "size") do
       v when is_integer(v) and v >= 0 -> {:ok, v}
-      _ -> {:error, :preflight_rejected}
+      _other -> {:error, :preflight_rejected}
     end
   end
 
   defp generate_ref do
-    "u_" <> (:crypto.strong_rand_bytes(8) |> Base.url_encode64(padding: false))
+    suffix = Base.url_encode64(:crypto.strong_rand_bytes(8), padding: false)
+    "u_" <> suffix
   end
 end

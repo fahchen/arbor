@@ -51,6 +51,6 @@ defmodule Musubi.Page.Server.State do
           %{required({[String.t()], String.t(), String.t()}) => integer()},
           default: %{},
           doc:
-            "Per-entry monotonic timestamp (milliseconds) of the last emitted `progress` upload op, used to enforce the 10 Hz default throttle (BDR-0025)."
+            "Per-entry monotonic timestamp (milliseconds) of the last emitted `progress` upload op, used to enforce the 10 Hz default throttle."
   end
 end

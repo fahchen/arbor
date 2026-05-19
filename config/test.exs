@@ -18,3 +18,21 @@ config :musubi, Musubi.Transport.ConnectionChannelTest.TestEndpoint,
   pubsub_server: Musubi.Transport.ConnectionChannelTest.PubSub,
   secret_key_base: String.duplicate("a", 64),
   server: false
+
+# Upload-test endpoints. Same pattern: each test module declares its own
+# `TestEndpoint` inline and a `PubSub` server, and the keys here track those
+# full module names.
+for test_mod <- [
+      Musubi.Transport.UploadChannelTest,
+      Musubi.Transport.UploadConnectionTest,
+      Musubi.Upload.ChildStoreTest,
+      Musubi.Upload.ExternalModeTest,
+      Musubi.Upload.HelpersTest,
+      Musubi.Upload.TransportTest,
+      Musubi.Upload.WireProtocolTest
+    ] do
+  config :musubi, Module.concat(test_mod, TestEndpoint),
+    pubsub_server: Module.concat(test_mod, PubSub),
+    secret_key_base: String.duplicate("a", 64),
+    server: false
+end

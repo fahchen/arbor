@@ -27,12 +27,6 @@ defmodule Musubi.Upload.WireProtocolTest do
   end
 
   setup_all do
-    Application.put_env(:musubi, TestEndpoint,
-      secret_key_base: String.duplicate("a", 64),
-      server: false,
-      pubsub_server: __MODULE__.PubSub
-    )
-
     start_supervised!({Phoenix.PubSub, name: __MODULE__.PubSub})
     start_supervised!(TestEndpoint)
     :ok

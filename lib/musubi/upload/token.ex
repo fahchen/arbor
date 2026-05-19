@@ -11,14 +11,21 @@ defmodule Musubi.Upload.Token do
 
       %{
         store_pid:     pid(),
+        store_id:      [String.t()],
         conf_ref:      String.t(),   # upload name as a string
         entry_ref:     String.t(),
         max_file_size: integer(),
+        client_size:   integer(),
         accept:        [String.t()] | :any,
-        chunk_size:    integer()
+        chunk_size:    integer(),
+        chunk_timeout: integer()
       }
 
-  See BDR-0026.
+  `store_id` lets `Musubi.Transport.UploadChannel` route chunk
+  notifications back to the owning store node without consulting any
+  shared mutable table. `client_size` lets the sub-channel detect
+  completion on the final `"chunk"` frame. `chunk_timeout` arms the
+  per-entry watchdog on the channel process directly.
   """
 
   @salt "musubi_upload"

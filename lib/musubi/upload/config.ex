@@ -110,18 +110,7 @@ defmodule Musubi.Upload.Config do
         :any
 
       {:ok, list} when is_list(list) ->
-        Enum.each(list, fn
-          entry when is_binary(entry) ->
-            unless String.starts_with?(entry, ".") do
-              raise ArgumentError,
-                    "upload :#{name} accept entries must start with `.` (got: #{inspect(entry)})"
-            end
-
-          other ->
-            raise ArgumentError,
-                  "upload :#{name} accept entries must be binaries (got: #{inspect(other)})"
-        end)
-
+        Enum.each(list, &validate_accept_entry!(&1, name))
         list
 
       {:ok, other} ->
@@ -132,6 +121,20 @@ defmodule Musubi.Upload.Config do
         raise ArgumentError,
               "upload :#{name} requires the :accept option"
     end
+  end
+
+  defp validate_accept_entry!(entry, name) when is_binary(entry) do
+    if String.starts_with?(entry, ".") do
+      :ok
+    else
+      raise ArgumentError,
+            "upload :#{name} accept entries must start with `.` (got: #{inspect(entry)})"
+    end
+  end
+
+  defp validate_accept_entry!(other, name) do
+    raise ArgumentError,
+          "upload :#{name} accept entries must be binaries (got: #{inspect(other)})"
   end
 
   defp validate_pos!(name, opts, key, default) do

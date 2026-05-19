@@ -79,12 +79,6 @@ defmodule Musubi.Transport.UploadConnectionTest do
   @endpoint TestEndpoint
 
   setup_all do
-    Application.put_env(:musubi, TestEndpoint,
-      secret_key_base: String.duplicate("a", 64),
-      server: false,
-      pubsub_server: __MODULE__.PubSub
-    )
-
     start_supervised!({Phoenix.PubSub, name: __MODULE__.PubSub})
     start_supervised!(TestEndpoint)
     :ok
@@ -101,7 +95,7 @@ defmodule Musubi.Transport.UploadConnectionTest do
         "params" => %{}
       })
 
-    assert_reply(mount_ref, :ok, _)
+    assert_reply(mount_ref, :ok, _reply)
 
     {:ok, socket: socket}
   end
@@ -152,7 +146,7 @@ defmodule Musubi.Transport.UploadConnectionTest do
       })
 
     assert_reply(push_ref, :ok, reply)
-    [{_, %{"entry_ref" => entry_ref}}] = Enum.to_list(reply["entries"])
+    [{_cref, %{"entry_ref" => entry_ref}}] = Enum.to_list(reply["entries"])
 
     push_ref =
       push(socket, "cancel_upload", %{
@@ -162,7 +156,7 @@ defmodule Musubi.Transport.UploadConnectionTest do
         "ref" => entry_ref
       })
 
-    assert_reply(push_ref, :ok, _)
+    assert_reply(push_ref, :ok, _reply)
   end
 
   defp join_connection do

@@ -61,12 +61,6 @@ defmodule Musubi.Upload.ChildStoreTest do
   end
 
   setup_all do
-    Application.put_env(:musubi, TestEndpoint,
-      secret_key_base: String.duplicate("a", 64),
-      server: false,
-      pubsub_server: __MODULE__.PubSub
-    )
-
     start_supervised!({Phoenix.PubSub, name: __MODULE__.PubSub})
     start_supervised!(TestEndpoint)
     :ok
@@ -136,8 +130,9 @@ defmodule Musubi.Upload.ChildStoreTest do
     assert_receive {:patch, envelope}
 
     add =
-      envelope.upload_ops
-      |> Enum.find(fn op -> op.op == "add" and op.ref == entry["entry_ref"] end)
+      Enum.find(envelope.upload_ops, fn op ->
+        op.op == "add" and op.ref == entry["entry_ref"]
+      end)
 
     assert add
     assert add.store_id == ["lines", "line-2"]
@@ -172,8 +167,8 @@ defmodule Musubi.Upload.ChildStoreTest do
 
     assert_receive {:patch, _add2}
 
-    [{_, %{"entry_ref" => ref1}}] = Enum.to_list(reply1["entries"])
-    [{_, %{"entry_ref" => ref2}}] = Enum.to_list(reply2["entries"])
+    [{_cref, %{"entry_ref" => ref1}}] = Enum.to_list(reply1["entries"])
+    [{_cref, %{"entry_ref" => ref2}}] = Enum.to_list(reply2["entries"])
 
     Musubi.Testing.simulate_upload(page, :attachment, ref1, 1, ["lines", "line-1"])
     assert_receive {:patch, envelope1}

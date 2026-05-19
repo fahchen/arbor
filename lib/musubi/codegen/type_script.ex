@@ -261,9 +261,7 @@ defmodule Musubi.Codegen.TypeScript do
     field_lines = render_state_fields(fields, shape_indent <> "  ", root)
     upload_lines = render_upload_fields(uploads, shape_indent <> "  ")
 
-    body =
-      (field_lines ++ upload_lines)
-      |> Enum.join("\n")
+    body = Enum.join(field_lines ++ upload_lines, "\n")
 
     [
       indent,

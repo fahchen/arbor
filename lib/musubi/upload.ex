@@ -15,11 +15,11 @@ defmodule Musubi.Upload do
         ...
       }
 
-  Per BDR-0025, mutating upload state never marks user-visible assigns
-  dirty — the assigns map's `__changed__` is touched only for the
-  reserved `__uploads__` key, which `Musubi.Resolver` already filters
-  out of the change-tracking signal. Progress chunks therefore do not
-  cause the store's `render/1` to re-run.
+  Mutating upload state never marks user-visible assigns dirty — the
+  assigns map's `__changed__` is touched only for the reserved
+  `__uploads__` key, which `Musubi.Resolver` already filters out of
+  the change-tracking signal. Progress chunks therefore do not cause
+  the store's `render/1` to re-run.
 
   ## Public surface
 
@@ -141,7 +141,7 @@ defmodule Musubi.Upload do
   """
   @spec uploaded_entries(Socket.t(), atom()) :: {[Entry.t()], [Entry.t()]}
   def uploaded_entries(%Socket{} = socket, name) when is_atom(name) do
-    bucket = upload_index(socket) |> Map.get(name, %{entries: %{}})
+    bucket = Map.get(upload_index(socket), name, %{entries: %{}})
 
     bucket.entries
     |> Map.values()
@@ -175,30 +175,35 @@ defmodule Musubi.Upload do
     {completed, _in_progress} = uploaded_entries(socket, name)
     completed = Enum.sort_by(completed, & &1.preflighted_at)
 
-    Enum.reduce(completed, {socket, []}, fn entry, {sock, results} ->
-      meta = consume_meta(entry)
+    {final_socket, reversed_results} =
+      Enum.reduce(completed, {socket, []}, fn entry, acc ->
+        consume_step(entry, acc, name, fun)
+      end)
 
-      case fun.(meta, entry) do
-        {:ok, value} ->
-          # Application has taken ownership of the bytes (e.g. moved
-          # the temp file). Remove the entry and delete the temp file
-          # so the OS does not leak it.
-          cleanup_entry_path(entry)
-          sock = remove_entry(sock, name, entry.ref)
-          {sock, results ++ [value]}
+    maybe_emit_reset({final_socket, Enum.reverse(reversed_results)}, name)
+  end
 
-        {:postpone, value} ->
-          # Leave both the index entry and the temp file in place so
-          # the application can retry consumption later.
-          {sock, results ++ [value]}
+  defp consume_step(entry, {sock, results}, name, fun) do
+    meta = consume_meta(entry)
 
-        other ->
-          raise ArgumentError,
-                "consume_uploaded_entries/3 fun must return {:ok, val} or {:postpone, val}, " <>
-                  "got: #{inspect(other)}"
-      end
-    end)
-    |> maybe_emit_reset(name)
+    case fun.(meta, entry) do
+      {:ok, value} ->
+        # Application has taken ownership of the bytes (e.g. moved the
+        # temp file). Remove the entry and delete the temp file so the
+        # OS does not leak it.
+        cleanup_entry_path(entry)
+        {remove_entry(sock, name, entry.ref), [value | results]}
+
+      {:postpone, value} ->
+        # Leave both the index entry and the temp file in place so the
+        # application can retry consumption later.
+        {sock, [value | results]}
+
+      other ->
+        raise ArgumentError,
+              "consume_uploaded_entries/3 fun must return {:ok, val} or {:postpone, val}, " <>
+                "got: #{inspect(other)}"
+    end
   end
 
   @doc """
@@ -221,7 +226,7 @@ defmodule Musubi.Upload do
   end
 
   defp cleanup_entry_path(%Entry{mode: :channel, path: path}) when is_binary(path) do
-    _ = File.rm(path)
+    _rm = File.rm(path)
     :ok
   end
 
@@ -357,7 +362,13 @@ defmodule Musubi.Upload do
   """
   @spec pending_ops(Socket.t()) :: [raw_op()]
   def pending_ops(%Socket{} = socket) do
-    upload_index(socket) |> Map.get(@pending_ops_key, []) |> Enum.reverse() |> coalesce()
+    raw =
+      socket
+      |> upload_index()
+      |> Map.get(@pending_ops_key, [])
+      |> Enum.reverse()
+
+    coalesce(raw)
   end
 
   # ---------------------------------------------------------------------------
@@ -395,28 +406,67 @@ defmodule Musubi.Upload do
     end
   end
 
+  # Linear coalescing pass (BDR-0025 hot path).
+  #
+  # Input is a list of ops in queue order (oldest first). We collapse
+  # consecutive `progress` ops sharing `{upload, ref}` within a "run"
+  # (a maximal stretch with no non-progress op between them) down to
+  # the latest progress for that key, preserving the *first-seen*
+  # position of each key within the run. Non-progress ops break the
+  # run and are emitted in place.
+  #
+  # State carried through the reduce:
+  #   * `results` — finished ops in reverse order (newest first).
+  #   * `run` — `{first_seen_keys_rev, latest_map}` for the in-flight
+  #     progress run. `first_seen_keys_rev` is the list of
+  #     `{upload, ref}` keys in reverse order of first appearance.
+  #     `latest_map` maps every key in the run to its most recent op.
+  #
+  # On a non-progress op (or end of input) we flush the run by
+  # walking `first_seen_keys_rev` and pushing each key's `latest_map`
+  # value onto `results`. That walk gives us oldest-first emission
+  # because we walk the reversed list while prepending — which
+  # ultimately re-reverses to oldest-first when `results` is reversed
+  # at the end.
+  #
+  # Each op is touched once. Each key in a run is touched twice (once
+  # on insert, once on flush). Overall O(N).
   defp coalesce(ops) when is_list(ops) do
-    ops
-    |> Enum.reduce({[], %{}}, fn op, {acc, last_progress_idx} ->
-      case op do
-        %{op: "progress", upload: upload, ref: ref} ->
-          key = {upload, ref}
+    {results, run} = Enum.reduce(ops, {[], empty_run()}, &coalesce_step/2)
 
-          case Map.fetch(last_progress_idx, key) do
-            {:ok, idx} ->
-              acc = List.replace_at(acc, idx, op)
-              {acc, last_progress_idx}
-
-            :error ->
-              new_idx = length(acc)
-              {acc ++ [op], Map.put(last_progress_idx, key, new_idx)}
-          end
-
-        _other ->
-          # Non-progress ops break the coalescing run for this entry.
-          {acc ++ [op], %{}}
-      end
-    end)
-    |> elem(0)
+    results
+    |> flush_run(run)
+    |> Enum.reverse()
   end
+
+  defp coalesce_step(%{op: "progress"} = op, {results, {keys_rev, latest}}) do
+    key = {op.upload, op.ref}
+
+    if Map.has_key?(latest, key) do
+      {results, {keys_rev, Map.put(latest, key, op)}}
+    else
+      {results, {[key | keys_rev], Map.put(latest, key, op)}}
+    end
+  end
+
+  defp coalesce_step(op, {results, run}) do
+    # Non-progress op breaks the run: flush the accumulated progresses
+    # in first-seen order, then emit the non-progress op itself.
+    {[op | flush_run(results, run)], empty_run()}
+  end
+
+  defp flush_run(results, {[], _latest}), do: results
+
+  defp flush_run(results, {keys_rev, latest}) do
+    # `keys_rev` is first-seen keys in reverse (newest first). To emit
+    # them oldest-first into `results` (which is itself newest-first
+    # and gets reversed at the end), we reduce in reverse iteration
+    # order so the oldest first-seen key ends up at the tail of
+    # `results`.
+    keys_rev
+    |> Enum.reverse()
+    |> Enum.reduce(results, fn key, acc -> [Map.fetch!(latest, key) | acc] end)
+  end
+
+  defp empty_run, do: {[], %{}}
 end

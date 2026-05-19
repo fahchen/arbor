@@ -35,7 +35,7 @@ defmodule Musubi.Page.PatchEnvelope do
   @typedoc "Wire stream-op shape produced by `Musubi.Page.Server` from the `Musubi.Stream` accumulator."
   @type stream_op() :: map()
 
-  @typedoc "Wire upload-op shape produced by `Musubi.Page.Server` from the `Musubi.Upload` accumulator (BDR-0025)."
+  @typedoc "Wire upload-op shape produced by `Musubi.Page.Server` from the `Musubi.Upload` accumulator."
   @type upload_op() :: map()
 
   typed_structor do
@@ -65,7 +65,7 @@ defmodule Musubi.Page.PatchEnvelope do
     field :upload_ops, [upload_op()],
       default: [],
       doc:
-        "Ordered wire ops for upload-tracked entries (config/add/progress/complete/error/cancel/reset, each tagged with `store_id`). Independent of `stream_ops` (BDR-0025)."
+        "Ordered wire ops for upload-tracked entries (config/add/progress/complete/error/cancel/reset, each tagged with `store_id`). Independent of `stream_ops`."
   end
 
   @doc """

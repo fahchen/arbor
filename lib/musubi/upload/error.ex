@@ -9,7 +9,7 @@ defmodule Musubi.Upload.Error do
 
     * `code` — stable atom usable as a discriminator on the client.
     * `message` — user-facing string. Must contain no paths, pids, IP
-      addresses, or token fragments (BDR-0026 § scrub).
+      addresses, or token fragments.
 
   Use the constructors below to build errors; do not splice infrastructure
   detail into `message` ad-hoc.
@@ -47,7 +47,7 @@ defmodule Musubi.Upload.Error do
     %__MODULE__{code: code, message: message}
   end
 
-  @doc "Wire-shape map: `%{\"code\" => \"...\", \"message\" => \"...\"}`."
+  @doc ~S'Wire-shape map: `%{"code" => "...", "message" => "..."}`.'
   @spec to_wire(t()) :: %{String.t() => String.t()}
   def to_wire(%__MODULE__{code: code, message: message}) do
     %{"code" => Atom.to_string(code), "message" => message}

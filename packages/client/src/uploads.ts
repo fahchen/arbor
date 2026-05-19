@@ -371,18 +371,22 @@ export class UploadHandleImpl implements UploadHandle {
     const channel = socket.channel(topic, { token })
     entry.channel = channel
 
-    await pushReceive(channel.join() as PushLike)
+    try {
+      await pushReceive(channel.join() as PushLike)
 
-    const chunkSize = this.config.chunkSize
+      const chunkSize = this.config.chunkSize
 
-    for (let offset = 0; offset < file.size; offset += chunkSize) {
-      const slice = await file.slice(offset, offset + chunkSize).arrayBuffer()
-      await pushReceive(channel.push("chunk", slice as ArrayBuffer) as PushLike)
+      // Server completes on the final chunk: when bytes_written reaches
+      // client_size, it replies `progress: 100` and stops the channel.
+      // No separate "close" event — the reply to the last chunk is the
+      // completion signal.
+      for (let offset = 0; offset < file.size; offset += chunkSize) {
+        const slice = await file.slice(offset, offset + chunkSize).arrayBuffer()
+        await pushReceive(channel.push("chunk", slice as ArrayBuffer) as PushLike)
+      }
+    } finally {
+      this.pendingTokens.delete(entry.ref)
     }
-
-    await pushReceive(channel.push("close", {}) as PushLike)
-
-    this.pendingTokens.delete(entry.ref)
   }
 
   private async startExternal(entry: InternalEntry): Promise<void> {
@@ -421,7 +425,22 @@ export class UploadHandleImpl implements UploadHandle {
       await uploader(args)
       args.onProgress(100)
     } catch (err) {
+      // Wire the failure back to the server so the page server can
+      // emit `{op: error, code: "external_failed"}` and the matching
+      // entry transitions to `:error` (spec/domains/uploads/features/
+      // external.feature § "Registered uploader rejects the PUT").
+      channel.push("upload_error", {
+        root_id: this.connection.id,
+        store_id: [...this.storeId],
+        name: this.uploadName,
+        ref: entry.ref,
+        code: "external_failed",
+        message: err instanceof Error ? err.message : String(err)
+      })
+
       throw err
+    } finally {
+      entry.abortController = undefined
     }
   }
 }

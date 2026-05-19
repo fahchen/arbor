@@ -116,8 +116,8 @@ defmodule Musubi.Upload.LifecycleTest do
     end
 
     test "reflection lists declared uploads in order" do
-      assert [:avatar, :cover] ==
-               MultiStore.__musubi__(:uploads) |> Enum.map(& &1.name)
+      uploads = MultiStore.__musubi__(:uploads)
+      assert Enum.map(uploads, & &1.name) == [:avatar, :cover]
     end
   end
 
@@ -240,7 +240,7 @@ defmodule Musubi.Upload.LifecycleTest do
       assert_receive {:patch, envelope}
 
       configs = Enum.filter(envelope.upload_ops, &(&1.op == "config"))
-      uploads = Enum.map(configs, & &1.upload) |> Enum.sort()
+      uploads = configs |> Enum.map(& &1.upload) |> Enum.sort()
       assert uploads == ["avatar", "cover"]
       :ok = stop_page(page)
     end

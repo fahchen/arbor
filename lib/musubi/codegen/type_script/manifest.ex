@@ -227,7 +227,7 @@ defmodule Musubi.Codegen.TypeScript.Manifest do
          %{module: module} = data <- safe_term(bin),
          true <- Code.ensure_loaded?(module) do
       kind = Map.get(data, :kind) || module_kind(module)
-      uploads = Map.get(data, :uploads, []) |> List.wrap()
+      uploads = List.wrap(Map.get(data, :uploads, []))
 
       [
         {module, %{kind: kind, fields: data.fields, commands: data.commands, uploads: uploads}}

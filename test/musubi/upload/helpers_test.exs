@@ -94,12 +94,6 @@ defmodule Musubi.Upload.HelpersTest do
   end
 
   setup_all do
-    Application.put_env(:musubi, TestEndpoint,
-      secret_key_base: String.duplicate("a", 64),
-      server: false,
-      pubsub_server: __MODULE__.PubSub
-    )
-
     start_supervised!({Phoenix.PubSub, name: __MODULE__.PubSub})
     start_supervised!(TestEndpoint)
     :ok
@@ -136,7 +130,7 @@ defmodule Musubi.Upload.HelpersTest do
 
     entries = [%{"client_ref" => "0", "name" => "a.png", "size" => 10, "type" => "image/png"}]
     {:ok, reply} = Musubi.Testing.allow_upload(page, :avatar, entries, endpoint: TestEndpoint)
-    [{_, %{"entry_ref" => ref}}] = Enum.to_list(reply["entries"])
+    [{_cref, %{"entry_ref" => ref}}] = Enum.to_list(reply["entries"])
     assert_receive {:patch, _add}, 500
 
     # Pretend the sub-channel ran: register a temp path and mark the
@@ -160,7 +154,7 @@ defmodule Musubi.Upload.HelpersTest do
 
     entries = [%{"client_ref" => "0", "name" => "a.png", "size" => 5, "type" => "image/png"}]
     {:ok, reply} = Musubi.Testing.allow_upload(page, :avatar, entries, endpoint: TestEndpoint)
-    [{_, %{"entry_ref" => ref}}] = Enum.to_list(reply["entries"])
+    [{_cref, %{"entry_ref" => ref}}] = Enum.to_list(reply["entries"])
     assert_receive {:patch, _add}, 500
 
     path = Path.join(System.tmp_dir!(), "musubi-postpone-#{ref}")

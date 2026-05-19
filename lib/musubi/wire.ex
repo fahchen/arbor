@@ -30,28 +30,36 @@ defprotocol Musubi.Wire do
 
   @doc false
   defmacro __deriving__(module, options) do
-    only = Keyword.get(options, :only)
-    take = if is_list(only), do: only, else: nil
+    case Keyword.get(options, :only) do
+      list when is_list(list) -> deriving_with_take(module, list)
+      _other -> deriving_full(module)
+    end
+  end
 
+  defp deriving_with_take(module, take) do
     quote bind_quoted: [module: module, take: take] do
       defimpl Musubi.Wire, for: module do
         def to_wire(struct) do
           stream_field_names = Musubi.Wire.Encoder.stream_field_names(unquote(module))
-          take = unquote(take)
 
           struct
           |> Map.from_struct()
-          |> then(fn map -> if take, do: Map.take(map, take), else: map end)
-          |> Map.new(fn {key, value} ->
-            wire_value =
-              if key in stream_field_names do
-                Musubi.Wire.to_wire(Musubi.Stream.Marker.new(key))
-              else
-                Musubi.Wire.to_wire(value)
-              end
+          |> Map.take(unquote(take))
+          |> Musubi.Wire.Encoder.derive_map(stream_field_names)
+        end
+      end
+    end
+  end
 
-            {Musubi.Wire.Encoder.key_to_wire(key), wire_value}
-          end)
+  defp deriving_full(module) do
+    quote bind_quoted: [module: module] do
+      defimpl Musubi.Wire, for: module do
+        def to_wire(struct) do
+          stream_field_names = Musubi.Wire.Encoder.stream_field_names(unquote(module))
+
+          struct
+          |> Map.from_struct()
+          |> Musubi.Wire.Encoder.derive_map(stream_field_names)
         end
       end
     end
@@ -121,5 +129,20 @@ defmodule Musubi.Wire.Encoder do
     else
       []
     end
+  end
+
+  @doc false
+  @spec derive_map(map(), [atom()]) :: map()
+  def derive_map(map, stream_field_names) when is_map(map) and is_list(stream_field_names) do
+    Map.new(map, fn {key, value} ->
+      wire_value =
+        if key in stream_field_names do
+          Musubi.Wire.to_wire(Musubi.Stream.Marker.new(key))
+        else
+          Musubi.Wire.to_wire(value)
+        end
+
+      {key_to_wire(key), wire_value}
+    end)
   end
 end

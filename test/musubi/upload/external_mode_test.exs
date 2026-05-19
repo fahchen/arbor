@@ -40,12 +40,6 @@ defmodule Musubi.Upload.ExternalModeTest do
   end
 
   setup_all do
-    Application.put_env(:musubi, TestEndpoint,
-      secret_key_base: String.duplicate("a", 64),
-      server: false,
-      pubsub_server: __MODULE__.PubSub
-    )
-
     start_supervised!({Phoenix.PubSub, name: __MODULE__.PubSub})
     start_supervised!(TestEndpoint)
     :ok
@@ -132,7 +126,7 @@ defmodule Musubi.Upload.ExternalModeTest do
         endpoint: TestEndpoint
       )
 
-    [{_, entry}] = Enum.to_list(reply["entries"])
+    [{_cref, entry}] = Enum.to_list(reply["entries"])
     assert entry["type"] == "channel"
     assert is_binary(entry["token"])
     stop_page(page)

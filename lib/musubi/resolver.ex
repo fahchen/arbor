@@ -610,12 +610,15 @@ defmodule Musubi.Resolver do
 
   defp declared_uploads_by_name(module) when is_atom(module) do
     if function_exported?(module, :__musubi__, 1) do
-      module.__musubi__(:uploads)
-      |> List.wrap()
-      |> Map.new(fn %{name: name} = config -> {name, config} end)
+      uploads = List.wrap(module.__musubi__(:uploads))
+      Map.new(uploads, fn %{name: name} = config -> {name, config} end)
     else
       %{}
     end
+  end
+
+  defp upload_declared?(declared, name) when is_binary(name) do
+    Enum.any?(declared, fn {declared_name, _config} -> Atom.to_string(declared_name) == name end)
   end
 
   defp walk_for_upload_markers!(value, path, declared)
@@ -628,7 +631,7 @@ defmodule Musubi.Resolver do
         name = UploadMarker.marker_name(value)
         formatted = format_stream_path(Enum.reverse(path))
 
-        if Map.has_key?(declared, String.to_atom(name)) do
+        if upload_declared?(declared, name) do
           raise ArgumentError,
                 "hand-written upload marker at #{formatted}; remove it — the framework " <>
                   "injects upload markers automatically"

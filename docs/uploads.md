@@ -366,60 +366,81 @@ export interface ExternalUploaderArgs {
 export type ExternalUploader = (args: ExternalUploaderArgs) => Promise<void>
 ```
 
-### Page handle exposure
+### Store proxy exposure
 
-Generated TS types merge state fields and uploads at the same level on the
-page handle. Compile-time validation forbids collisions, so the merged
-type is always well-defined:
+Generated TS types merge state fields and declared uploads at the same
+level on the `StoreProxy`. Compile-time validation forbids
+upload/state name collisions, so the merged shape is unambiguous: a
+field declared in `state do` keeps its original type; an upload name
+resolves to `UploadHandle` at the marker injection site.
+
+The proxy returned by `mountStore` is a `StoreProxy<M, R>` —
+documented under `@musubi/client`. Its public surface is:
 
 ```ts
-interface AvatarPage {
-  readonly avatar_url: string | null   // from state
-  readonly avatar: UploadHandle         // from upload, marker-resolved
-  command<T = void>(name: string, payload?: any): Promise<T>
-  subscribe(cb: (state: AvatarPage) => void): () => void
+interface StoreProxy<M, R> {
+  readonly __musubi_store_id__: readonly string[]
+  dispatchCommand<K>(name: K, payload: ...): Promise<...>
+  subscribe(listener: () => void): () => void
+  snapshot(): StoreSnapshot<M, R>
+  // plus every declared state field as a typed property,
+  // plus every declared upload as `UploadHandle`.
 }
 ```
 
-`page.<name>` is a stable reactive `UploadHandle` for the connection
-lifetime: the reference does not change on state updates; internal state
-mutates in place as `upload_ops` arrive.
+`store.<name>` is a stable reactive `UploadHandle` for the connection
+lifetime: the reference does not change on state updates; internal
+state mutates in place as `upload_ops` arrive.
 
 ### Usage
 
 ```ts
-const client = createMusubiClient({
-  socket,
-  uploaders: { S3: S3Uploader }   // required for external mode
+import { Socket } from "phoenix"
+import { connect, S3Uploader } from "@musubi/client"
+
+const socket = new Socket("/socket")
+const connection = await connect<Musubi.Stores>(socket, {
+  uploaders: { S3: S3Uploader } // required for external mode
 })
 
-const page = await client.connect<AvatarPage>({
+const { store, unmount } = await connection.mountStore({
   module: "MyApp.Stores.AvatarStore",
-  id: "u:42",
+  id: "u:42"
 })
 
-await page.avatar.select(files)
-await page.avatar.start()
+await store.avatar.select(files)
+await store.avatar.start()
 
-page.subscribe((s) => console.log(s.avatar.status, s.avatar.progress))
+const unsubscribe = store.subscribe(() => {
+  const s = store.snapshot()
+  console.log(s.avatar.status, s.avatar.progress)
+})
 
-await page.avatar.cancel(entryRef)
-await page.avatar.reset()
-await page.command("submit", {})
+await store.avatar.cancel(entryRef)
+await store.avatar.reset()
+await store.dispatchCommand("submit", {})
+
+unsubscribe()
+await unmount()
 ```
 
 ## React API
 
-There is no dedicated `useMusubiUpload` hook. The reactive page exposes
-upload handles directly:
+`@musubi/react` ships no dedicated `useMusubiUpload` hook. The reactive
+proxy returned by `useMusubiRoot` already exposes upload handles as
+typed properties:
 
 ```tsx
+import { useMusubiRoot, S3Uploader } from "@musubi/react"
+
 function AvatarUploader() {
-  const page = useMusubiPage<AvatarPage>({
+  const { store } = useMusubiRoot({
     module: "MyApp.Stores.AvatarStore",
-    id: "u:42",
+    id: "u:42"
   })
-  const { avatar } = page
+  if (!store) return null
+
+  const { avatar } = store
 
   const onChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return
@@ -427,17 +448,11 @@ function AvatarUploader() {
     await avatar.start()
   }
 
-  const onDrop = async (ev: React.DragEvent) => {
-    ev.preventDefault()
-    await avatar.select(ev.dataTransfer.files)
-    await avatar.start()
-  }
-
   return (
-    <div onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+    <div>
       <input
         type="file"
-        accept={avatar.config.accept === "any" ? undefined : avatar.config.accept.join(",")}
+        accept={Array.isArray(avatar.config.accept) ? avatar.config.accept.join(",") : undefined}
         onChange={onChange}
       />
       {avatar.isUploading && <progress value={avatar.progress} max={100} />}
@@ -451,14 +466,22 @@ function AvatarUploader() {
       ))}
       <button
         disabled={!avatar.isSuccess}
-        onClick={() => page.command("submit", {})}
+        onClick={() => store.dispatchCommand("submit", {})}
       >
         Save
       </button>
-      {page.avatar_url && <img src={page.avatar_url} />}
+      {store.avatar_url && <img src={store.avatar_url} />}
     </div>
   )
 }
+```
+
+For external mode, pass `uploaders` through the `MusubiProvider`:
+
+```tsx
+<MusubiProvider socket={socket} uploaders={{ S3: S3Uploader }}>
+  <AvatarUploader />
+</MusubiProvider>
 ```
 
 Drag-drop, file pickers, and any UI affordance are application
@@ -466,12 +489,12 @@ responsibility — Musubi ships no headless components.
 
 ## End-to-end flow (channel mode)
 
-1. `client.connect` mounts a page server.
+1. `connection.mountStore({module, id})` starts a page server.
 2. Initial envelope carries the marker tree and `upload_ops` `config` ops.
-3. `page.avatar.select(files)` sends `allow_upload`.
+3. `store.avatar.select(files)` sends `allow_upload`.
 4. Server validates, signs tokens per entry, replies with the preflight
    result, and emits `{op:add}` for each entry.
-5. `page.avatar.start()` joins `musubi_upload:<entry_ref>` per entry.
+5. `store.avatar.start()` joins `musubi_upload:<entry_ref>` per entry.
 6. Client reads files into ArrayBuffer slices and pushes `chunk` events.
 7. UploadChannel verifies token, writes via `Plug.Upload.random_file/1`,
    notifies the store pid, which enqueues `{op:progress}`.

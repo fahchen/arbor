@@ -53,12 +53,6 @@ defmodule Musubi.Transport.UploadChannelTest do
   @endpoint TestEndpoint
 
   setup_all do
-    Application.put_env(:musubi, TestEndpoint,
-      secret_key_base: String.duplicate("a", 64),
-      server: false,
-      pubsub_server: __MODULE__.PubSub
-    )
-
     start_supervised!({Phoenix.PubSub, name: __MODULE__.PubSub})
     start_supervised!(TestEndpoint)
     :ok
@@ -204,7 +198,7 @@ defmodule Musubi.Transport.UploadChannelTest do
 
       assert File.exists?(path)
 
-      _ = leave(channel_socket)
+      _leave = leave(channel_socket)
 
       # Wait for the page server to process the cancel.
       assert_receive {:patch, envelope}, 500

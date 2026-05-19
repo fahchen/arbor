@@ -11,7 +11,7 @@ defmodule Musubi.DSL.Upload do
     * Upload names must be unique within one store.
     * Upload names must not collide with state field names — `page.<name>`
       is flat on the client and the merged TypeScript surface would be
-      ambiguous (BDR-0024).
+      ambiguous.
 
   ## Examples
 
@@ -49,12 +49,11 @@ defmodule Musubi.DSL.Upload do
 
     case Enum.find(existing, fn {existing_name, _conf, _file, _line} -> existing_name == name end) do
       nil ->
-        Module.put_attribute(
-          module,
-          :__musubi_uploads__,
-          existing ++ [{name, config, file, line}]
-        )
-
+        # Compile-time list of {name, config, file, line} tuples. The list
+        # stays short (one entry per declared upload) and order matters,
+        # so the tail-insert is O(declared_uploads); not a hot path.
+        next = List.insert_at(existing, -1, {name, config, file, line})
+        Module.put_attribute(module, :__musubi_uploads__, next)
         :ok
 
       {_existing_name, _conf, prev_file, prev_line} ->

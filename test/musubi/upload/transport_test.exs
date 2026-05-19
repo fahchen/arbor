@@ -33,12 +33,6 @@ defmodule Musubi.Upload.TransportTest do
   end
 
   setup_all do
-    Application.put_env(:musubi, TestEndpoint,
-      secret_key_base: String.duplicate("a", 64),
-      server: false,
-      pubsub_server: __MODULE__.PubSub
-    )
-
     start_supervised!({Phoenix.PubSub, name: __MODULE__.PubSub})
     start_supervised!(TestEndpoint)
     :ok
@@ -124,7 +118,7 @@ defmodule Musubi.Upload.TransportTest do
 
   describe "token verification" do
     test "rejects forged or expired tokens" do
-      assert {:error, _} = Token.verify(TestEndpoint, "not-a-real-token")
+      assert {:error, _reason} = Token.verify(TestEndpoint, "not-a-real-token")
     end
 
     test "valid token round-trips the payload" do

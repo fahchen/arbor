@@ -178,9 +178,8 @@ defmodule Musubi.DSL.State do
   end
 
   @doc """
-  Raises at compile time — uploads are declared at the top level of a
-  store module, not inside `state do` / `field` / `stream` blocks
-  (BDR-0024 / BDR-0028).
+  Raises at compile time. Uploads are declared at the top level of a
+  store module, not inside `state do` / `field` / `stream` blocks.
   """
   @spec upload(atom(), Macro.t()) :: no_return()
   defmacro upload(name, _opts_or_block) when is_atom(name) do

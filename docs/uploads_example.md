@@ -100,30 +100,73 @@ export function AvatarUploader() {
 
 ## External (S3 / R2) mode
 
-Switching the upload to direct-to-cloud requires only an additional
+Switching the upload to direct-to-cloud requires an additional
 callback on the store:
 
 ```elixir
 @impl Musubi.Store
 def upload_external(:avatar, entry, socket) do
-  {url, headers} = MyApp.S3.presign(entry)
-  {:ok, %{uploader: "S3", url: url, headers: headers}, socket}
+  # Stash whatever your :submit handler needs to verify or finalize
+  # the upload (here we keep the eventual public URL).
+  public_url = MyApp.S3.public_url(entry)
+  {presigned_url, headers} = MyApp.S3.presign_put(entry)
+
+  meta = %{
+    uploader: "S3",
+    url: presigned_url,
+    headers: headers,
+    public_url: public_url
+  }
+
+  {:ok, meta, socket}
 end
 ```
 
-…and registering the `S3Uploader` on the client connection:
+The meta map is opaque to Musubi — pick the shape your client uploader
+expects (the built-in `S3Uploader` reads `meta.url` + `meta.headers`)
+plus whatever fields you want available at consume time.
 
-```tsx
-import { createMusubi, S3Uploader } from "@musubi/react"
+Consuming the upload in a command handler looks identical to channel
+mode, but the meta carries the *external* key instead of *path*:
 
-const musubi = createMusubi<Musubi.Stores>({
-  socket,
-  uploaders: { S3: S3Uploader }
-})
+```elixir
+@impl Musubi.Store
+def handle_command(:submit, _payload, socket) do
+  {socket, [url]} =
+    consume_uploaded_entries(socket, :avatar, fn meta, entry ->
+      # `meta` shape in external mode: %{external: meta_returned_by_upload_external}.
+      %{external: %{public_url: public_url}} = meta
+
+      # Optionally HEAD the object to confirm the client actually PUT it.
+      :ok = MyApp.S3.assert_present!(entry.client_name)
+      {:ok, public_url}
+    end)
+
+  {:reply, %{ok: true}, assign(socket, :avatar_url, url)}
+end
 ```
 
-The wire protocol is identical — the only difference is that the
-preflight reply carries `{type: "external", uploader, meta}` instead
-of a Musubi-signed token, and the client uploader (here `S3Uploader`)
-PUTs directly to the presigned URL and reports progress back through
-the main channel.
+Register the `S3Uploader` on the client side through the
+`MusubiProvider`:
+
+```tsx
+import { Socket } from "phoenix"
+import { MusubiProvider, S3Uploader } from "@musubi/react"
+
+const socket = new Socket("/socket")
+
+export function App() {
+  return (
+    <MusubiProvider socket={socket} uploaders={{ S3: S3Uploader }}>
+      <AvatarUploader />
+    </MusubiProvider>
+  )
+}
+```
+
+The wire protocol is identical to channel mode — the only difference
+is that the preflight reply carries `{type: "external", uploader,
+meta}` instead of a Musubi-signed token. `S3Uploader` PUTs directly to
+the presigned URL and reports progress back through the main channel;
+on failure it sends `upload_error` and the server emits
+`{op: error, code: "external_failed"}`.
