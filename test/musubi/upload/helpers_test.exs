@@ -23,7 +23,9 @@ defmodule Musubi.Upload.HelpersTest do
     command :consume
 
     command :cancel do
-      payload :ref, String.t()
+      payload do
+        field :ref, String.t()
+      end
     end
 
     @impl Musubi.Store
