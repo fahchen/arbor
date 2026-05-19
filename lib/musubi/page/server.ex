@@ -1045,7 +1045,12 @@ defmodule Musubi.Page.Server do
   end
 
   defp encode_accepted_entry(%{type: :external, entry_ref: ref, uploader: uploader, meta: meta}) do
-    %{"type" => "external", "entry_ref" => ref, "uploader" => uploader, "meta" => meta}
+    %{
+      "type" => "external",
+      "entry_ref" => ref,
+      "uploader" => uploader,
+      "meta" => Musubi.Wire.to_wire(meta)
+    }
   end
 
   defp apply_upload_progress(state, store_id, name, ref, progress, _source) do

@@ -91,4 +91,60 @@ defmodule Musubi.Testing do
     {:ok, %{socket: socket}} = Server.peek(pid, store_id)
     socket.assigns
   end
+
+  @doc """
+  Runs the `allow_upload` preflight against the mounted page and
+  returns the reply.
+
+  Bypasses the transport channel — useful for tests that exercise the
+  preflight + entry add-op path without a Phoenix channel in the way.
+
+  ## Options
+
+    * `:endpoint` — Phoenix endpoint module used to sign tokens.
+      Defaults to `Musubi.Testing.TestEndpoint`, a stub endpoint
+      automatically registered in test mode.
+  """
+  @spec allow_upload(t(), atom(), [map()], keyword(), Socket.store_id()) ::
+          {:ok, Musubi.Page.Server.preflight_reply()} | {:error, atom()}
+  def allow_upload(%__MODULE__{pid: pid}, name, entries, opts \\ [], store_id \\ [])
+      when is_atom(name) and is_list(entries) and is_list(opts) and is_list(store_id) do
+    endpoint =
+      Keyword.get_lazy(opts, :endpoint, fn ->
+        raise ArgumentError,
+              "Musubi.Testing.allow_upload/5 requires an :endpoint option for token signing"
+      end)
+
+    Server.allow_upload(pid, store_id, name, entries, endpoint)
+  end
+
+  @doc """
+  Simulates a full upload for one entry: sends a single complete chunk
+  via the page server's `upload_channel_chunk` API, then waits for the
+  resulting patch envelope to land.
+  """
+  @spec simulate_upload(t(), atom(), String.t(), non_neg_integer(), Socket.store_id()) :: :ok
+  def simulate_upload(%__MODULE__{pid: pid}, name, entry_ref, bytes_total, store_id \\ [])
+      when is_atom(name) and is_binary(entry_ref) and is_integer(bytes_total) and
+             is_list(store_id) do
+    Server.upload_channel_chunk(pid, store_id, name, entry_ref, bytes_total, true)
+    :ok
+  end
+
+  @doc """
+  Sends an external-mode progress event for an entry on the mounted page.
+  """
+  @spec simulate_external_progress(t(), atom(), String.t(), non_neg_integer(), Socket.store_id()) ::
+          :ok
+  def simulate_external_progress(
+        %__MODULE__{pid: pid},
+        name,
+        entry_ref,
+        progress,
+        store_id \\ []
+      )
+      when is_atom(name) and is_binary(entry_ref) and is_integer(progress) and is_list(store_id) do
+    Server.upload_progress(pid, store_id, name, entry_ref, progress)
+    :ok
+  end
 end
