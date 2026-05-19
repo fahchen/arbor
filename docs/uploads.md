@@ -97,7 +97,7 @@ chunk path.
 ## Helpers (Store facade)
 
 ```elixir
-consume_uploaded_entries(socket, name, fun) :: [term()]
+consume_uploaded_entries(socket, name, fun) :: {Socket.t(), [term()]}
 # fun = (meta, entry -> {:ok, val} | {:postpone, val})
 # meta = %{path: String.t()}  in channel mode
 #      | %{external: map()}   in external mode
@@ -106,9 +106,12 @@ cancel_upload(socket, name, ref) :: Socket.t()
 uploaded_entries(socket, name)   :: {completed :: [Entry.t()], in_progress :: [Entry.t()]}
 ```
 
-`consume_uploaded_entries/3` may only be called from a command handler. It
-takes the temporary file path (channel mode) or the external meta map,
-runs the application function, and removes the entry on success.
+`consume_uploaded_entries/3` may only be called from a command handler;
+calling it outside a handler raises `ArgumentError`. It returns the
+updated socket plus the list of values produced by the function. Entries
+that the function consumed with `{:ok, val}` are removed from the index;
+postponed entries stay. When the upload's entry index becomes empty as
+a result, a `{op: reset}` is emitted.
 
 ## Entry struct and wire whitelist
 
@@ -156,21 +159,25 @@ infrastructure detail.
 
 ```json
 {
-  "ref": "u_a3f",
+  "ref": "avatar",
   "config": {
     "accept": [".jpg", ".jpeg", ".png"],
-    "maxEntries": 1,
-    "maxFileSize": 5000000,
-    "chunkSize": 64000
+    "max_entries": 1,
+    "max_file_size": 5000000,
+    "chunk_size": 64000
   },
   "entries": {
-    "0": {"type": "channel",  "entry_ref": "e_001", "token": "SFMyNTY..."},
-    "1": {"type": "external", "entry_ref": "e_002", "uploader": "S3",
+    "0": {"type": "channel",  "entry_ref": "u_a3f", "token": "SFMyNTY..."},
+    "1": {"type": "external", "entry_ref": "u_b9e", "uploader": "S3",
           "meta": {"url": "https://...", "headers": {}}}
   },
   "errors": []
 }
 ```
+
+Wire keys use snake_case; the TypeScript `UploadHandle.config` exposes
+the camelCase API (`maxEntries`, `maxFileSize`, `chunkSize`) after the
+client deserializes the reply.
 
 ### Per-entry sub-channel (channel mode)
 
@@ -232,6 +239,7 @@ changed, so progress updates do not trigger main-store re-renders.
 ```elixir
 Phoenix.Token.sign(endpoint, "musubi_upload", %{
   store_pid:     pid(),
+  store_id:      [String.t()],
   conf_ref:      String.t(),
   entry_ref:     String.t(),
   max_file_size: integer(),
@@ -239,6 +247,10 @@ Phoenix.Token.sign(endpoint, "musubi_upload", %{
   chunk_size:    integer()
 })
 ```
+
+`store_id` is included so the sub-channel can route per-entry chunk
+notifications back to the correct store node without consulting any
+shared mutable state.
 
 - `max_age: 600` seconds (10 minutes)
 - HMAC signed with the endpoint secret

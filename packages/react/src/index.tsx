@@ -88,6 +88,7 @@ type ConnectionProviderProps<R> = {
 type SocketProviderProps = {
   socket: SocketLike
   topic?: string
+  uploaders?: Record<string, import("@musubi/client").ExternalUploader>
   connection?: never
   children: ReactNode
 }
@@ -178,7 +179,7 @@ export function createMusubi<R>(): MusubiFactory<R> {
     return <SocketProvider {...props}>{props.children}</SocketProvider>
   }
 
-  const SocketProvider: FC<SocketProviderProps> = ({ socket, topic, children }) => {
+  const SocketProvider: FC<SocketProviderProps> = ({ socket, topic, uploaders, children }) => {
     const [status, setStatus] = useState<MusubiConnectionStatus<R>>({
       state: "connecting",
       connection: null
@@ -189,7 +190,9 @@ export function createMusubi<R>(): MusubiFactory<R> {
       let liveConnection: MusubiConnection<R> | null = null
       setStatus({ state: "connecting", connection: null })
 
-      const options: ConnectOptions = topic !== undefined ? { topic } : {}
+      const options: ConnectOptions = {}
+      if (topic !== undefined) options.topic = topic
+      if (uploaders !== undefined) options.uploaders = uploaders
 
       baseConnect<R>(socket, options)
         .then((connection) => {
@@ -218,7 +221,7 @@ export function createMusubi<R>(): MusubiFactory<R> {
           void c.disconnect()
         }
       }
-    }, [socket, topic])
+    }, [socket, topic, uploaders])
 
     return <StatusContext.Provider value={status}>{children}</StatusContext.Provider>
   }
