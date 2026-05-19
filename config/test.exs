@@ -19,20 +19,41 @@ config :musubi, Musubi.Transport.ConnectionChannelTest.TestEndpoint,
   secret_key_base: String.duplicate("a", 64),
   server: false
 
-# Upload-test endpoints. Same pattern: each test module declares its own
-# `TestEndpoint` inline and a `PubSub` server, and the keys here track those
-# full module names.
-for test_mod <- [
-      Musubi.Transport.UploadChannelTest,
-      Musubi.Transport.UploadConnectionTest,
-      Musubi.Upload.ChildStoreTest,
-      Musubi.Upload.ExternalModeTest,
-      Musubi.Upload.HelpersTest,
-      Musubi.Upload.TransportTest,
-      Musubi.Upload.WireProtocolTest
-    ] do
-  config :musubi, Module.concat(test_mod, TestEndpoint),
-    pubsub_server: Module.concat(test_mod, PubSub),
-    secret_key_base: String.duplicate("a", 64),
-    server: false
-end
+# Upload-test endpoints. Each test module declares its own `TestEndpoint`
+# inline and a sibling `PubSub` server, so the keys here track those full
+# module names. One stanza per test module.
+
+config :musubi, Musubi.Transport.UploadChannelTest.TestEndpoint,
+  pubsub_server: Musubi.Transport.UploadChannelTest.PubSub,
+  secret_key_base: String.duplicate("a", 64),
+  server: false
+
+config :musubi, Musubi.Transport.UploadConnectionTest.TestEndpoint,
+  pubsub_server: Musubi.Transport.UploadConnectionTest.PubSub,
+  secret_key_base: String.duplicate("a", 64),
+  server: false
+
+config :musubi, Musubi.Upload.ChildStoreTest.TestEndpoint,
+  pubsub_server: Musubi.Upload.ChildStoreTest.PubSub,
+  secret_key_base: String.duplicate("a", 64),
+  server: false
+
+config :musubi, Musubi.Upload.ExternalModeTest.TestEndpoint,
+  pubsub_server: Musubi.Upload.ExternalModeTest.PubSub,
+  secret_key_base: String.duplicate("a", 64),
+  server: false
+
+config :musubi, Musubi.Upload.HelpersTest.TestEndpoint,
+  pubsub_server: Musubi.Upload.HelpersTest.PubSub,
+  secret_key_base: String.duplicate("a", 64),
+  server: false
+
+config :musubi, Musubi.Upload.TransportTest.TestEndpoint,
+  pubsub_server: Musubi.Upload.TransportTest.PubSub,
+  secret_key_base: String.duplicate("a", 64),
+  server: false
+
+config :musubi, Musubi.Upload.WireProtocolTest.TestEndpoint,
+  pubsub_server: Musubi.Upload.WireProtocolTest.PubSub,
+  secret_key_base: String.duplicate("a", 64),
+  server: false
