@@ -53,16 +53,24 @@ declare namespace Musubi {
       },
       {
         vote: {
-          payload: { option_id: string }
-          reply: { status: "voted" | "already_voted" | "closed" | "unknown_option" }
+          payload: {
+            option_id: string
+          }
+          reply: {
+            status: "voted" | "already_voted" | "closed" | "unknown_option"
+          }
         }
         reset_vote: {
           payload: {}
-          reply: { status: "reset" | "no_vote" }
+          reply: {
+            status: "reset" | "no_vote"
+          }
         }
         toggle_status: {
           payload: {}
-          reply: { status: "active" | "closed" | "not_found" }
+          reply: {
+            status: "active" | "closed" | "not_found"
+          }
         }
       }
     >

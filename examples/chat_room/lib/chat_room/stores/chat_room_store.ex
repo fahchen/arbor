@@ -52,13 +52,24 @@ defmodule ChatRoom.Stores.ChatRoomStore do
   end
 
   command :set_name do
-    payload(:name, String.t())
-    reply(%{ok: boolean(), name: String.t()})
+    payload do
+      field :name, String.t()
+    end
+
+    reply do
+      field :ok, boolean()
+      field :name, String.t()
+    end
   end
 
   command :send_message do
-    payload(:body, String.t())
-    reply(%{queued: boolean()})
+    payload do
+      field :body, String.t()
+    end
+
+    reply do
+      field :queued, boolean()
+    end
   end
 
   @impl Musubi.Store

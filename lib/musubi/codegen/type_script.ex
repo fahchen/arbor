@@ -238,38 +238,57 @@ defmodule Musubi.Codegen.TypeScript do
          root
        ) do
     inner_indent = indent <> "  "
-    reply_ast = Map.get(command, :reply)
+    reply_fields = Map.get(command, :reply_fields, [])
 
     [
       indent,
       Atom.to_string(name),
       ": {\n",
-      inner_indent,
-      "payload: ",
-      render_command_payload(payload_fields, root),
+      render_command_fields_block("payload", payload_fields, inner_indent, root),
       "\n",
-      inner_indent,
-      "reply: ",
-      render_reply(reply_ast, root),
+      render_command_fields_block("reply", reply_fields, inner_indent, root),
       "\n",
       indent,
       "}"
     ]
   end
 
-  defp render_reply(nil, _root), do: "unknown"
-  defp render_reply(ast, root), do: TypeRenderer.render(ast, root_namespace: root)
-
-  defp render_command_payload([], _root), do: "{}"
-
-  defp render_command_payload(fields, root) do
-    body =
-      Enum.map_join(fields, "; ", fn %{name: name, type: type_ast} ->
-        "#{name}: #{TypeRenderer.render(type_ast, root_namespace: root)}"
-      end)
-
-    "{ " <> body <> " }"
+  defp render_command_fields_block(label, [], indent, _root) do
+    [indent, label, ": ", empty_value(label)]
   end
+
+  defp render_command_fields_block(label, fields, indent, root) do
+    inner_indent = indent <> "  "
+    field_lines = render_command_field_lines(fields, inner_indent, root)
+
+    [
+      indent,
+      label,
+      ": {\n",
+      Enum.join(field_lines, "\n"),
+      "\n",
+      indent,
+      "}"
+    ]
+  end
+
+  defp empty_value("reply"), do: "never"
+  defp empty_value(_label), do: "{}"
+
+  defp render_command_field_lines(fields, indent, root) do
+    Enum.map(fields, fn %{name: name, type: type_ast} = field ->
+      type = TypeRenderer.render(type_ast, root_namespace: root)
+      base = "#{indent}#{name}: #{type}"
+
+      case doc_opt(field) do
+        nil -> base
+        doc -> "#{indent}/** #{doc} */\n" <> base
+      end
+    end)
+  end
+
+  defp doc_opt(%{opts: opts}) when is_list(opts), do: Keyword.get(opts, :doc)
+  defp doc_opt(_field), do: nil
 
   # ---------------------------------------------------------------------------
   # State namespaces

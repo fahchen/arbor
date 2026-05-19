@@ -35,11 +35,15 @@ defmodule Musubi.Page.ServerChildAsyncTest do
     attr :test_pid, pid(), required: true
 
     command :load do
-      payload :id, String.t()
+      payload do
+        field :id, String.t()
+      end
     end
 
     command :start_warm do
-      payload :tag, String.t()
+      payload do
+        field :tag, String.t()
+      end
     end
 
     command :start_slow

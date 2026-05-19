@@ -77,7 +77,9 @@ defmodule Musubi.Transport.ConnectionChannelTest do
     end
 
     command :rename do
-      payload :room_id, String.t()
+      payload do
+        field :room_id, String.t()
+      end
     end
 
     @impl Musubi.Store
@@ -108,7 +110,9 @@ defmodule Musubi.Transport.ConnectionChannelTest do
     end
 
     command :rename do
-      payload :label, String.t()
+      payload do
+        field :label, String.t()
+      end
     end
 
     @impl Musubi.Store

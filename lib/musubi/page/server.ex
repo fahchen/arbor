@@ -506,12 +506,16 @@ defmodule Musubi.Page.Server do
         {:halted, %{}, state}
 
       {:cont, state} ->
-        state = clear_command_target(state, chain)
         {reply, state} = dispatch_handler(store_id, command_name, payload, state)
 
-        case run_hook_chain(:after_command, chain, [command_name, payload], state, false) do
-          {:cont, state} -> {:ok, reply, state}
-          {:halt, state} -> {:ok, reply, state}
+        case run_hook_chain(:after_command, chain, [command_name, payload, reply], state, false) do
+          {:cont, state} ->
+            state = clear_command_target(state, chain)
+            {:ok, reply, state}
+
+          {:halt, state} ->
+            state = clear_command_target(state, chain)
+            {:ok, reply, state}
         end
     end
   end

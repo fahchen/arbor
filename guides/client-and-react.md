@@ -316,7 +316,9 @@ defmodule MyApp.Stores.CartLineStore do
   end
 
   command :inc_qty do
-    reply(%{qty: integer()})
+    reply do
+      field :qty, integer()
+    end
   end
 
   @impl Musubi.Store

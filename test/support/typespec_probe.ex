@@ -74,7 +74,9 @@ defmodule Musubi.TestSupport.TypespecProbeWithCommand do
   end
 
   command :select do
-    payload :id, String.t()
+    payload do
+      field :id, String.t()
+    end
   end
 
   command :refresh

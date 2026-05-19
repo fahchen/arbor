@@ -45,12 +45,21 @@ declare namespace Musubi {
       },
       {
         set_name: {
-          payload: { name: string }
-          reply: { ok: boolean; name: string }
+          payload: {
+            name: string
+          }
+          reply: {
+            ok: boolean
+            name: string
+          }
         }
         send_message: {
-          payload: { body: string }
-          reply: { queued: boolean }
+          payload: {
+            body: string
+          }
+          reply: {
+            queued: boolean
+          }
         }
       }
     >

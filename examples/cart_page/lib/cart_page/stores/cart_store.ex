@@ -55,16 +55,25 @@ defmodule CartPage.Stores.CartStore do
   end
 
   command :add_item do
-    payload(:sku, String.t())
-    reply(%{ok: true} | %{error: String.t()})
+    payload do
+      field :sku, String.t()
+    end
+
+    reply do
+      field :result, %{ok: true} | %{error: String.t()}
+    end
   end
 
   command :remove_line do
-    payload(:id, String.t())
+    payload do
+      field :id, String.t()
+    end
   end
 
   command :checkout do
-    reply(%{order_id: String.t()} | %{error: String.t()})
+    reply do
+      field :result, %{order_id: String.t()} | %{error: String.t()}
+    end
   end
 
   @impl Musubi.Store
@@ -75,7 +84,7 @@ defmodule CartPage.Stores.CartStore do
       |> assign(:status, %{type: :open})
       |> assign(:on_qty_change, build_on_qty_change(socket.assigns.cart_id))
       |> attach_hook(:authz, :before_command, &authz/3)
-      |> attach_hook(:audit, :after_command, &audit/3)
+      |> attach_hook(:audit, :after_command, &audit/4)
 
     {:ok, socket}
   end
@@ -146,10 +155,10 @@ defmodule CartPage.Stores.CartStore do
           |> assign(:lines, next_lines)
           |> assign(:status, %{type: :open})
 
-        {:reply, %{"ok" => true}, socket}
+        {:reply, %{"result" => %{"ok" => true}}, socket}
 
       :error ->
-        {:reply, %{"error" => "unknown_sku"}, socket}
+        {:reply, %{"result" => %{"error" => "unknown_sku"}}, socket}
     end
   end
 
@@ -174,7 +183,7 @@ defmodule CartPage.Stores.CartStore do
       |> assign(:lines, [])
       |> assign(:status, %{type: :checked_out, order_id: order_id})
 
-    {:reply, %{"order_id" => order_id}, socket}
+    {:reply, %{"result" => %{"order_id" => order_id}}, socket}
   end
 
   # ---------------------------------------------------------------------------
@@ -186,13 +195,13 @@ defmodule CartPage.Stores.CartStore do
     if Auth.signed_in?(socket.assigns.current_user) do
       {:cont, socket}
     else
-      {:halt, %{"error" => "must_sign_in"}, socket}
+      {:halt, %{"result" => %{"error" => "must_sign_in"}}, socket}
     end
   end
 
   defp authz(_command, _payload, socket), do: {:cont, socket}
 
-  defp audit(command_name, payload, socket) do
+  defp audit(command_name, payload, _reply, socket) do
     Logger.info(
       "[audit] cart=#{socket.assigns.cart_id} command=#{command_name} payload=#{inspect(payload)}"
     )
