@@ -124,7 +124,14 @@ defmodule Musubi.Reconciler do
           {{:ok, socket}, :init, 1}
       end
 
-    validate_callback_result!(result, module, fun, arity)
+    socket = validate_callback_result!(result, module, fun, arity)
+
+    # Per BDR-0025 the first envelope after a store's mount carries a
+    # `{op: config}` upload op for every declared upload. Running this
+    # here (instead of only at root init) ensures child stores that
+    # declare uploads also emit their config when they first mount —
+    # required for the per-item child-store pattern (BDR-0028).
+    Musubi.Upload.ensure_configs(socket)
   end
 
   @doc """

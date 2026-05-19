@@ -239,7 +239,6 @@ defmodule Musubi.Page.Server do
       |> mount_root_store(params)
       |> normalize_root_assigns()
       |> Reconciler.init_store()
-      |> Upload.ensure_configs()
 
     store_table =
       StoreTable.put(StoreTable.new(), [], %Entry{
