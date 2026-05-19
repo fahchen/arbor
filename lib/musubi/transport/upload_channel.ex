@@ -70,6 +70,13 @@ defmodule Musubi.Transport.UploadChannel do
 
       Server.register_upload_channel(store_pid, store_id, name_atom, entry_ref, self(), file_path)
 
+      # Transfer Plug.Upload ownership to the page server pid so the temp
+      # file outlives this channel process. Channel-side `terminate/2`
+      # still removes the file explicitly on errored / cancel paths;
+      # `give_away` only changes who Plug.Upload's monitor reaps when
+      # the owning process dies.
+      _ = Plug.Upload.give_away(file_path, store_pid, self())
+
       timeout_ref = arm_timeout(payload)
 
       socket =
@@ -81,8 +88,6 @@ defmodule Musubi.Transport.UploadChannel do
         |> Phoenix.Socket.assign(@assigns.bytes_written, 0)
         |> Phoenix.Socket.assign(@assigns.timeout_ref, timeout_ref)
         |> Phoenix.Socket.assign(@assigns.terminal_state, nil)
-
-      Process.flag(:trap_exit, true)
 
       {:ok, socket}
     else
@@ -211,11 +216,17 @@ defmodule Musubi.Transport.UploadChannel do
         payload = socket.assigns[@assigns.payload]
         name = socket.assigns[@assigns.name]
 
-        if payload && name and Process.alive?(payload.store_pid) do
-          Server.cancel_upload(payload.store_pid, payload.store_id, name, payload.entry_ref)
-        end
+        cond do
+          is_nil(payload) or is_nil(name) ->
+            :ok
 
-        :ok
+          not Process.alive?(payload.store_pid) ->
+            :ok
+
+          true ->
+            Server.cancel_upload(payload.store_pid, payload.store_id, name, payload.entry_ref)
+            :ok
+        end
     end
   end
 

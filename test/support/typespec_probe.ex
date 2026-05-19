@@ -64,6 +64,29 @@ defmodule Musubi.TestSupport.TypespecProbe do
   def __env__, do: @captured_env
 end
 
+defmodule Musubi.TestSupport.TypespecProbeWithUpload do
+  @moduledoc false
+
+  use Musubi.Store, root: true
+
+  state do
+    field :avatar_url, String.t() | nil
+  end
+
+  upload :avatar, accept: ~w(.png)
+  upload :cover, accept: ~w(.jpg)
+
+  @impl Musubi.Store
+  def render(socket), do: %{avatar_url: socket.assigns[:avatar_url]}
+
+  @impl Musubi.Store
+  def handle_command(_name, _payload, socket), do: {:noreply, socket}
+
+  @captured_env __ENV__
+  @doc false
+  def __env__, do: @captured_env
+end
+
 defmodule Musubi.TestSupport.TypespecProbeWithCommand do
   @moduledoc false
 

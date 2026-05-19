@@ -51,6 +51,40 @@ defmodule Musubi.Upload.HelpersTest do
     end
   end
 
+  defmodule PostponeStore do
+    use Musubi.Store, root: true
+
+    state do
+      field :avatar_url, String.t() | nil
+    end
+
+    upload :avatar, accept: ~w(.png), max_entries: 1
+
+    command :postpone_consume
+    command :real_consume
+
+    @impl Musubi.Store
+    def render(socket), do: %{avatar_url: socket.assigns[:avatar_url]}
+
+    @impl Musubi.Store
+    def handle_command(:postpone_consume, _payload, socket) do
+      {socket, _vals} =
+        consume_uploaded_entries(socket, :avatar, fn _meta, _entry -> {:postpone, :later} end)
+
+      {:reply, %{}, socket}
+    end
+
+    def handle_command(:real_consume, _payload, socket) do
+      {socket, urls} =
+        consume_uploaded_entries(socket, :avatar, fn %{path: path}, _entry ->
+          true = File.exists?(path)
+          {:ok, "/uploaded/" <> Path.basename(path)}
+        end)
+
+      {:reply, %{urls: urls}, socket}
+    end
+  end
+
   setup_all do
     Application.put_env(:musubi, TestEndpoint,
       secret_key_base: String.duplicate("a", 64),
@@ -85,6 +119,56 @@ defmodule Musubi.Upload.HelpersTest do
 
     # The state field assigned during consume produces an `ops` diff too.
     assert Enum.any?(envelope.ops, fn op -> op.path == "/avatar_url" end)
+    stop_page(page)
+  end
+
+  test "consume_uploaded_entries hands the callback a real readable %{path: path}" do
+    page = Musubi.Testing.mount(AvatarStore)
+    assert_receive {:patch, _initial}, 500
+
+    entries = [%{"client_ref" => "0", "name" => "a.png", "size" => 10, "type" => "image/png"}]
+    {:ok, reply} = Musubi.Testing.allow_upload(page, :avatar, entries, endpoint: TestEndpoint)
+    [{_, %{"entry_ref" => ref}}] = Enum.to_list(reply["entries"])
+    assert_receive {:patch, _add}, 500
+
+    # Pretend the sub-channel ran: register a temp path and mark the
+    # entry success. Use a real on-disk file so the assertion is honest.
+    path = Path.join(System.tmp_dir!(), "musubi-test-#{ref}")
+    File.write!(path, "hello")
+    :ok = Musubi.Page.Server.register_upload_channel(page.pid, [], :avatar, ref, self(), path)
+    Musubi.Testing.simulate_upload(page, :avatar, ref, 10)
+    assert_receive {:patch, _progress}, 500
+
+    {:ok, reply} = Musubi.Testing.dispatch_command(page, :consume, %{})
+
+    refute File.exists?(path), "consume should remove the temp file"
+    assert length(reply.urls) == 1
+    stop_page(page)
+  end
+
+  test "consume_uploaded_entries postpone retains the temp file" do
+    page = Musubi.Testing.mount(PostponeStore)
+    assert_receive {:patch, _initial}, 500
+
+    entries = [%{"client_ref" => "0", "name" => "a.png", "size" => 5, "type" => "image/png"}]
+    {:ok, reply} = Musubi.Testing.allow_upload(page, :avatar, entries, endpoint: TestEndpoint)
+    [{_, %{"entry_ref" => ref}}] = Enum.to_list(reply["entries"])
+    assert_receive {:patch, _add}, 500
+
+    path = Path.join(System.tmp_dir!(), "musubi-postpone-#{ref}")
+    File.write!(path, "data")
+    :ok = Musubi.Page.Server.register_upload_channel(page.pid, [], :avatar, ref, self(), path)
+    Musubi.Testing.simulate_upload(page, :avatar, ref, 5)
+    assert_receive {:patch, _progress}, 500
+
+    {:ok, _reply} = Musubi.Testing.dispatch_command(page, :postpone_consume, %{})
+
+    assert File.exists?(path), "postpone must leave the temp file in place"
+
+    # Second consume sees the same file.
+    {:ok, _reply} = Musubi.Testing.dispatch_command(page, :real_consume, %{})
+
+    refute File.exists?(path), "second consume should remove the temp file"
     stop_page(page)
   end
 
