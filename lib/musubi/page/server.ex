@@ -167,12 +167,18 @@ defmodule Musubi.Page.Server do
   @doc """
   Reports external-mode progress for an entry. Enqueues `{op: progress}`
   (and `{op: complete}` when progress hits 100).
+
+  Rejects with `{:error, :wrong_mode}` when the addressed entry is in
+  channel mode — channel-mode progress only flows through the
+  `Musubi.Transport.UploadChannel` chunk path, never through the main
+  channel, so a forged `upload_progress` cannot mark a channel-mode
+  upload complete without bytes.
   """
   @spec upload_progress(GenServer.server(), store_id(), atom(), String.t(), non_neg_integer()) ::
-          :ok
+          :ok | {:error, :wrong_mode | :unknown_entry | :unknown_store | :unknown_upload}
   def upload_progress(server, store_id, name, ref, progress)
       when is_list(store_id) and is_atom(name) and is_binary(ref) and is_integer(progress) do
-    GenServer.cast(server, {:upload_progress, store_id, name, ref, progress})
+    GenServer.call(server, {:upload_progress, store_id, name, ref, progress})
   end
 
   @doc """
@@ -373,6 +379,28 @@ defmodule Musubi.Page.Server do
     end
   end
 
+  def handle_call({:upload_progress, store_id, name, ref, progress}, _from, %State{} = state) do
+    case fetch_upload_target(state, store_id, name) do
+      {:ok, %Entry{socket: socket}} ->
+        case Musubi.Upload.fetch_entry(socket, name, ref) do
+          {:ok, %Musubi.Upload.Entry{mode: :external}} ->
+            {next_state, envelope} = apply_upload_progress(state, store_id, name, ref, progress)
+            {:reply, :ok, next_state, {:continue, {:push_patch, envelope}}}
+
+          {:ok, %Musubi.Upload.Entry{}} ->
+            # Channel-mode entries can only progress through the
+            # sub-channel chunk pipeline; reject any main-channel forge.
+            {:reply, {:error, :wrong_mode}, state}
+
+          :error ->
+            {:reply, {:error, :unknown_entry}, state}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
   def handle_call({:cancel_upload, store_id, name, ref}, _from, %State{} = state) do
     case fetch_upload_target(state, store_id, name) do
       {:ok, %Entry{socket: socket} = entry} ->
@@ -476,10 +504,6 @@ defmodule Musubi.Page.Server do
   end
 
   @impl GenServer
-  def handle_cast({:upload_progress, store_id, name, ref, progress}, %State{} = state) do
-    apply_upload_progress(state, store_id, name, ref, progress, :external)
-  end
-
   def handle_cast({:upload_channel_chunk, store_id, name, ref, bytes_written, complete?}, %State{} = state) do
     apply_channel_chunk(state, store_id, name, ref, bytes_written, complete?)
   end
@@ -1052,7 +1076,7 @@ defmodule Musubi.Page.Server do
     }
   end
 
-  defp apply_upload_progress(state, store_id, name, ref, progress, _source) do
+  defp apply_upload_progress(state, store_id, name, ref, progress) do
     next_state =
       mutate_upload_socket(state, store_id, fn socket ->
         socket
@@ -1066,8 +1090,7 @@ defmodule Musubi.Page.Server do
 
     next_state = dispatch_handle_progress(next_state, store_id, name, ref)
 
-    {next_state, envelope} = render_and_envelope(next_state)
-    {:noreply, next_state, {:continue, {:push_patch, envelope}}}
+    render_and_envelope(next_state)
   end
 
   defp apply_channel_chunk(state, store_id, name, ref, bytes_written, complete?) do

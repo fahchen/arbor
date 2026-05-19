@@ -118,9 +118,9 @@ defmodule Musubi.Transport.ConnectionChannel do
     with {:ok, root_id} <- fetch_string(payload, "root_id"),
          {:ok, name_str} <- fetch_string(payload, "name"),
          {:ok, page_pid} <- fetch_root_pid(socket, root_id),
-         {:ok, name} <- resolve_upload_name(socket, root_id, name_str),
+         store_id <- normalize_store_id(Map.get(payload, "store_id", [])),
+         {:ok, name} <- resolve_upload_name_at(page_pid, store_id, name_str),
          entries <- Map.get(payload, "entries", []),
-         store_id <- Map.get(payload, "store_id", []),
          endpoint <- socket.endpoint,
          {:ok, reply} <-
            Server.allow_upload(page_pid, store_id, name, List.wrap(entries), endpoint) do
@@ -135,8 +135,8 @@ defmodule Musubi.Transport.ConnectionChannel do
          {:ok, name_str} <- fetch_string(payload, "name"),
          {:ok, ref} <- fetch_string(payload, "ref"),
          {:ok, page_pid} <- fetch_root_pid(socket, root_id),
-         {:ok, name} <- resolve_upload_name(socket, root_id, name_str),
-         store_id <- Map.get(payload, "store_id", []),
+         store_id <- normalize_store_id(Map.get(payload, "store_id", [])),
+         {:ok, name} <- resolve_upload_name_at(page_pid, store_id, name_str),
          :ok <- Server.cancel_upload(page_pid, store_id, name, ref) do
       {:reply, {:ok, %{}}, socket}
     else
@@ -149,10 +149,10 @@ defmodule Musubi.Transport.ConnectionChannel do
          {:ok, name_str} <- fetch_string(payload, "name"),
          {:ok, ref} <- fetch_string(payload, "ref"),
          {:ok, page_pid} <- fetch_root_pid(socket, root_id),
-         {:ok, name} <- resolve_upload_name(socket, root_id, name_str),
-         store_id <- Map.get(payload, "store_id", []),
-         progress <- normalize_progress(payload) do
-      Server.upload_progress(page_pid, store_id, name, ref, progress)
+         store_id <- normalize_store_id(Map.get(payload, "store_id", [])),
+         {:ok, name} <- resolve_upload_name_at(page_pid, store_id, name_str),
+         progress <- normalize_progress(payload),
+         :ok <- Server.upload_progress(page_pid, store_id, name, ref, progress) do
       {:reply, {:ok, %{}}, socket}
     else
       {:error, reason} -> {:reply, {:error, %{reason: error_reason(reason)}}, socket}
@@ -350,21 +350,30 @@ defmodule Musubi.Transport.ConnectionChannel do
           | :unknown_root
           | :unknown_store
         ) :: String.t()
-  @spec resolve_upload_name(Phoenix.Socket.t(), String.t(), String.t()) ::
-          {:ok, atom()} | {:error, :unknown_upload}
-  defp resolve_upload_name(%Phoenix.Socket{} = socket, root_id, name_str)
-       when is_binary(root_id) and is_binary(name_str) do
-    case fetch_root_entry(socket, root_id) do
+  @spec resolve_upload_name_at(pid(), [String.t()], String.t()) ::
+          {:ok, atom()} | {:error, :unknown_store | :unknown_upload}
+  defp resolve_upload_name_at(page_pid, store_id, name_str)
+       when is_pid(page_pid) and is_list(store_id) and is_binary(name_str) do
+    case Server.peek(page_pid, store_id) do
       {:ok, %{module: module}} ->
-        case module.__musubi__(:uploads) |> List.wrap() |> Enum.find(&(Atom.to_string(&1.name) == name_str)) do
+        case module.__musubi__(:uploads)
+             |> List.wrap()
+             |> Enum.find(&(Atom.to_string(&1.name) == name_str)) do
           %{name: name} -> {:ok, name}
           nil -> {:error, :unknown_upload}
         end
 
-      _ ->
-        {:error, :unknown_upload}
+      {:error, :not_mounted} ->
+        {:error, :unknown_store}
     end
   end
+
+  @spec normalize_store_id(term()) :: [String.t()]
+  defp normalize_store_id(list) when is_list(list) do
+    Enum.map(list, &to_string/1)
+  end
+
+  defp normalize_store_id(_other), do: []
 
   @spec normalize_progress(map()) :: non_neg_integer()
   defp normalize_progress(payload) when is_map(payload) do
