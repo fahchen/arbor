@@ -13,7 +13,7 @@ This document is the reference for that pattern: load on `mount/1`, save on `att
 
 ## Save: `attach_hook(:persist, :after_command, …)`
 
-`:after_command` hooks are arity 3, called as `(command_name, payload, socket)`. Return shape is `{:cont, socket}` or `{:halt, socket}`. `use Musubi.Store` exposes `assign/2,3`, `attach_hook/4`, and the other LV-style helpers bare; the fully-qualified `Musubi.Socket.*` and `Musubi.Lifecycle.*` forms remain available when preferred.
+`:after_command` hooks are arity 4, called as `(command_name, payload, reply, socket)`. Return shape is `{:cont, socket}` or `{:halt, socket}`. `use Musubi.Store` exposes `assign/2,3`, `attach_hook/4`, and the other LV-style helpers bare; the fully-qualified `Musubi.Socket.*` and `Musubi.Lifecycle.*` forms remain available when preferred.
 
 ```elixir
 defmodule MyApp.Stores.CartStore do
@@ -24,7 +24,9 @@ defmodule MyApp.Stores.CartStore do
   end
 
   command :add_item do
-    payload :sku, String.t()
+    payload do
+      field :sku, String.t()
+    end
   end
 
   def mount(socket) do
@@ -33,12 +35,12 @@ defmodule MyApp.Stores.CartStore do
     socket =
       socket
       |> assign(:items, items)
-      |> attach_hook(:persist, :after_command, &persist/3)
+      |> attach_hook(:persist, :after_command, &persist/4)
 
     {:ok, socket}
   end
 
-  defp persist(_command_name, _payload, socket) do
+  defp persist(_command_name, _payload, _reply, socket) do
     MyApp.Storage.save_cart(socket.assigns.cart_id, socket.assigns.items)
     {:cont, socket}
   end
@@ -56,8 +58,8 @@ end
 Hooks see the command name, so the application can opt out of persistence for read-only commands or for commands that already wrote to storage themselves.
 
 ```elixir
-defp persist(:refresh, _payload, socket), do: {:cont, socket}
-defp persist(_command, _payload, socket) do
+defp persist(:refresh, _payload, _reply, socket), do: {:cont, socket}
+defp persist(_command, _payload, _reply, socket) do
   MyApp.Storage.save_cart(socket.assigns.cart_id, socket.assigns.items)
   {:cont, socket}
 end
@@ -70,7 +72,7 @@ If persistence fails and the application wants the user-visible error to surface
 ```elixir
 require Logger
 
-defp persist(_command, _payload, socket) do
+defp persist(_command, _payload, _reply, socket) do
   case MyApp.Storage.save_cart(socket.assigns.cart_id, socket.assigns.items) do
     :ok -> {:cont, socket}
     {:error, reason} ->

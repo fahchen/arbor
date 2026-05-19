@@ -118,19 +118,20 @@ defmodule Musubi.Codegen.TypeScript.Manifest do
 
   defp expand_command_aliases(commands, env) do
     Enum.map(commands, fn command ->
-      payload_fields =
-        command
-        |> Map.get(:payload_fields, [])
-        |> List.wrap()
-        |> Enum.map(fn field -> Map.update!(field, :type, &expand_aliases(&1, env)) end)
+      payload_fields = expand_field_list(command, :payload_fields, env)
+      reply_fields = expand_field_list(command, :reply_fields, env)
 
       command
       |> Map.put(:payload_fields, payload_fields)
-      |> Map.update(:reply, nil, fn
-        nil -> nil
-        ast -> expand_aliases(ast, env)
-      end)
+      |> Map.put(:reply_fields, reply_fields)
     end)
+  end
+
+  defp expand_field_list(command, key, env) do
+    command
+    |> Map.get(key, [])
+    |> List.wrap()
+    |> Enum.map(fn field -> Map.update!(field, :type, &expand_aliases(&1, env)) end)
   end
 
   @doc """

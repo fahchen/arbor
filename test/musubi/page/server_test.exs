@@ -75,8 +75,10 @@ defmodule Musubi.Page.ServerTest do
     assert root_socket.module == RootStore
     assert root_socket.assigns == %{__changed__: %{}, status: "mounted"}
 
-    assert %{before_command: [%{id: Musubi.Hooks.ValidateCommandSchema}]} =
-             Musubi.Socket.get_private(root_socket, :hooks)
+    assert %{
+             before_command: [%{id: Musubi.Hooks.ValidateCommandSchema}],
+             after_command: [%{id: Musubi.Hooks.ValidateReplySchema}]
+           } = Musubi.Socket.get_private(root_socket, :hooks)
 
     # M4: initial render emits the bootstrap envelope (version 1).
     assert version == 1
@@ -102,6 +104,11 @@ defmodule Musubi.Page.ServerTest do
 
     assert Enum.any?(default_hooks, fn
              {Musubi.Hooks.ValidateCommandSchema, :before_command, _fun} -> true
+             _other -> false
+           end)
+
+    assert Enum.any?(default_hooks, fn
+             {Musubi.Hooks.ValidateReplySchema, :after_command, _fun} -> true
              _other -> false
            end)
 

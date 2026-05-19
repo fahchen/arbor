@@ -31,16 +31,25 @@ defmodule PollApp.Stores.PollRoomStore do
   end
 
   command :vote do
-    payload(:option_id, String.t())
-    reply(%{status: :voted | :already_voted | :closed | :unknown_option})
+    payload do
+      field :option_id, String.t()
+    end
+
+    reply do
+      field :status, :voted | :already_voted | :closed | :unknown_option
+    end
   end
 
   command :reset_vote do
-    reply(%{status: :reset | :no_vote})
+    reply do
+      field :status, :reset | :no_vote
+    end
   end
 
   command :toggle_status do
-    reply(%{status: :active | :closed | :not_found})
+    reply do
+      field :status, :active | :closed | :not_found
+    end
   end
 
   @impl Musubi.Store

@@ -94,7 +94,9 @@ defmodule MyAppWeb.Stores.CounterStore do
   end
 
   command :increment do
-    payload :amount, integer()
+    payload do
+      field :amount, integer()
+    end
   end
 
   @impl Musubi.Store

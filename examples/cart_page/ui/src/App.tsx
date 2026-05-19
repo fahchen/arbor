@@ -12,7 +12,10 @@ import {
 function formatCommandError(error: unknown, label: string): string {
   if (MusubiCommandError.is(error)) {
     if (error.kind === "timeout") return `${label} timed out`
-    return error.code ? `${label} failed: ${error.code}` : error.message
+    if (error.code) return `${label} failed: ${error.code}`
+    const wrapped = (error.reply as { result?: { error?: string } } | undefined)?.result?.error
+    if (wrapped) return `${label} failed: ${wrapped}`
+    return error.message
   }
   return error instanceof Error ? error.message : `${label} failed.`
 }
@@ -98,9 +101,9 @@ function CartPage({ root }: { root: Store<RootModule> }) {
     try {
       const reply = await addItem.dispatch({ sku })
       setFeedback(
-        "ok" in reply
+        "ok" in reply.result
           ? `Added ${selectedProduct.label} to demo-cart.`
-          : `Add failed: ${reply.error}`
+          : `Add failed: ${reply.result.error}`
       )
     } catch (error) {
       setFeedback(formatCommandError(error, "Add"))
@@ -111,10 +114,10 @@ function CartPage({ root }: { root: Store<RootModule> }) {
     try {
       const reply = await checkout.dispatch({})
 
-      if ("order_id" in reply) {
-        setFeedback(`Checkout succeeded: ${reply.order_id}`)
+      if ("order_id" in reply.result) {
+        setFeedback(`Checkout succeeded: ${reply.result.order_id}`)
       } else {
-        setFeedback(`Checkout blocked: ${reply.error}`)
+        setFeedback(`Checkout blocked: ${reply.result.error}`)
       }
     } catch (error) {
       setFeedback(formatCommandError(error, "Checkout"))

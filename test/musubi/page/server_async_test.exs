@@ -28,12 +28,16 @@ defmodule Musubi.Page.ServerAsyncTest do
     end
 
     command :load_profile do
-      payload :name, String.t()
+      payload do
+        field :name, String.t()
+      end
     end
 
     command :load_profile_blocked do
-      payload :name, String.t()
-      payload :tag, String.t()
+      payload do
+        field :name, String.t()
+        field :tag, String.t()
+      end
     end
 
     command :load_profile_bad_return
@@ -47,12 +51,16 @@ defmodule Musubi.Page.ServerAsyncTest do
     command :load_identity_missing_key
 
     command :start_warm do
-      payload :name, String.t()
+      payload do
+        field :name, String.t()
+      end
     end
 
     command :start_warm_blocked do
-      payload :name, String.t()
-      payload :tag, String.t()
+      payload do
+        field :name, String.t()
+        field :tag, String.t()
+      end
     end
 
     command :start_warm_raise
@@ -60,29 +68,41 @@ defmodule Musubi.Page.ServerAsyncTest do
     command :start_warm_exit
 
     command :cancel_warm do
-      payload :reason, String.t()
+      payload do
+        field :reason, String.t()
+      end
     end
 
     command :raising_handle_async
 
     command :cancel_profile_by_name do
-      payload :reason, String.t()
+      payload do
+        field :reason, String.t()
+      end
     end
 
     command :cancel_profile_by_value do
-      payload :reason, String.t()
+      payload do
+        field :reason, String.t()
+      end
     end
 
     command :stream_messages do
-      payload :mode, String.t()
+      payload do
+        field :mode, String.t()
+      end
     end
 
     command :stream_messages_blocked do
-      payload :tag, String.t()
+      payload do
+        field :tag, String.t()
+      end
     end
 
     command :cancel_messages do
-      payload :reason, String.t()
+      payload do
+        field :reason, String.t()
+      end
     end
 
     # Reference cancel atoms used by the test so `String.to_existing_atom/1`

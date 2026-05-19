@@ -42,7 +42,9 @@ defmodule Musubi.Transport.ChannelTest do
     def render(socket), do: %{title: socket.assigns.title}
 
     command :rename do
-      payload :title, String.t()
+      payload do
+        field :title, String.t()
+      end
     end
 
     @impl Musubi.Store

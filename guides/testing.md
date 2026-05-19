@@ -28,8 +28,13 @@ defmodule MyApp.Stores.RoomStore do
   end
 
   command :ko do
-    payload :target, String.t()
-    reply %{ok: boolean()}
+    payload do
+      field :target, String.t()
+    end
+
+    reply do
+      field :ok, boolean()
+    end
   end
 
   @impl Musubi.Store
@@ -122,8 +127,13 @@ defmodule MyApp.Stores.FiltersStore do
   end
 
   command :change_query do
-    payload :query, String.t()
-    reply %{ok: boolean()}
+    payload do
+      field :query, String.t()
+    end
+
+    reply do
+      field :ok, boolean()
+    end
   end
 
   @impl Musubi.Store

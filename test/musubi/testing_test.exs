@@ -10,13 +10,23 @@ defmodule Musubi.TestingTest do
     end
 
     command :bump do
-      payload(:by, integer())
-      reply(%{ok: boolean()})
+      payload do
+        field :by, integer()
+      end
+
+      reply do
+        field :ok, boolean()
+      end
     end
 
     command :declare do
-      payload(:winner, String.t())
-      reply(%{ok: boolean()})
+      payload do
+        field :winner, String.t()
+      end
+
+      reply do
+        field :ok, boolean()
+      end
     end
 
     @impl Musubi.Store
@@ -109,8 +119,13 @@ defmodule Musubi.TestingTest do
       end
 
       command :change_query do
-        payload(:query, String.t())
-        reply(%{ok: boolean()})
+        payload do
+          field :query, String.t()
+        end
+
+        reply do
+          field :ok, boolean()
+        end
       end
 
       @impl Musubi.Store

@@ -14,6 +14,14 @@ command_schema_hook =
   {Musubi.Hooks.ValidateCommandSchema, :before_command,
    &Musubi.Hooks.ValidateCommandSchema.before_command/3}
 
+# `:after_command` reply schema validation. Walks the declared
+# `reply_fields` against the actual reply map; reply shape passing
+# through `{:halt, reply, _}` from `:before_command` skips this hook
+# because the runtime short-circuits past `:after_command` on halt.
+reply_schema_hook =
+  {Musubi.Hooks.ValidateReplySchema, :after_command,
+   &Musubi.Hooks.ValidateReplySchema.after_command/4}
+
 # `Musubi.Stream` drain+prune is NOT a hook — it's a runtime invariant baked
 # into `Musubi.Resolver.resolve/2` after the `:after_serialize` hooks run.
 # Hooks are user-removable; pending stream ops MUST flush every cycle, so the
@@ -31,7 +39,7 @@ state_validation_hooks =
 
 config :musubi,
        :default_hooks,
-       [command_schema_hook | state_validation_hooks]
+       [command_schema_hook, reply_schema_hook | state_validation_hooks]
 
 if File.exists?(Path.join(__DIR__, "#{config_env()}.exs")) do
   import_config "#{config_env()}.exs"

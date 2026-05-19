@@ -140,18 +140,19 @@ defmodule Musubi.LifecycleTest do
     socket =
       Lifecycle.attach_hook(socket, :replying, :after_command, fn _command_name,
                                                                   _payload,
+                                                                  _reply,
                                                                   current_socket ->
         {:halt, %{ok: false}, current_socket}
       end)
 
     assert_raise ArgumentError, ~r/halt payloads are only allowed/, fn ->
-      Lifecycle.run_hooks(socket, :after_command, [:rename, %{title: "Inbox"}], false)
+      Lifecycle.run_hooks(socket, :after_command, [:rename, %{title: "Inbox"}, %{}], false)
     end
   end
 
   test "stage_arity returns the LiveView-aligned arity per stage" do
     assert Lifecycle.stage_arity(:before_command) == 3
-    assert Lifecycle.stage_arity(:after_command) == 3
+    assert Lifecycle.stage_arity(:after_command) == 4
     assert Lifecycle.stage_arity(:handle_async) == 3
     assert Lifecycle.stage_arity(:handle_info) == 2
     assert Lifecycle.stage_arity(:after_render) == 2
@@ -163,7 +164,7 @@ defmodule Musubi.LifecycleTest do
   end
 
   defp hook_fun_for(:after_command) do
-    fn _command_name, _payload, current_socket -> {:cont, current_socket} end
+    fn _command_name, _payload, _reply, current_socket -> {:cont, current_socket} end
   end
 
   defp hook_fun_for(:handle_async) do

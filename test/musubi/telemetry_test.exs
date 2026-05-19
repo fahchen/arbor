@@ -15,6 +15,8 @@ defmodule Musubi.TelemetryTest do
         [:musubi, :resolve, :stop],
         [:musubi, :validate, :stop],
         [:musubi, :validate, :exception],
+        [:musubi, :validate, :command, :stop],
+        [:musubi, :validate, :reply, :stop],
         [:musubi, :diff, :stop],
         [:musubi, :patch, :stop],
         [:musubi, :stream, :flush],

@@ -47,11 +47,15 @@ declare namespace Musubi {
       {
         inc_qty: {
           payload: {}
-          reply: { qty: number }
+          reply: {
+            qty: number
+          }
         }
         dec_qty: {
           payload: {}
-          reply: { qty: number }
+          reply: {
+            qty: number
+          }
         }
       }
     >
@@ -75,16 +79,24 @@ declare namespace Musubi {
       },
       {
         add_item: {
-          payload: { sku: string }
-          reply: { ok: true } | { error: string }
+          payload: {
+            sku: string
+          }
+          reply: {
+            result: { ok: true } | { error: string }
+          }
         }
         remove_line: {
-          payload: { id: string }
-          reply: unknown
+          payload: {
+            id: string
+          }
+          reply: never
         }
         checkout: {
           payload: {}
-          reply: { order_id: string } | { error: string }
+          reply: {
+            result: { order_id: string } | { error: string }
+          }
         }
       }
     >

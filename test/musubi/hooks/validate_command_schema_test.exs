@@ -13,7 +13,9 @@ defmodule Musubi.Hooks.ValidateCommandSchemaTest do
     end
 
     command :change_query do
-      payload :query, String.t()
+      payload do
+        field :query, String.t()
+      end
     end
 
     command :no_payload
@@ -182,23 +184,33 @@ defmodule Musubi.Hooks.ValidateCommandSchemaTest do
     end
 
     command :create_user do
-      payload :user, UserInput.t()
+      payload do
+        field :user, UserInput.t()
+      end
     end
 
     command :touch_state do
-      payload :user, UserState.t()
+      payload do
+        field :user, UserState.t()
+      end
     end
 
     command :create_literal do
-      payload :user, %{name: String.t(), age: integer()}
+      payload do
+        field :user, %{name: String.t(), age: integer()}
+      end
     end
 
     command :set_status do
-      payload :status, %{type: :active} | %{type: :paused, value: integer()}
+      payload do
+        field :status, %{type: :active} | %{type: :paused, value: integer()}
+      end
     end
 
     command :tag do
-      payload :tags, list(String.t())
+      payload do
+        field :tags, list(String.t())
+      end
     end
 
     @impl Musubi.Store

@@ -20,7 +20,9 @@ defmodule Musubi.Page.ServerCommandTest do
     end
 
     command :select do
-      payload :id, String.t()
+      payload do
+        field :id, String.t()
+      end
     end
 
     @impl Musubi.Store
@@ -43,7 +45,9 @@ defmodule Musubi.Page.ServerCommandTest do
     end
 
     command :change_query do
-      payload :query, String.t()
+      payload do
+        field :query, String.t()
+      end
     end
 
     command :wipe
@@ -113,7 +117,7 @@ defmodule Musubi.Page.ServerCommandTest do
         send(test_pid, {:hook, :root_before, name})
         {:cont, sock}
       end)
-      |> Lifecycle.attach_hook(:audit_after, :after_command, fn name, _payload, sock ->
+      |> Lifecycle.attach_hook(:audit_after, :after_command, fn name, _payload, _reply, sock ->
         send(test_pid, {:hook, :root_after, name})
         {:cont, sock}
       end)
@@ -245,6 +249,51 @@ defmodule Musubi.Page.ServerCommandTest do
     end
   end
 
+  defmodule TypedReplyStore do
+    @moduledoc false
+    use Musubi.Store
+
+    state do
+      field :ok, boolean()
+    end
+
+    command :ok_reply do
+      reply do
+        field :ok, boolean()
+      end
+    end
+
+    command :bad_type_reply do
+      reply do
+        field :ok, boolean()
+      end
+    end
+
+    command :missing_field_reply do
+      reply do
+        field :ok, boolean()
+      end
+    end
+
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :ok, true)}
+    @impl Musubi.Store
+    def render(socket), do: %{ok: socket.assigns.ok}
+
+    @impl Musubi.Store
+    def handle_command(:ok_reply, _payload, socket) do
+      {:reply, %{"ok" => true}, socket}
+    end
+
+    def handle_command(:bad_type_reply, _payload, socket) do
+      {:reply, %{"ok" => "not_a_bool"}, socket}
+    end
+
+    def handle_command(:missing_field_reply, _payload, socket) do
+      {:reply, %{}, socket}
+    end
+  end
+
   setup do
     Process.flag(:trap_exit, true)
     :ok
@@ -369,6 +418,40 @@ defmodule Musubi.Page.ServerCommandTest do
 
       assert {:ok, %{selected: "abc"}} =
                Server.command(pid, ["leaf"], :select, %{"id" => "abc"})
+    end
+  end
+
+  describe "Scenario: Reply conforms to the declared schema" do
+    test "validation succeeds; caller receives the handler reply" do
+      pid = start_supervised!({Server, {TypedReplyStore, %{}, %{transport_pid: self()}}})
+
+      assert {:ok, %{"ok" => true}} = Server.command(pid, [], :ok_reply, %{})
+    end
+  end
+
+  describe "Scenario: Reply violates a declared field type" do
+    test "reply schema validator raises through the default :after_command hook" do
+      pid = start_supervised!({Server, {TypedReplyStore, %{}, %{transport_pid: self()}}})
+      Process.link(pid)
+
+      capture_log(fn ->
+        catch_exit(Server.command(pid, [], :bad_type_reply, %{}))
+        assert_receive {:EXIT, ^pid, _reason}
+        Logger.flush()
+      end)
+    end
+  end
+
+  describe "Scenario: Reply is missing a declared field" do
+    test "reply schema validator raises through the default :after_command hook" do
+      pid = start_supervised!({Server, {TypedReplyStore, %{}, %{transport_pid: self()}}})
+      Process.link(pid)
+
+      capture_log(fn ->
+        catch_exit(Server.command(pid, [], :missing_field_reply, %{}))
+        assert_receive {:EXIT, ^pid, _reason}
+        Logger.flush()
+      end)
     end
   end
 
@@ -509,7 +592,7 @@ defmodule Musubi.Page.ServerCommandTest do
           send(test_pid, {:hook, :root_before, name})
           {:cont, sock}
         end)
-        |> Lifecycle.attach_hook(:audit_after, :after_command, fn name, _payload, sock ->
+        |> Lifecycle.attach_hook(:audit_after, :after_command, fn name, _payload, _reply, sock ->
           send(test_pid, {:hook, :root_after, name})
           {:cont, sock}
         end)

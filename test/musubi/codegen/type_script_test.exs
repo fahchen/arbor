@@ -104,12 +104,14 @@ defmodule Musubi.Codegen.TypeScriptTest do
                 },
                 {
                   select: {
-                    payload: { id: string }
-                    reply: unknown
+                    payload: {
+                      id: string
+                    }
+                    reply: never
                   }
                   refresh: {
                     payload: {}
-                    reply: unknown
+                    reply: never
                   }
                 }
               >

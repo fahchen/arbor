@@ -7,7 +7,7 @@ defmodule Musubi.Lifecycle do
   | Stage              | Arity | Hook arguments                          |
   | :----------------- | :---- | :-------------------------------------- |
   | `:before_command`  | 3     | `(command_name, payload, socket)`       |
-  | `:after_command`   | 3     | `(command_name, payload, socket)`       |
+  | `:after_command`   | 4     | `(command_name, payload, reply, socket)`|
   | `:handle_async`    | 3     | `(name, async_result, socket)`          |
   | `:handle_info`     | 2     | `(message, socket)`                     |
   | `:after_render`   | 2     | `(resolved_elixir_term, socket)`        |
@@ -45,7 +45,7 @@ defmodule Musubi.Lifecycle do
   ]
   @stage_arity %{
     before_command: 3,
-    after_command: 3,
+    after_command: 4,
     handle_async: 3,
     handle_info: 2,
     after_render: 2,
@@ -171,7 +171,7 @@ defmodule Musubi.Lifecycle do
   | Stage              | Arity | Hook arguments                          |
   | :----------------- | :---- | :-------------------------------------- |
   | `:before_command`  | 3     | `(command_name, payload, socket)`       |
-  | `:after_command`   | 3     | `(command_name, payload, socket)`       |
+  | `:after_command`   | 4     | `(command_name, payload, reply, socket)`|
   | `:handle_async`    | 3     | `(name, async_result, socket)`          |
   | `:handle_info`     | 2     | `(message, socket)`                     |
   | `:after_render`   | 2     | `(resolved_elixir_term, socket)`        |
@@ -181,10 +181,12 @@ defmodule Musubi.Lifecycle do
 
       iex> Musubi.Lifecycle.stage_arity(:before_command)
       3
+      iex> Musubi.Lifecycle.stage_arity(:after_command)
+      4
       iex> Musubi.Lifecycle.stage_arity(:after_serialize)
       2
   """
-  @spec stage_arity(stage()) :: 2 | 3
+  @spec stage_arity(stage()) :: 2 | 3 | 4
   def stage_arity(stage) when stage in @stages do
     Map.fetch!(@stage_arity, stage)
   end

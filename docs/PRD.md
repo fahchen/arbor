@@ -134,11 +134,15 @@ command :ping                                     # shorthand: no payload
 command :reload_products                          # shorthand: no payload
 
 command :select_product do                        # block form: typed payload
-  payload :id, String.t()
+  payload do
+    field :id, String.t()
+  end
 end
 
 command :apply_filters do
-  payload :status, %{type: :active} | %{type: :paused, value: integer()}
+  payload do
+    field :status, %{type: :active} | %{type: :paused, value: integer()}
+  end
 end
 ```
 
@@ -174,7 +178,7 @@ child(ProductCardStore,
 
 All cross-cutting and per-node concerns use `attach_hook(socket, id, stage, fun)` (BDR-0004). There is no `middleware` macro. Stages: `:before_command`, `:after_command`, `:handle_async`, `:handle_info`, `:after_render`, `:after_serialize`. Hook return: `{:cont, socket}`, `{:halt, socket}`, or `{:halt, reply, socket}` (only on `:before_command`). Mirrors `Phoenix.LiveView.attach_hook/4`. Each store maintains its own hook table; child-attached hooks see only that node's events. `detach_hook/3` is a silent no-op when the hook is absent.
 
-Authors attach hooks inside `mount/1` for stable concerns and inside any handler for runtime-driven attachment. Built-in hooks (`Musubi.Hooks.ValidateCommandSchema` on `:before_command`, `Musubi.Hooks.ValidateRender` on `:after_serialize`) are attached by the runtime's mount path; authors may detach or replace them (BDR-0007). Render-output validation is default-on in dev/test, telemetry-only opt-in for prod.
+Authors attach hooks inside `mount/1` for stable concerns and inside any handler for runtime-driven attachment. Built-in hooks (`Musubi.Hooks.ValidateCommandSchema` on `:before_command`, `Musubi.Hooks.ValidateReplySchema` on `:after_command` as the schema-validator counterpart, `Musubi.Hooks.ValidateRender` on `:after_serialize`) are attached by the runtime's mount path; authors may detach or replace them (BDR-0007). Render-output validation is default-on in dev/test, telemetry-only opt-in for prod.
 
 Pipeline order follows hook attachment order; the addressed store's `handle_command/3` dispatches after all `:before_command` hooks have continued; `:after_command` runs after the handler returns; the transport reply is delivered next; the patch push follows; effects fire last (BDR-0009).
 
@@ -432,7 +436,9 @@ defmodule MyApp.Stores.ProductPageStore do
   end
 
   command :select_product do
-    payload :id, String.t()
+    payload do
+      field :id, String.t()
+    end
   end
 
   command :reload_products

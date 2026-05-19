@@ -47,11 +47,15 @@ defmodule Musubi.TestSupport.ExampleStore do
   command(:ping)
 
   command :select_product do
-    payload(:id, String.t())
+    payload do
+      field :id, String.t()
+    end
   end
 
   command :apply_filters do
-    payload(:status, %{type: :active} | %{type: :paused, value: integer()})
+    payload do
+      field :status, %{type: :active} | %{type: :paused, value: integer()}
+    end
   end
 
   @impl Musubi.Store
@@ -178,12 +182,16 @@ defmodule Musubi.TestSupport.MultiCommandStore do
   end
 
   command :select_product do
-    payload(:id, String.t())
+    payload do
+      field :id, String.t()
+    end
   end
 
   command :apply_filters do
-    payload(:status, %{type: :active} | %{type: :paused, value: integer()})
-    payload(:include_archived, boolean())
+    payload do
+      field :status, %{type: :active} | %{type: :paused, value: integer()}
+      field :include_archived, boolean()
+    end
   end
 
   @impl Musubi.Store
