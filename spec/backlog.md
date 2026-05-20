@@ -24,7 +24,7 @@
   signature check for external mode) — currently the application command
   that consumes the entry runs whatever check it needs.
 - **`avatar_upload` example app** — the shipped uploads v1 is documented via
-  `docs/uploads_example.md`. A full Phoenix example mirroring `cart_page`
+  `guides/uploads.md`. A full Phoenix example mirroring `cart_page`
   (mix project + UI + integration test) lands when the upload UX has
   stabilized through one real consumer.
 

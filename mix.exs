@@ -97,6 +97,7 @@ defmodule Musubi.MixProject do
         "guides/getting-started.md",
         "guides/phoenix-setup.md",
         "guides/client-and-react.md",
+        "guides/uploads.md",
         "guides/testing.md",
         "docs/client-contract.md",
         "docs/persistence-pattern.md"
@@ -106,6 +107,7 @@ defmodule Musubi.MixProject do
           "guides/getting-started.md",
           "guides/phoenix-setup.md",
           "guides/client-and-react.md",
+          "guides/uploads.md",
           "guides/testing.md"
         ],
         Reference: [

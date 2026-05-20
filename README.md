@@ -188,6 +188,7 @@ stable React list keys over child proxies.
 - [Getting Started](guides/getting-started.md)
 - [Phoenix Setup](guides/phoenix-setup.md)
 - [Client and React](guides/client-and-react.md)
+- [Uploads](guides/uploads.md)
 - [Client Contract](docs/client-contract.md)
 - [Persistence Pattern](docs/persistence-pattern.md)
 
