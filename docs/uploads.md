@@ -281,10 +281,12 @@ the application cancels the entry and re-issues `allow_upload`.
 
 When `upload_external/3` is implemented for an upload name, the preflight
 reply returns `{type: "external", uploader, meta}` instead of a token.
-Clients dispatch the upload to a registered uploader (e.g. `S3Uploader`)
-which performs the direct HTTP PUT to cloud storage. The uploader reports
-progress through `upload_progress` events on the main channel, and the
-server emits `{op: complete}` when progress reaches 100.
+Clients dispatch the upload to a registered uploader (named by the
+`uploader` string in `meta`) which performs the direct HTTP PUT to cloud
+storage. The uploader reports progress through `upload_progress` events
+on the main channel, and the server emits `{op: complete}` when progress
+reaches 100. On failure the client pushes `upload_error` and the server
+emits `{op: error, code: "external_failed"}`.
 
 ```elixir
 @impl Musubi.Store
@@ -294,8 +296,11 @@ def upload_external(:avatar, entry, socket) do
 end
 ```
 
-The returned meta is opaque to Musubi — the client uploader contract
-determines its shape. The built-in `S3Uploader` expects `{url, headers}`.
+The returned meta is opaque to Musubi — the application + its chosen
+client uploader define its shape together. `@musubi/client` ships only
+the `ExternalUploader` *contract* (see Client API below); apps bring
+their own implementation. See `guides/uploads.md` for an example PUT-
+via-XHR uploader.
 
 ## Client API
 
@@ -396,7 +401,8 @@ state mutates in place as `upload_ops` arrive.
 
 ```ts
 import { Socket } from "phoenix"
-import { connect, S3Uploader } from "@musubi/client"
+import { connect } from "@musubi/client"
+import { S3Uploader } from "./uploaders/s3"
 
 const socket = new Socket("/socket")
 const connection = await connect<Musubi.Stores>(socket, {
@@ -431,7 +437,7 @@ proxy returned by `useMusubiRoot` already exposes upload handles as
 typed properties:
 
 ```tsx
-import { useMusubiRoot, S3Uploader } from "@musubi/react"
+import { useMusubiRoot } from "@musubi/react"
 
 function AvatarUploader() {
   const { store } = useMusubiRoot({
@@ -476,9 +482,15 @@ function AvatarUploader() {
 }
 ```
 
-For external mode, pass `uploaders` through the `MusubiProvider`:
+For external mode, pass `uploaders` through the `MusubiProvider`.
+`@musubi/client` ships only the `ExternalUploader` contract — the
+application provides the implementation (see `guides/uploads.md` for
+an XHR-based example):
 
 ```tsx
+import { MusubiProvider } from "@musubi/react"
+import { S3Uploader } from "./uploaders/s3"
+
 <MusubiProvider socket={socket} uploaders={{ S3: S3Uploader }}>
   <AvatarUploader />
 </MusubiProvider>

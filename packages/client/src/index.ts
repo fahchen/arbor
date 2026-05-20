@@ -13,7 +13,6 @@ export type { ChannelLike, PushLike, SocketLike } from "./runtime"
 export { applyPatch, parsePointer } from "./patch"
 export { applyStreamOps, getStream, pruneStreams } from "./streams"
 export { applyUploadOps, getUploadHandle, pruneUploads, UploadHandleImpl } from "./uploads"
-export { S3Uploader } from "./s3-uploader"
 
 export type {
   AsyncError,

@@ -152,9 +152,8 @@ channel mode; only the preflight reply changes shape and the chunk
 delivery path moves off the Phoenix channel.
 
 Implement `upload_external/3` on the store. Musubi treats `meta` as
-opaque — pick the shape your client uploader expects (the built-in
-`S3Uploader` reads `meta.url` + `meta.headers`) plus any fields the
-`:submit` handler will read at consume time.
+opaque — pick whatever shape your client uploader needs, plus any
+fields the `:submit` handler reads at consume time.
 
 ```elixir
 @impl Musubi.Store
@@ -192,11 +191,68 @@ def handle_command(:submit, _payload, socket) do
 end
 ```
 
-Register `S3Uploader` on the client side through `MusubiProvider`:
+### Bring your own uploader
+
+`@musubi/client` ships the `ExternalUploader` *contract*, not an
+implementation. Apps own the upload mechanism: the library has no
+opinion on `fetch` vs. `XMLHttpRequest`, error semantics, or
+cloud-specific quirks.
+
+The whole contract:
+
+```ts
+type ExternalUploader = (args: {
+  entry: UploadEntry
+  file: File
+  meta: unknown   // what your `upload_external/3` returned
+  onProgress: (pct: number) => void
+  signal: AbortSignal
+}) => Promise<void>
+```
+
+Resolve → success. Reject → Musubi pushes `upload_error` so the
+server emits `{op: error, code: "external_failed"}`.
+
+**XHR (granular progress, large media):**
+
+```ts
+const S3Uploader: ExternalUploader = ({ file, meta, onProgress, signal }) => {
+  const { url, headers } = meta as { url: string; headers?: Record<string, string> }
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open("PUT", url)
+    for (const [k, v] of Object.entries(headers ?? {})) xhr.setRequestHeader(k, v)
+    xhr.upload.onprogress = (e) =>
+      e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100))
+    xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error(`PUT ${xhr.status}`)))
+    xhr.onerror = () => reject(new Error("network error"))
+    signal.addEventListener("abort", () => xhr.abort())
+    xhr.send(file)
+  })
+}
+```
+
+**fetch (no granular progress):**
+
+```ts
+const FetchUploader: ExternalUploader = async ({ file, meta, onProgress, signal }) => {
+  const { url, headers } = meta as { url: string; headers?: Record<string, string> }
+  const res = await fetch(url, { method: "PUT", body: file, headers, signal })
+  if (!res.ok) throw new Error(`PUT ${res.status}`)
+  onProgress(100)
+}
+```
+
+`fetch` cannot observe request-body progress, so it jumps 0 → 100.
+Fine for small files; for large media (the reason external mode
+exists) prefer XHR.
+
+Register your uploader on the client through `MusubiProvider`:
 
 ```tsx
 import { Socket } from "phoenix"
-import { MusubiProvider, S3Uploader } from "@musubi/react"
+import { MusubiProvider } from "@musubi/react"
+import { S3Uploader } from "./uploaders/s3"
 
 const socket = new Socket("/socket")
 
@@ -209,10 +265,10 @@ export function App() {
 }
 ```
 
-`S3Uploader` PUTs the file to `meta.url`, reports
-`xhr.upload.onprogress` back through the main channel as
-`upload_progress`, and on rejection sends `upload_error` so the
-server emits `{op: error, code: "external_failed"}`.
+When the uploader's `Promise` rejects, Musubi pushes an
+`upload_error` event back to the page server and the server emits
+`{op: error, code: "external_failed"}` so the UI can surface the
+failure via `handle.errors` / `entry.errors`.
 
 ## Per-item dynamic uploads (child stores)
 

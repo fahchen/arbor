@@ -59,13 +59,18 @@ or the registered named uploader.
 ### Client surface
 
 ```ts
-const client = createMusubiClient({
-  socket,
+import { connect } from "@musubi/client"
+import { S3Uploader } from "./uploaders/s3"  // application-owned
+
+const connection = await connect<Musubi.Stores>(socket, {
   uploaders: { S3: S3Uploader }
 })
 ```
 
-Uploaders implement:
+`@musubi/client` exports the `ExternalUploader` contract but no
+implementation — applications own the upload mechanism so the library
+takes no opinion on `fetch` vs. `XMLHttpRequest`, progress
+granularity, or cloud-specific quirks. Uploaders implement:
 
 ```ts
 type ExternalUploader = (args: {

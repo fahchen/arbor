@@ -28,7 +28,7 @@ import {
 import { shallowEqual } from "./shallow"
 
 export { shallowEqual } from "./shallow"
-export { MusubiCommandError, keyOf, S3Uploader } from "@musubi/client"
+export { MusubiCommandError, keyOf } from "@musubi/client"
 
 export type {
   AsyncResult,

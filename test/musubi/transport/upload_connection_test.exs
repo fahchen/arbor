@@ -69,9 +69,34 @@ defmodule Musubi.Transport.UploadConnectionTest do
     def handle_command(_n, _p, s), do: {:noreply, s}
   end
 
+  defmodule ExternalStore do
+    @moduledoc false
+    use Musubi.Store, root: true
+
+    state do
+      field :title, String.t() | nil
+    end
+
+    upload(:avatar, accept: ~w(.png), max_entries: 1)
+
+    @impl Musubi.Store
+    def render(_socket), do: %{title: "Hi"}
+    @impl Musubi.Store
+    def handle_command(_n, _p, s), do: {:noreply, s}
+
+    @impl Musubi.Store
+    def upload_external(:avatar, entry, socket) do
+      {:ok, %{uploader: "S3", url: "https://example/" <> entry.ref}, socket}
+    end
+  end
+
   defmodule MusubiSocket do
     @moduledoc false
-    use Musubi.Socket, roots: [Musubi.Transport.UploadConnectionTest.CartStore]
+    use Musubi.Socket,
+      roots: [
+        Musubi.Transport.UploadConnectionTest.CartStore,
+        Musubi.Transport.UploadConnectionTest.ExternalStore
+      ]
   end
 
   import Phoenix.ChannelTest
@@ -166,6 +191,76 @@ defmodule Musubi.Transport.UploadConnectionTest do
       })
 
     assert_reply(push_ref, :ok, _reply)
+  end
+
+  describe "upload_error event (external mode)" do
+    setup %{socket: socket} do
+      mount_ref =
+        push(socket, "mount", %{
+          "module" => "Musubi.Transport.UploadConnectionTest.ExternalStore",
+          "id" => "ext-1",
+          "params" => %{}
+        })
+
+      assert_reply(mount_ref, :ok, _r)
+      :ok
+    end
+
+    test "client-pushed upload_error emits {op: error, code: external_failed}", %{socket: socket} do
+      push_ref =
+        push(socket, "allow_upload", %{
+          "root_id" => "ext-1",
+          "store_id" => [],
+          "name" => "avatar",
+          "entries" => [
+            %{"client_ref" => "0", "name" => "a.png", "size" => 1, "type" => "image/png"}
+          ]
+        })
+
+      assert_reply(push_ref, :ok, reply)
+      [{_cref, %{"entry_ref" => entry_ref}}] = Enum.to_list(reply["entries"])
+
+      push_ref =
+        push(socket, "upload_error", %{
+          "root_id" => "ext-1",
+          "store_id" => [],
+          "name" => "avatar",
+          "ref" => entry_ref,
+          "code" => "external_failed",
+          "message" => "PUT failed with status 500"
+        })
+
+      assert_reply(push_ref, :ok, _r)
+    end
+
+    test "unknown error codes degrade to external_failed", %{socket: socket} do
+      push_ref =
+        push(socket, "allow_upload", %{
+          "root_id" => "ext-1",
+          "store_id" => [],
+          "name" => "avatar",
+          "entries" => [
+            %{"client_ref" => "0", "name" => "a.png", "size" => 1, "type" => "image/png"}
+          ]
+        })
+
+      assert_reply(push_ref, :ok, reply)
+      [{_cref, %{"entry_ref" => entry_ref}}] = Enum.to_list(reply["entries"])
+
+      # Server controls the atom union; a bogus code does not crash and
+      # does not let the client invent arbitrary `Musubi.Upload.Error.code()`.
+      push_ref =
+        push(socket, "upload_error", %{
+          "root_id" => "ext-1",
+          "store_id" => [],
+          "name" => "avatar",
+          "ref" => entry_ref,
+          "code" => "i_am_definitely_not_a_real_code",
+          "message" => "lol"
+        })
+
+      assert_reply(push_ref, :ok, _r)
+    end
   end
 
   defp join_connection do

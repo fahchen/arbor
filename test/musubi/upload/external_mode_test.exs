@@ -211,6 +211,98 @@ defmodule Musubi.Upload.ExternalModeTest do
     stop_page(page)
   end
 
+  defmodule ChannelOnlyStore do
+    use Musubi.Store, root: true
+
+    state do
+      field :title, String.t() | nil
+    end
+
+    upload(:avatar, accept: ~w(.png), max_entries: 1)
+
+    @impl Musubi.Store
+    def render(_socket), do: %{title: "Hi"}
+    @impl Musubi.Store
+    def handle_command(_n, _p, s), do: {:noreply, s}
+  end
+
+  describe "upload_client_error/5" do
+    test "external entry receives {op: error, code: external_failed}" do
+      page = Musubi.Testing.mount(S3Store)
+      assert_receive {:patch, _initial}
+
+      {:ok, reply} =
+        Musubi.Testing.allow_upload(
+          page,
+          :avatar,
+          [%{"client_ref" => "0", "name" => "a.png", "size" => 1, "type" => "image/png"}],
+          endpoint: TestEndpoint
+        )
+
+      [{_cref, %{"entry_ref" => entry_ref}}] = Enum.to_list(reply["entries"])
+      assert_receive {:patch, _add}
+
+      error = Musubi.Upload.Error.new(:external_failed, "PUT failed with status 500")
+      assert :ok = Musubi.Page.Server.upload_client_error(page.pid, [], :avatar, entry_ref, error)
+
+      assert_receive {:patch, envelope}
+
+      error_op =
+        Enum.find(envelope.upload_ops, fn op ->
+          op.op == "error" and Map.get(op, :ref) == entry_ref
+        end)
+
+      assert error_op
+
+      assert error_op.error == %{
+               "code" => "external_failed",
+               "message" => "PUT failed with status 500"
+             }
+
+      {:ok, %{socket: socket}} = Musubi.Page.Server.peek(page.pid, [])
+      {:ok, entry} = Musubi.Upload.fetch_entry(socket, :avatar, entry_ref)
+      assert entry.status == :error
+      assert [%Musubi.Upload.Error{code: :external_failed}] = entry.errors
+
+      stop_page(page)
+    end
+
+    test "rejects channel-mode entry with {:error, :wrong_mode}" do
+      page = Musubi.Testing.mount(ChannelOnlyStore)
+      assert_receive {:patch, _initial}
+
+      {:ok, reply} =
+        Musubi.Testing.allow_upload(
+          page,
+          :avatar,
+          [%{"client_ref" => "0", "name" => "a.png", "size" => 1, "type" => "image/png"}],
+          endpoint: TestEndpoint
+        )
+
+      [{_cref, %{"entry_ref" => entry_ref}}] = Enum.to_list(reply["entries"])
+      assert_receive {:patch, _add}
+
+      error = Musubi.Upload.Error.new(:external_failed)
+
+      assert {:error, :wrong_mode} =
+               Musubi.Page.Server.upload_client_error(page.pid, [], :avatar, entry_ref, error)
+
+      stop_page(page)
+    end
+
+    test "rejects unknown entry with {:error, :unknown_entry}" do
+      page = Musubi.Testing.mount(S3Store)
+      assert_receive {:patch, _initial}
+
+      error = Musubi.Upload.Error.new(:external_failed)
+
+      assert {:error, :unknown_entry} =
+               Musubi.Page.Server.upload_client_error(page.pid, [], :avatar, "u_missing", error)
+
+      stop_page(page)
+    end
+  end
+
   defp stop_page(%{pid: pid}) do
     if Process.alive?(pid), do: GenServer.stop(pid, :normal, 1_000)
     :ok

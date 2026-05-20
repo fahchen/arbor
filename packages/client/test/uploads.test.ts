@@ -6,25 +6,70 @@ import {
   pruneUploads,
   UploadHandleImpl
 } from "../src/uploads"
-import type { RootConnection } from "../src/runtime"
+import type { ChannelLike, PushLike, RootConnection } from "../src/runtime"
+import type { ExternalUploader } from "../src/types"
 
-function fakeConnection(): RootConnection {
+interface CapturedPush {
+  event: string
+  payload: Record<string, unknown>
+}
+
+interface FakeChannelHandlers {
+  [event: string]: (payload: Record<string, unknown>) => unknown
+}
+
+function makeFakeChannel(
+  handlers: FakeChannelHandlers,
+  captured: CapturedPush[]
+): ChannelLike {
+  return {
+    on: () => undefined,
+    onClose: () => undefined,
+    onError: () => undefined,
+    join: () => makeFakePush({}),
+    leave: () => undefined,
+    push: (event: string, payload: unknown) => {
+      const p = (payload ?? {}) as Record<string, unknown>
+      captured.push({ event, payload: p })
+      const reply = handlers[event]?.(p)
+      return makeFakePush(reply ?? {})
+    }
+  }
+}
+
+function makeFakePush(reply: unknown): PushLike {
+  const self: PushLike = {
+    receive(status, cb) {
+      if (status === "ok") queueMicrotask(() => cb(reply))
+      return self
+    }
+  }
+  return self
+}
+
+function fakeConnection(options: {
+  channel?: ChannelLike
+  uploaders?: Record<string, ExternalUploader>
+} = {}): RootConnection {
   return {
     module: "X",
     id: "r1",
     connection: {
-      socket: { connect: () => undefined, channel: () => ({} as never) },
+      socket: {
+        connect: () => undefined,
+        channel: () => options.channel ?? ({} as never)
+      },
       topic: "musubi:t",
       roots: new Map(),
-      uploaders: {},
-      channel: undefined,
+      uploaders: options.uploaders ?? {},
+      channel: options.channel,
       channelGeneration: 0,
       connectPromise: null,
       suppressDisconnectEvent: false
     },
     mountParams: {},
     refCount: 1,
-    channel: undefined,
+    channel: options.channel,
     channelGeneration: 0,
     root: undefined,
     version: 0,
@@ -39,6 +84,27 @@ function fakeConnection(): RootConnection {
     connectPromise: null,
     recovering: false
   } as RootConnection
+}
+
+function externalPreflightReply(entryRef: string) {
+  return {
+    ref: "avatar",
+    config: {
+      accept: "any" as const,
+      max_entries: 1,
+      max_file_size: 1_000_000,
+      chunk_size: 64_000
+    },
+    entries: {
+      "0": {
+        type: "external" as const,
+        entry_ref: entryRef,
+        uploader: "S3",
+        meta: { url: "https://example.com/put" }
+      }
+    },
+    errors: []
+  }
 }
 
 describe("UploadHandle op application", () => {
@@ -285,5 +351,86 @@ describe("pruneUploads", () => {
     pruneUploads(conn.uploads, new Set(["[]"]))
 
     expect(conn.uploads.size).toBe(1)
+  })
+})
+
+describe("custom external uploader contract", () => {
+  test("registered uploader receives entry/file/meta + reports progress", async () => {
+    const captured: CapturedPush[] = []
+    const channel = makeFakeChannel(
+      { allow_upload: () => externalPreflightReply("u_ok") },
+      captured
+    )
+
+    const uploader = vi.fn<ExternalUploader>(async ({ onProgress }) => {
+      onProgress(33)
+      onProgress(100)
+    })
+
+    const conn = fakeConnection({ channel, uploaders: { S3: uploader } })
+    const handle = getUploadHandle(conn, [], "avatar")
+
+    const file = new File(["hello"], "a.png", { type: "image/png" })
+    await handle.select([file])
+    await handle.start()
+
+    expect(uploader).toHaveBeenCalledOnce()
+
+    const args = uploader.mock.calls[0]?.[0] as Parameters<ExternalUploader>[0]
+    expect(args.file).toBe(file)
+    expect(args.meta).toEqual({ url: "https://example.com/put" })
+    expect(args.entry.ref).toBe("u_ok")
+    expect(typeof args.onProgress).toBe("function")
+    expect(args.signal).toBeInstanceOf(AbortSignal)
+
+    const progressPushes = captured
+      .filter((c) => c.event === "upload_progress")
+      .map((c) => c.payload.progress)
+    expect(progressPushes).toContain(33)
+    expect(progressPushes).toContain(100)
+  })
+
+  test("uploader rejection pushes upload_error with external_failed", async () => {
+    const captured: CapturedPush[] = []
+    const channel = makeFakeChannel(
+      { allow_upload: () => externalPreflightReply("u_fail") },
+      captured
+    )
+
+    const uploader: ExternalUploader = () => Promise.reject(new Error("PUT 500"))
+
+    const conn = fakeConnection({ channel, uploaders: { S3: uploader } })
+    const handle = getUploadHandle(conn, [], "avatar")
+
+    const file = new File(["x"], "a.png", { type: "image/png" })
+    await handle.select([file])
+    await handle.start()
+
+    const errorPush = captured.find((c) => c.event === "upload_error")
+    expect(errorPush).toBeDefined()
+    expect(errorPush?.payload.code).toBe("external_failed")
+    expect(errorPush?.payload.ref).toBe("u_fail")
+    expect(errorPush?.payload.message).toContain("PUT 500")
+
+    // `start()` swallows the rejection and flips handle status to error.
+    expect(handle.status).toBe("error")
+  })
+
+  test("missing uploader registration flips handle status to error", async () => {
+    const captured: CapturedPush[] = []
+    const channel = makeFakeChannel(
+      { allow_upload: () => externalPreflightReply("u_missing_reg") },
+      captured
+    )
+
+    // No uploader registered under "S3" — startExternal throws.
+    const conn = fakeConnection({ channel, uploaders: {} })
+    const handle = getUploadHandle(conn, [], "avatar")
+
+    const file = new File(["x"], "a.png", { type: "image/png" })
+    await handle.select([file])
+    await handle.start()
+
+    expect(handle.status).toBe("error")
   })
 })
