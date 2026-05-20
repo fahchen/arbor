@@ -73,6 +73,7 @@ defmodule Musubi.MixProject do
           lib
           mix.exs
           README.md
+          CHANGELOG.md
           guides
           packages/client/src
           packages/client/package.json
@@ -94,6 +95,7 @@ defmodule Musubi.MixProject do
       skip_code_autolink_to: &skip_doc_reference?/1,
       extras: [
         "README.md",
+        "CHANGELOG.md",
         "guides/getting-started.md",
         "guides/phoenix-setup.md",
         "guides/client-and-react.md",
