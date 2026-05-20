@@ -68,6 +68,7 @@ defmodule Musubi.Hooks.ValidateRender do
   defp drop_runtime_keys(%{} = map) do
     map
     |> Map.delete(Atom.to_string(Resolver.store_id_key()))
+    |> Enum.reject(fn {_key, value} -> Musubi.Upload.Marker.marker?(value) end)
     |> Enum.into(%{}, fn {key, value} -> {key, drop_runtime_keys(value)} end)
   end
 

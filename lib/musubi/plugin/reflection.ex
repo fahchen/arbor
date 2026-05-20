@@ -31,17 +31,38 @@ defmodule Musubi.Plugin.Reflection do
 
     attrs = module |> Module.get_attribute(:__musubi_attrs__) |> List.wrap() |> Enum.reverse()
 
-    %{fields: fields, streams: streams, commands: commands, attrs: attrs, root?: root?}
+    uploads =
+      module
+      |> Module.get_attribute(:__musubi_uploads__)
+      |> List.wrap()
+      |> Enum.map(fn {_name, %Musubi.Upload.Config{} = config, _file, _line} -> config end)
+
+    %{
+      fields: fields,
+      streams: streams,
+      commands: commands,
+      attrs: attrs,
+      uploads: uploads,
+      root?: root?
+    }
   end
 
   defp build_plural_clauses(sections) do
-    %{fields: fields, streams: streams, commands: commands, attrs: attrs, root?: root?} = sections
+    %{
+      fields: fields,
+      streams: streams,
+      commands: commands,
+      attrs: attrs,
+      uploads: uploads,
+      root?: root?
+    } = sections
 
     [
       quote(do: def(__musubi__(:fields), do: unquote(Macro.escape(fields)))),
       quote(do: def(__musubi__(:commands), do: unquote(Macro.escape(commands)))),
       quote(do: def(__musubi__(:streams), do: unquote(Macro.escape(streams)))),
       quote(do: def(__musubi__(:attrs), do: unquote(Macro.escape(attrs)))),
+      quote(do: def(__musubi__(:uploads), do: unquote(Macro.escape(uploads)))),
       quote(do: def(__musubi__(:root?), do: unquote(root?)))
     ]
   end
@@ -59,11 +80,13 @@ defmodule Musubi.Plugin.Reflection do
       build_singular_clauses(:command, sections.commands, & &1.name) ++
       build_singular_clauses(:stream, sections.streams, & &1.name) ++
       build_singular_clauses(:attr, sections.attrs, & &1.name) ++
+      build_singular_clauses(:upload, sections.uploads, & &1.name) ++
       [
         quote(do: def(__musubi__(:field, _name), do: :error)),
         quote(do: def(__musubi__(:command, _name), do: :error)),
         quote(do: def(__musubi__(:stream, _name), do: :error)),
-        quote(do: def(__musubi__(:attr, _name), do: :error))
+        quote(do: def(__musubi__(:attr, _name), do: :error)),
+        quote(do: def(__musubi__(:upload, _name), do: :error))
       ]
   end
 

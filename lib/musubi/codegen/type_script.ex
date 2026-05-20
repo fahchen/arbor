@@ -59,7 +59,7 @@ defmodule Musubi.Codegen.TypeScript do
   module-callback lookups itself.
   """
   @type entry() ::
-          {module(), %{kind: :state | :store, fields: list(), commands: list()}}
+          {module(), %{kind: :state | :store, fields: list(), commands: list(), uploads: list()}}
 
   @doc """
   Renders one TypeScript bundle covering every `{module, data}` entry in
@@ -176,6 +176,61 @@ defmodule Musubi.Codegen.TypeScript do
       type AsyncField<Value> = {
         readonly [Type]: { kind: "async"; value: Value }
       }
+
+      type UploadConfig = {
+        readonly accept: readonly string[] | "any"
+        readonly maxEntries: number
+        readonly maxFileSize: number
+        readonly chunkSize: number
+      }
+
+      type UploadEntryStatus =
+        | "pending"
+        | "uploading"
+        | "success"
+        | "error"
+        | "cancelled"
+
+      type UploadStatus =
+        | "idle"
+        | "selecting"
+        | "uploading"
+        | "success"
+        | "error"
+        | "cancelled"
+
+      type UploadError = { readonly code: string; readonly message: string }
+
+      type UploadEntry = {
+        readonly ref: string
+        readonly clientName: string
+        readonly clientSize: number
+        readonly clientType: string
+        readonly progress: number
+        readonly status: UploadEntryStatus
+        readonly errors: readonly UploadError[]
+      }
+
+      type UploadHandle = {
+        readonly config: UploadConfig
+        readonly status: UploadStatus
+        readonly entries: readonly UploadEntry[]
+        readonly errors: readonly UploadError[]
+        readonly progress: number
+        readonly isIdle: boolean
+        readonly isSelecting: boolean
+        readonly isUploading: boolean
+        readonly isSuccess: boolean
+        readonly isError: boolean
+        select(files: FileList | File[]): Promise<readonly UploadEntry[]>
+        start(): Promise<void>
+        cancel(entryRef?: string): Promise<void>
+        reset(): Promise<void>
+      }
+
+      type UploadField = {
+        readonly [Type]: { kind: "upload" }
+      }
     """
   end
 
@@ -194,10 +249,19 @@ defmodule Musubi.Codegen.TypeScript do
     ]
   end
 
-  defp render_store_def({module, %{fields: fields, commands: commands}}, indent, root) do
+  defp render_store_def({module, data}, indent, root) do
+    fields = Map.fetch!(data, :fields)
+    commands = Map.fetch!(data, :commands)
+    uploads = Map.get(data, :uploads, [])
+
+    ensure_no_state_upload_collision!(module, fields, uploads)
+
     module_name = full_module_name(module)
     shape_indent = indent <> "  "
     field_lines = render_state_fields(fields, shape_indent <> "  ", root)
+    upload_lines = render_upload_fields(uploads, shape_indent <> "  ")
+
+    body = Enum.join(field_lines ++ upload_lines, "\n")
 
     [
       indent,
@@ -208,7 +272,7 @@ defmodule Musubi.Codegen.TypeScript do
       ",\n",
       shape_indent,
       "{\n",
-      Enum.join(field_lines, "\n"),
+      body,
       "\n",
       shape_indent,
       "},\n",
@@ -217,6 +281,33 @@ defmodule Musubi.Codegen.TypeScript do
       indent,
       ">"
     ]
+  end
+
+  defp render_upload_fields([], _indent), do: []
+
+  defp render_upload_fields(uploads, indent) do
+    Enum.map(uploads, fn upload ->
+      name = upload_name(upload)
+      "#{indent}#{name}: UploadField"
+    end)
+  end
+
+  defp upload_name(%{name: name}) when is_atom(name), do: Atom.to_string(name)
+  defp upload_name(%{name: name}) when is_binary(name), do: name
+
+  defp ensure_no_state_upload_collision!(module, fields, uploads) do
+    field_names = MapSet.new(fields, & &1.name)
+
+    case Enum.find(uploads, fn upload -> MapSet.member?(field_names, upload.name) end) do
+      nil ->
+        :ok
+
+      %{name: name} ->
+        raise ArgumentError,
+              "Musubi TypeScript codegen: upload :#{name} on #{inspect(module)} " <>
+                "collides with a state field of the same name; rename one before " <>
+                "the generator can emit a merged shape"
+    end
   end
 
   defp render_commands_block([], indent, _root), do: [indent, "{}"]

@@ -42,6 +42,7 @@ defmodule Musubi.Page.Server do
   alias Musubi.Socket
   alias Musubi.Stream
   alias Musubi.Telemetry
+  alias Musubi.Upload
 
   @type transport_opts() :: map()
   @type start_arg() ::
@@ -131,6 +132,119 @@ defmodule Musubi.Page.Server do
     GenServer.call(server, {:peek, store_id})
   end
 
+  @typedoc "Result of the `allow_upload` preflight."
+  @type preflight_reply() :: %{
+          required(:ref) => String.t(),
+          required(:config) => %{String.t() => term()},
+          required(:entries) => %{String.t() => map()},
+          required(:errors) => [map()]
+        }
+
+  @doc """
+  Runs the `allow_upload` preflight for `name` on the store at
+  `store_id`. Returns the preflight reply on success.
+
+  Side effects (atomic with the reply): per-entry `{op: add}` ops are
+  enqueued and the next render cycle pushes an envelope carrying them.
+  """
+  @spec allow_upload(GenServer.server(), store_id(), atom(), [map()], module()) ::
+          {:ok, preflight_reply()} | {:error, atom()}
+  def allow_upload(server, store_id, name, entries, endpoint)
+      when is_list(store_id) and is_atom(name) and is_list(entries) and is_atom(endpoint) do
+    GenServer.call(server, {:allow_upload, store_id, name, entries, endpoint})
+  end
+
+  @doc """
+  Cancels a single upload entry by ref. Kills the sub-channel pid if
+  one was registered, and emits `{op: cancel}`.
+  """
+  @spec cancel_upload(GenServer.server(), store_id(), atom(), String.t()) :: :ok
+  def cancel_upload(server, store_id, name, ref)
+      when is_list(store_id) and is_atom(name) and is_binary(ref) do
+    GenServer.call(server, {:cancel_upload, store_id, name, ref})
+  end
+
+  @doc """
+  Reports external-mode progress for an entry. Enqueues `{op: progress}`
+  (and `{op: complete}` when progress hits 100).
+
+  Rejects with `{:error, :wrong_mode}` when the addressed entry is in
+  channel mode — channel-mode progress only flows through the
+  `Musubi.Transport.UploadChannel` chunk path, never through the main
+  channel, so a forged `upload_progress` cannot mark a channel-mode
+  upload complete without bytes.
+  """
+  @spec upload_progress(GenServer.server(), store_id(), atom(), String.t(), non_neg_integer()) ::
+          :ok | {:error, :wrong_mode | :unknown_entry | :unknown_store | :unknown_upload}
+  def upload_progress(server, store_id, name, ref, progress)
+      when is_list(store_id) and is_atom(name) and is_binary(ref) and is_integer(progress) do
+    GenServer.call(server, {:upload_progress, store_id, name, ref, progress})
+  end
+
+  @doc """
+  Reports an external-mode upload failure (e.g. the registered uploader
+  rejected the PUT, the network died mid-upload, or a presigned URL
+  expired). Marks the entry `:error` and enqueues
+  `{op: error, code, message}`.
+
+  Rejects with `{:error, :wrong_mode}` for channel-mode entries — the
+  sub-channel is the source of truth for channel-mode failures via
+  `:upload_channel_error` and a forged client error must not be allowed
+  to short-circuit it.
+  """
+  @spec upload_client_error(
+          GenServer.server(),
+          store_id(),
+          atom(),
+          String.t(),
+          Musubi.Upload.Error.t()
+        ) :: :ok | {:error, :wrong_mode | :unknown_entry | :unknown_store | :unknown_upload}
+  def upload_client_error(server, store_id, name, ref, %Musubi.Upload.Error{} = error)
+      when is_list(store_id) and is_atom(name) and is_binary(ref) do
+    GenServer.call(server, {:upload_client_error, store_id, name, ref, error})
+  end
+
+  @doc """
+  Records a channel-mode chunk write: updates the entry's bytes/progress
+  and enqueues `{op: progress}` (and `{op: complete}` when the file is
+  fully received).
+  """
+  @spec upload_channel_chunk(
+          GenServer.server(),
+          store_id(),
+          atom(),
+          String.t(),
+          non_neg_integer(),
+          boolean()
+        ) :: :ok
+  def upload_channel_chunk(server, store_id, name, ref, bytes_written, complete?)
+      when is_list(store_id) and is_atom(name) and is_binary(ref) and
+             is_integer(bytes_written) and is_boolean(complete?) do
+    GenServer.cast(
+      server,
+      {:upload_channel_chunk, store_id, name, ref, bytes_written, complete?}
+    )
+  end
+
+  @doc """
+  Registers a sub-channel pid and its open temp-file path against the
+  entry so chunk progress can be attributed and subsequent
+  `consume_uploaded_entries/3` callers see a usable `%{path: path}`.
+  """
+  @spec register_upload_channel(
+          GenServer.server(),
+          store_id(),
+          atom(),
+          String.t(),
+          pid(),
+          String.t()
+        ) :: :ok
+  def register_upload_channel(server, store_id, name, ref, channel_pid, path)
+      when is_list(store_id) and is_atom(name) and is_binary(ref) and is_pid(channel_pid) and
+             is_binary(path) do
+    GenServer.cast(server, {:register_upload_channel, store_id, name, ref, channel_pid, path})
+  end
+
   @impl GenServer
   @spec init(start_arg()) ::
           {:ok, State.t(), {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
@@ -174,8 +288,11 @@ defmodule Musubi.Page.Server do
 
     {wire_root, store_table} = root_wire(store_table, root_socket)
     {stream_ops, store_table} = flush_all_stream_ops(store_table)
+    {upload_ops_raw, store_table} = flush_all_upload_ops(store_table)
 
-    envelope = PatchEnvelope.initial(wire_root, stream_ops)
+    {upload_ops, upload_throttle} = throttle_progress(upload_ops_raw, %{})
+
+    envelope = PatchEnvelope.initial(wire_root, stream_ops, upload_ops)
 
     state =
       rebuild_async_index(%State{
@@ -184,12 +301,17 @@ defmodule Musubi.Page.Server do
         store_table: store_table,
         version: 1,
         previous_wire_root: wire_root,
-        transport: transport_opts
+        transport: transport_opts,
+        upload_progress_last_emitted: upload_throttle
       })
 
     Telemetry.emit(
       [:musubi, :patch, :stop],
-      %{count: length(envelope.ops), stream_count: length(envelope.stream_ops)},
+      %{
+        count: length(envelope.ops),
+        stream_count: length(envelope.stream_ops),
+        upload_count: length(envelope.upload_ops)
+      },
       %{module: root_module, version: state.version}
     )
 
@@ -275,6 +397,84 @@ defmodule Musubi.Page.Server do
     end
   end
 
+  def handle_call({:allow_upload, store_id, name, entries, endpoint}, _from, %State{} = state) do
+    case fetch_upload_target(state, store_id, name) do
+      {:ok, %Entry{socket: socket, module: _module} = entry} ->
+        result = Musubi.Upload.Preflight.run(socket, name, entries, endpoint, self(), store_id)
+        next_state = put_entry_by_store_id(state, store_id, %{entry | socket: result.socket})
+        {next_state, envelope} = render_and_envelope(next_state)
+        reply = build_preflight_reply(result, name)
+        {:reply, {:ok, reply}, next_state, {:continue, {:push_patch, envelope}}}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:upload_progress, store_id, name, ref, progress}, _from, %State{} = state) do
+    case fetch_upload_target(state, store_id, name) do
+      {:ok, %Entry{socket: socket}} ->
+        case Musubi.Upload.fetch_entry(socket, name, ref) do
+          {:ok, %Musubi.Upload.Entry{mode: :external}} ->
+            {next_state, envelope} = apply_upload_progress(state, store_id, name, ref, progress)
+            {:reply, :ok, next_state, {:continue, {:push_patch, envelope}}}
+
+          {:ok, %Musubi.Upload.Entry{}} ->
+            # Channel-mode entries can only progress through the
+            # sub-channel chunk pipeline; reject any main-channel forge.
+            {:reply, {:error, :wrong_mode}, state}
+
+          :error ->
+            {:reply, {:error, :unknown_entry}, state}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:upload_client_error, store_id, name, ref, error}, _from, %State{} = state) do
+    case fetch_upload_target(state, store_id, name) do
+      {:ok, %Entry{socket: socket}} ->
+        case Musubi.Upload.fetch_entry(socket, name, ref) do
+          {:ok, %Musubi.Upload.Entry{mode: :external}} ->
+            {next_state, envelope} = apply_upload_error(state, store_id, name, ref, error)
+            {:reply, :ok, next_state, {:continue, {:push_patch, envelope}}}
+
+          {:ok, %Musubi.Upload.Entry{}} ->
+            {:reply, {:error, :wrong_mode}, state}
+
+          :error ->
+            {:reply, {:error, :unknown_entry}, state}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:cancel_upload, store_id, name, ref}, _from, %State{} = state) do
+    case fetch_upload_target(state, store_id, name) do
+      {:ok, %Entry{socket: socket} = entry} ->
+        socket =
+          case Musubi.Upload.fetch_entry(socket, name, ref) do
+            {:ok, upload_entry} ->
+              maybe_kill_upload_channel(upload_entry)
+              Musubi.Upload.cancel_upload(socket, name, ref)
+
+            :error ->
+              socket
+          end
+
+        next_state = put_entry_by_store_id(state, store_id, %{entry | socket: socket})
+        {next_state, envelope} = render_and_envelope(next_state)
+        {:reply, :ok, next_state, {:continue, {:push_patch, envelope}}}
+
+      {:error, _reason} ->
+        {:reply, :ok, state}
+    end
+  end
+
   @spec handle_command_call(store_id(), command_name(), command_payload(), State.t()) ::
           {:reply, {:ok, command_reply()}, State.t(),
            {:continue, {:push_patch, PatchEnvelope.t() | nil}}}
@@ -353,6 +553,45 @@ defmodule Musubi.Page.Server do
     else
       []
     end
+  end
+
+  @impl GenServer
+  def handle_cast(
+        {:upload_channel_chunk, store_id, name, ref, bytes_written, complete?},
+        %State{} = state
+      ) do
+    apply_channel_chunk(state, store_id, name, ref, bytes_written, complete?)
+  end
+
+  def handle_cast(
+        {:register_upload_channel, store_id, name, ref, channel_pid, path},
+        %State{} = state
+      ) do
+    next_state =
+      mutate_upload_socket(state, store_id, fn socket ->
+        Musubi.Upload.update_entry(socket, name, ref, fn entry ->
+          %{entry | upload_channel_pid: channel_pid, path: path}
+        end)
+      end)
+
+    {:noreply, next_state}
+  end
+
+  def handle_cast(
+        {:upload_channel_error, store_id, name, ref, %Musubi.Upload.Error{} = error},
+        %State{} = state
+      ) do
+    next_state =
+      mutate_upload_socket(state, store_id, fn socket ->
+        socket
+        |> Musubi.Upload.update_entry(name, ref, fn entry ->
+          %{entry | status: :error, errors: append_error(entry.errors, error)}
+        end)
+        |> Musubi.Upload.enqueue_error(name, ref, error)
+      end)
+
+    {next_state, envelope} = render_and_envelope(next_state)
+    {:noreply, next_state, {:continue, {:push_patch, envelope}}}
   end
 
   @impl GenServer
@@ -449,6 +688,10 @@ defmodule Musubi.Page.Server do
 
     {wire_root, next_registry} = root_wire(next_registry, next_root_socket)
     {stream_ops, next_registry} = flush_all_stream_ops(next_registry)
+    {upload_ops_raw, next_registry} = flush_all_upload_ops(next_registry)
+
+    {upload_ops, next_throttle} =
+      throttle_progress(upload_ops_raw, state.upload_progress_last_emitted)
 
     diff_ops =
       if wire_root == state.previous_wire_root do
@@ -457,7 +700,7 @@ defmodule Musubi.Page.Server do
         Diff.diff(state.previous_wire_root, wire_root)
       end
 
-    envelope = PatchEnvelope.build(state.version, diff_ops, stream_ops)
+    envelope = PatchEnvelope.build(state.version, diff_ops, stream_ops, upload_ops)
 
     next_version = if envelope, do: envelope.version, else: state.version
 
@@ -467,7 +710,8 @@ defmodule Musubi.Page.Server do
         | root_socket: root_socket(next_registry, next_root_socket),
           store_table: next_registry,
           version: next_version,
-          previous_wire_root: wire_root
+          previous_wire_root: wire_root,
+          upload_progress_last_emitted: next_throttle
       })
 
     {next_state, envelope}
@@ -682,11 +926,16 @@ defmodule Musubi.Page.Server do
       entry =
       lookup_or_raise!(state.store_table, store_id)
 
-    case module.handle_command(command_name, payload, socket) do
+    target_key = Musubi.Upload.command_target_key()
+    handler_socket = Socket.put_private(socket, target_key, true)
+
+    case module.handle_command(command_name, payload, handler_socket) do
       {:noreply, %Socket{} = next_socket} ->
+        next_socket = clear_upload_target(next_socket, target_key)
         {%{}, put_entry(state, store_id, %{entry | socket: next_socket})}
 
       {:reply, reply, %Socket{} = next_socket} when is_map(reply) ->
+        next_socket = clear_upload_target(next_socket, target_key)
         {reply, put_entry(state, store_id, %{entry | socket: next_socket})}
 
       other ->
@@ -694,6 +943,10 @@ defmodule Musubi.Page.Server do
               "bad return from #{inspect(module)}.handle_command/3: expected " <>
                 "{:noreply, socket} or {:reply, payload, socket}, got #{inspect(other)}"
     end
+  end
+
+  defp clear_upload_target(%Socket{} = socket, target_key) do
+    %{socket | private: Map.delete(socket.private, target_key)}
   end
 
   @spec put_entry(State.t(), store_id(), Entry.t()) :: State.t()
@@ -778,6 +1031,276 @@ defmodule Musubi.Page.Server do
       nil ->
         {ops_acc, registry}
     end
+  end
+
+  @spec flush_all_upload_ops(StoreTable.t()) :: {[Upload.op()], StoreTable.t()}
+  defp flush_all_upload_ops(%StoreTable{} = registry) do
+    sorted_keys = registry |> StoreTable.keys() |> Enum.sort_by(&length/1)
+
+    Enum.reduce(sorted_keys, {[], registry}, fn store_id, {acc, reg_acc} ->
+      case StoreTable.get(reg_acc, store_id) do
+        %Entry{socket: socket} = entry ->
+          {ops, next_socket} = Upload.flush_pending_ops(socket)
+          stamped = Enum.map(ops, &Map.put(&1, :store_id, store_id))
+          next_reg = StoreTable.put(reg_acc, store_id, %{entry | socket: next_socket})
+          {acc ++ stamped, next_reg}
+
+        nil ->
+          {acc, reg_acc}
+      end
+    end)
+  end
+
+  # BDR-0025: cap progress-op emission rate per `{store_id, upload, ref}` at
+  # 10 Hz (one emission every 100 ms). Drops intermediate progress ops that
+  # arrive inside the window; non-progress ops bypass the throttle entirely
+  # (a `complete`/`error`/`cancel`/`reset` should never be suppressed).
+  @progress_throttle_ms 100
+
+  # ---------------------------------------------------------------------------
+  # Upload event helpers
+  # ---------------------------------------------------------------------------
+
+  @spec fetch_upload_target(State.t(), store_id(), atom()) ::
+          {:ok, Entry.t()} | {:error, :unknown_store | :unknown_upload}
+  defp fetch_upload_target(%State{store_table: registry}, store_id, name) do
+    case StoreTable.get(registry, store_id) do
+      %Entry{module: module} = entry ->
+        if upload_declared?(module, name) do
+          {:ok, entry}
+        else
+          {:error, :unknown_upload}
+        end
+
+      nil ->
+        {:error, :unknown_store}
+    end
+  end
+
+  defp upload_declared?(module, name) when is_atom(module) and is_atom(name) do
+    if module_exports?(module, :__musubi__, 1) do
+      case module.__musubi__(:upload, name) do
+        {:ok, _config} -> true
+        :error -> false
+      end
+    else
+      false
+    end
+  end
+
+  defp build_preflight_reply(%{accepted: accepted, errors: errors, socket: socket}, name) do
+    config = preflight_config_payload(socket, name)
+
+    entries =
+      accepted
+      |> Enum.map(fn {client_ref, accept_entry} ->
+        {client_ref, encode_accepted_entry(accept_entry)}
+      end)
+      |> Map.new()
+
+    errors_wire =
+      Enum.map(errors, fn %{client_ref: cref, error: err} ->
+        %{"client_ref" => cref, "error" => Musubi.Upload.Error.to_wire(err)}
+      end)
+
+    %{
+      "ref" => Atom.to_string(name),
+      "config" => config,
+      "entries" => entries,
+      "errors" => errors_wire
+    }
+  end
+
+  defp preflight_config_payload(socket, name) do
+    bucket =
+      socket.assigns
+      |> Map.get(Musubi.Upload.assigns_key(), %{})
+      |> Map.get(name)
+
+    case bucket do
+      %{config: %Musubi.Upload.Config{} = config} ->
+        Musubi.Upload.Config.to_wire(config)
+
+      _missing ->
+        fallback_upload_config(socket, name)
+    end
+  end
+
+  defp fallback_upload_config(%Socket{module: nil}, _name), do: %{}
+
+  defp fallback_upload_config(%Socket{module: module}, name) do
+    case module.__musubi__(:upload, name) do
+      {:ok, %Musubi.Upload.Config{} = config} -> Musubi.Upload.Config.to_wire(config)
+      _missing -> %{}
+    end
+  end
+
+  defp encode_accepted_entry(%{type: :channel, entry_ref: ref, token: token}) do
+    %{"type" => "channel", "entry_ref" => ref, "token" => token}
+  end
+
+  defp encode_accepted_entry(%{type: :external, entry_ref: ref, uploader: uploader, meta: meta}) do
+    %{
+      "type" => "external",
+      "entry_ref" => ref,
+      "uploader" => uploader,
+      "meta" => Musubi.Wire.to_wire(meta)
+    }
+  end
+
+  defp apply_upload_progress(state, store_id, name, ref, progress) do
+    next_state =
+      mutate_upload_socket(state, store_id, fn socket ->
+        apply_progress_to_socket(socket, name, ref, progress)
+      end)
+
+    next_state = dispatch_handle_progress(next_state, store_id, name, ref)
+
+    render_and_envelope(next_state)
+  end
+
+  defp apply_upload_error(state, store_id, name, ref, %Musubi.Upload.Error{} = error) do
+    next_state =
+      mutate_upload_socket(state, store_id, fn socket ->
+        socket
+        |> Musubi.Upload.update_entry(name, ref, fn entry ->
+          %{entry | status: :error, errors: append_error(entry.errors, error)}
+        end)
+        |> Musubi.Upload.enqueue_error(name, ref, error)
+      end)
+
+    render_and_envelope(next_state)
+  end
+
+  defp apply_progress_to_socket(socket, name, ref, progress) do
+    socket
+    |> Musubi.Upload.update_entry(name, ref, fn entry ->
+      status = if progress >= 100, do: :success, else: :uploading
+      %{entry | progress: progress, status: status}
+    end)
+    |> Musubi.Upload.enqueue_progress(name, ref, progress)
+    |> maybe_enqueue_complete(name, ref, progress)
+  end
+
+  defp apply_channel_chunk(state, store_id, name, ref, bytes_written, complete?) do
+    next_state =
+      mutate_upload_socket(state, store_id, fn socket ->
+        apply_channel_chunk_to_socket(socket, name, ref, bytes_written, complete?)
+      end)
+
+    next_state = dispatch_handle_progress(next_state, store_id, name, ref)
+
+    {next_state, envelope} = render_and_envelope(next_state)
+    {:noreply, next_state, {:continue, {:push_patch, envelope}}}
+  end
+
+  defp apply_channel_chunk_to_socket(socket, name, ref, bytes_written, complete?) do
+    case Musubi.Upload.fetch_entry(socket, name, ref) do
+      {:ok, entry} ->
+        updated = build_chunked_entry(entry, bytes_written, complete?)
+
+        socket
+        |> Musubi.Upload.put_entry(name, updated)
+        |> Musubi.Upload.enqueue_progress(name, ref, updated.progress)
+        |> maybe_enqueue_complete(name, ref, updated.progress)
+
+      :error ->
+        socket
+    end
+  end
+
+  defp build_chunked_entry(entry, bytes_written, complete?) do
+    total = max(entry.client_size, bytes_written)
+    raw_progress = compute_progress(bytes_written, total)
+    progress = if complete?, do: 100, else: raw_progress
+
+    status =
+      cond do
+        complete? or progress >= 100 -> :success
+        progress > 0 -> :uploading
+        true -> entry.status
+      end
+
+    %{entry | bytes_written: bytes_written, progress: progress, status: status}
+  end
+
+  defp dispatch_handle_progress(%State{} = state, store_id, name, ref) do
+    with %Entry{socket: socket, module: module} = entry <- fetch_entry(state, store_id),
+         true <- module_exports?(module, :handle_progress, 3),
+         {:ok, upload_entry} <- Musubi.Upload.fetch_entry(socket, name, ref) do
+      case module.handle_progress(name, upload_entry, socket) do
+        {:noreply, %Socket{} = next_socket} ->
+          put_entry_by_store_id(state, store_id, %{entry | socket: next_socket})
+
+        other ->
+          raise ArgumentError,
+                "bad return from #{inspect(module)}.handle_progress/3: expected " <>
+                  "{:noreply, socket}, got #{inspect(other)}"
+      end
+    else
+      _missing -> state
+    end
+  end
+
+  defp compute_progress(_bytes, 0), do: 0
+
+  defp compute_progress(bytes, total)
+       when is_integer(bytes) and is_integer(total) and total > 0 do
+    min(div(bytes * 100, total), 100)
+  end
+
+  defp maybe_enqueue_complete(socket, name, ref, 100) do
+    Musubi.Upload.enqueue_complete(socket, name, ref)
+  end
+
+  defp maybe_enqueue_complete(socket, _name, _ref, _progress), do: socket
+
+  defp mutate_upload_socket(%State{store_table: registry} = state, store_id, fun) do
+    case StoreTable.get(registry, store_id) do
+      %Entry{socket: socket} = entry ->
+        next_entry = %{entry | socket: fun.(socket)}
+        put_entry_by_store_id(state, store_id, next_entry)
+
+      nil ->
+        state
+    end
+  end
+
+  defp maybe_kill_upload_channel(%Musubi.Upload.Entry{upload_channel_pid: pid})
+       when is_pid(pid) do
+    if Process.alive?(pid), do: Process.exit(pid, :shutdown)
+    :ok
+  end
+
+  defp maybe_kill_upload_channel(_entry), do: :ok
+
+  @spec throttle_progress([Upload.op()], map()) :: {[Upload.op()], map()}
+  defp throttle_progress(ops, last_emitted) when is_list(ops) and is_map(last_emitted) do
+    now = System.monotonic_time(:millisecond)
+
+    {reversed_kept, next_last} =
+      Enum.reduce(ops, {[], last_emitted}, fn op, acc -> throttle_step(op, acc, now) end)
+
+    {Enum.reverse(reversed_kept), next_last}
+  end
+
+  defp throttle_step(%{op: "progress"} = op, {kept_acc, last_acc}, now) do
+    key = {op.store_id, op.upload, op.ref}
+
+    if progress_due?(Map.get(last_acc, key), now) do
+      {[op | kept_acc], Map.put(last_acc, key, now)}
+    else
+      {kept_acc, last_acc}
+    end
+  end
+
+  defp throttle_step(op, {kept_acc, last_acc}, _now), do: {[op | kept_acc], last_acc}
+
+  defp progress_due?(nil, _now), do: true
+  defp progress_due?(ts, now), do: now - ts >= @progress_throttle_ms
+
+  defp append_error(existing, error) when is_list(existing) do
+    List.insert_at(existing, -1, error)
   end
 
   @spec attach_default_hooks(Socket.t()) :: Socket.t()

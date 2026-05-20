@@ -9,7 +9,7 @@ defmodule Musubi.Codegen.TypeScriptTest do
 
   defp entry(module) do
     data = Manifest.collect(module.__env__())
-    {data.module, Map.take(data, [:kind, :fields, :commands])}
+    {data.module, Map.take(data, [:kind, :fields, :commands, :uploads])}
   end
 
   # Strip leading whitespace from every line so assertions exercise the line
@@ -55,6 +55,61 @@ defmodule Musubi.Codegen.TypeScriptTest do
 
     type AsyncField<Value> = {
       readonly [Type]: { kind: "async"; value: Value }
+    }
+
+    type UploadConfig = {
+      readonly accept: readonly string[] | "any"
+      readonly maxEntries: number
+      readonly maxFileSize: number
+      readonly chunkSize: number
+    }
+
+    type UploadEntryStatus =
+      | "pending"
+      | "uploading"
+      | "success"
+      | "error"
+      | "cancelled"
+
+    type UploadStatus =
+      | "idle"
+      | "selecting"
+      | "uploading"
+      | "success"
+      | "error"
+      | "cancelled"
+
+    type UploadError = { readonly code: string; readonly message: string }
+
+    type UploadEntry = {
+      readonly ref: string
+      readonly clientName: string
+      readonly clientSize: number
+      readonly clientType: string
+      readonly progress: number
+      readonly status: UploadEntryStatus
+      readonly errors: readonly UploadError[]
+    }
+
+    type UploadHandle = {
+      readonly config: UploadConfig
+      readonly status: UploadStatus
+      readonly entries: readonly UploadEntry[]
+      readonly errors: readonly UploadError[]
+      readonly progress: number
+      readonly isIdle: boolean
+      readonly isSelecting: boolean
+      readonly isUploading: boolean
+      readonly isSuccess: boolean
+      readonly isError: boolean
+      select(files: FileList | File[]): Promise<readonly UploadEntry[]>
+      start(): Promise<void>
+      cancel(entryRef?: string): Promise<void>
+      reset(): Promise<void>
+    }
+
+    type UploadField = {
+      readonly [Type]: { kind: "upload" }
     }
 
   """
@@ -186,6 +241,41 @@ defmodule Musubi.Codegen.TypeScriptTest do
 
       assert rendered =~ "declare namespace MyApp {"
       refute rendered =~ "declare namespace Musubi"
+    end
+  end
+
+  describe "render/1 — upload handles" do
+    alias Musubi.TestSupport.TypespecProbeWithUpload
+
+    test "declared uploads emit UploadField fields merged into the store shape" do
+      rendered = TypeScript.render([entry(TypespecProbeWithUpload)])
+
+      assert rendered =~ "avatar_url: string | null"
+      assert rendered =~ "avatar: UploadField"
+      assert rendered =~ "cover: UploadField"
+    end
+
+    test "preamble declares UploadHandle / UploadField shared types" do
+      rendered = TypeScript.render([entry(TypespecProbeWithUpload)])
+
+      assert rendered =~ "type UploadHandle = {"
+      assert rendered =~ "type UploadField = {"
+      assert rendered =~ "kind: \"upload\""
+    end
+
+    test "upload name colliding with a state field raises at generation time" do
+      bad_entry =
+        {Musubi.TestSupport.TypespecProbeWithUpload,
+         %{
+           kind: :store,
+           fields: [%{name: :avatar, type: quote(do: String.t())}],
+           commands: [],
+           uploads: [%Musubi.Upload.Config{name: :avatar, accept: [".png"]}]
+         }}
+
+      assert_raise ArgumentError, ~r/collides with a state field/, fn ->
+        TypeScript.render([bad_entry])
+      end
     end
   end
 end

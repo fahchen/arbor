@@ -6,13 +6,21 @@ import {
   pruneStreams,
   touchedStoreKeys
 } from "./streams"
+import {
+  applyUploadOps,
+  pruneUploads,
+  touchedStoresFromUploadOps,
+  type UploadHandleImpl
+} from "./uploads"
 import type {
   ConnectionPatchEnvelope,
+  ExternalUploader,
   JsonPatchOp,
   PatchEnvelope,
   StoreId,
   StreamEntry,
-  StreamOp
+  StreamOp,
+  UploadOp
 } from "./types"
 import { STORE_ID_KEY, storeIdKey } from "./types"
 
@@ -61,6 +69,7 @@ export interface RootConnection {
   version: number
   storeIndex: Map<string, unknown>
   streams: Map<string, readonly StreamEntry<unknown>[]>
+  uploads: Map<string, UploadHandleImpl>
   proxyCache: Map<string, unknown>
   snapshotCache: Map<string, unknown>
   storeListeners: Map<string, Set<() => void>>
@@ -74,6 +83,7 @@ export interface ConnectionState {
   readonly socket: SocketLike
   readonly topic: string
   readonly roots: Map<string, RootConnection>
+  readonly uploaders: Record<string, ExternalUploader>
 
   channel: ChannelLike | undefined
   channelGeneration: number
@@ -103,6 +113,7 @@ export function getSharedRuntime(socket: SocketLike): SharedRuntime {
 
 export interface OpenConnectionOptions {
   topic?: string
+  uploaders?: Record<string, ExternalUploader>
 }
 
 export interface MountConnectionRootOptions {
@@ -127,6 +138,7 @@ export function openConnectionState(
     socket,
     topic,
     roots: new Map(),
+    uploaders: options.uploaders ?? {},
     channel: undefined,
     channelGeneration: 0,
     connectPromise: null,
@@ -169,6 +181,7 @@ export function mountConnectionRoot(
     version: 0,
     storeIndex: new Map(),
     streams: new Map(),
+    uploads: new Map(),
     proxyCache: new Map(),
     snapshotCache: new Map(),
     storeListeners: new Map(),
@@ -506,6 +519,8 @@ function acceptEnvelope(
   const previousStoreIndex = connection.storeIndex
   const previousStreams = connection.streams
   const streamTouched = touchedStoreKeys(envelope.stream_ops)
+  const uploadOps: UploadOp[] = envelope.upload_ops ?? []
+  const uploadTouched = touchedStoresFromUploadOps(uploadOps)
 
   const nextRoot = applyPatch(connection.root, envelope.ops)
   const nextStoreIndex = buildStoreIndex(nextRoot)
@@ -518,6 +533,8 @@ function acceptEnvelope(
   connection.root = nextRoot
   connection.storeIndex = nextStoreIndex
   connection.streams = nextStreams
+  applyUploadOps(connection, uploadOps)
+  pruneUploads(connection.uploads, validStoreIds)
   invalidateSnapshotsForOps(
     connection.snapshotCache,
     envelope.ops,
@@ -535,7 +552,7 @@ function acceptEnvelope(
     }
   }
 
-  notifySubscribers(connection, previousStoreIndex, previousStreams, streamTouched)
+  notifySubscribers(connection, previousStoreIndex, previousStreams, streamTouched, uploadTouched)
 
   if (isInitial) {
     connection.pendingConnect?.resolve()
@@ -570,7 +587,8 @@ function notifySubscribers(
   connection: RootConnection,
   previousStoreIndex: ReadonlyMap<string, unknown>,
   previousStreams: ReadonlyMap<string, readonly StreamEntry<unknown>[]>,
-  streamTouched: ReadonlySet<string>
+  streamTouched: ReadonlySet<string>,
+  uploadTouched: ReadonlySet<string>
 ): void {
   for (const [key, listeners] of connection.storeListeners) {
     const storeChanged = !Object.is(
@@ -582,7 +600,9 @@ function notifySubscribers(
       streamTouched.has(key) ||
       hasPrunedStreamForStore(previousStreams, connection.streams, key)
 
-    if (!storeChanged && !streamChanged) {
+    const uploadChanged = uploadTouched.has(key)
+
+    if (!storeChanged && !streamChanged && !uploadChanged) {
       continue
     }
 

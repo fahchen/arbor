@@ -30,15 +30,20 @@ defmodule Musubi.DSL.State do
 
         # Drop the facade's runtime `stream/3,4` and `stream_async/3,4` for
         # the `state do` block so they cannot collide with the field-declaration
-        # macros below.
-        import Musubi.Store, except: [stream: 3, stream: 4, stream_async: 3, stream_async: 4]
+        # macros below. Also drop the top-level `upload/2` so the override
+        # below can raise a contextual compile error.
+        import Musubi.Store,
+          except: [stream: 3, stream: 4, stream_async: 3, stream_async: 4]
+
+        import Musubi.DSL.Upload, only: []
 
         import Musubi.DSL.State,
           only: [
             stream: 2,
             stream: 3,
             stream_async: 2,
-            stream_async: 3
+            stream_async: 3,
+            upload: 2
           ]
 
         unquote(block)
@@ -170,5 +175,14 @@ defmodule Musubi.DSL.State do
         unquote(opts)
       )
     end
+  end
+
+  @doc """
+  Raises at compile time. Uploads are declared at the top level of a
+  store module, not inside `state do` / `field` / `stream` blocks.
+  """
+  @spec upload(atom(), Macro.t()) :: no_return()
+  defmacro upload(name, _opts_or_block) when is_atom(name) do
+    Musubi.DSL.Upload.__forbid_inside_state__(name, __CALLER__)
   end
 end

@@ -114,6 +114,66 @@ defmodule Musubi.Transport.ConnectionChannel do
     end
   end
 
+  def handle_in("allow_upload", payload, %Phoenix.Socket{} = socket) when is_map(payload) do
+    with {:ok, root_id} <- fetch_string(payload, "root_id"),
+         {:ok, name_str} <- fetch_string(payload, "name"),
+         {:ok, page_pid} <- fetch_root_pid(socket, root_id),
+         store_id <- normalize_store_id(Map.get(payload, "store_id", [])),
+         {:ok, name} <- resolve_upload_name_at(page_pid, store_id, name_str),
+         entries <- Map.get(payload, "entries", []),
+         endpoint <- socket.endpoint,
+         {:ok, reply} <-
+           Server.allow_upload(page_pid, store_id, name, List.wrap(entries), endpoint) do
+      {:reply, {:ok, reply}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{reason: error_reason(reason)}}, socket}
+    end
+  end
+
+  def handle_in("cancel_upload", payload, %Phoenix.Socket{} = socket) when is_map(payload) do
+    with {:ok, root_id} <- fetch_string(payload, "root_id"),
+         {:ok, name_str} <- fetch_string(payload, "name"),
+         {:ok, ref} <- fetch_string(payload, "ref"),
+         {:ok, page_pid} <- fetch_root_pid(socket, root_id),
+         store_id <- normalize_store_id(Map.get(payload, "store_id", [])),
+         {:ok, name} <- resolve_upload_name_at(page_pid, store_id, name_str),
+         :ok <- Server.cancel_upload(page_pid, store_id, name, ref) do
+      {:reply, {:ok, %{}}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{reason: error_reason(reason)}}, socket}
+    end
+  end
+
+  def handle_in("upload_error", payload, %Phoenix.Socket{} = socket) when is_map(payload) do
+    with {:ok, root_id} <- fetch_string(payload, "root_id"),
+         {:ok, name_str} <- fetch_string(payload, "name"),
+         {:ok, ref} <- fetch_string(payload, "ref"),
+         {:ok, page_pid} <- fetch_root_pid(socket, root_id),
+         store_id <- normalize_store_id(Map.get(payload, "store_id", [])),
+         {:ok, name} <- resolve_upload_name_at(page_pid, store_id, name_str),
+         error <- build_client_error(payload),
+         :ok <- Server.upload_client_error(page_pid, store_id, name, ref, error) do
+      {:reply, {:ok, %{}}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{reason: error_reason(reason)}}, socket}
+    end
+  end
+
+  def handle_in("upload_progress", payload, %Phoenix.Socket{} = socket) when is_map(payload) do
+    with {:ok, root_id} <- fetch_string(payload, "root_id"),
+         {:ok, name_str} <- fetch_string(payload, "name"),
+         {:ok, ref} <- fetch_string(payload, "ref"),
+         {:ok, page_pid} <- fetch_root_pid(socket, root_id),
+         store_id <- normalize_store_id(Map.get(payload, "store_id", [])),
+         {:ok, name} <- resolve_upload_name_at(page_pid, store_id, name_str),
+         progress <- normalize_progress(payload),
+         :ok <- Server.upload_progress(page_pid, store_id, name, ref, progress) do
+      {:reply, {:ok, %{}}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{reason: error_reason(reason)}}, socket}
+    end
+  end
+
   @impl Phoenix.Channel
   @spec handle_info({:musubi_root_patch, String.t(), PatchEnvelope.t()}, Phoenix.Socket.t()) ::
           {:noreply, Phoenix.Socket.t()}
@@ -305,6 +365,65 @@ defmodule Musubi.Transport.ConnectionChannel do
           | :unknown_root
           | :unknown_store
         ) :: String.t()
+  @spec resolve_upload_name_at(pid(), [String.t()], String.t()) ::
+          {:ok, atom()} | {:error, :unknown_store | :unknown_upload}
+  defp resolve_upload_name_at(page_pid, store_id, name_str)
+       when is_pid(page_pid) and is_list(store_id) and is_binary(name_str) do
+    case Server.peek(page_pid, store_id) do
+      {:ok, %{module: module}} ->
+        uploads = List.wrap(module.__musubi__(:uploads))
+
+        case Enum.find(uploads, &(Atom.to_string(&1.name) == name_str)) do
+          %{name: name} -> {:ok, name}
+          nil -> {:error, :unknown_upload}
+        end
+
+      {:error, :not_mounted} ->
+        {:error, :unknown_store}
+    end
+  end
+
+  @spec normalize_store_id(term()) :: [String.t()]
+  defp normalize_store_id(list) when is_list(list) do
+    Enum.map(list, &to_string/1)
+  end
+
+  defp normalize_store_id(_other), do: []
+
+  @spec normalize_progress(map()) :: non_neg_integer()
+  defp normalize_progress(payload) when is_map(payload) do
+    case Map.get(payload, "progress") do
+      n when is_integer(n) and n >= 0 -> min(n, 100)
+      _other -> 0
+    end
+  end
+
+  # Wire payload shape: `%{"code" => "external_failed", "message" => "..."}`.
+  # Unknown codes degrade to `:external_failed` so the server controls the
+  # `Musubi.Upload.Error.code()` union and a malicious client cannot inject
+  # arbitrary atoms.
+  @spec build_client_error(map()) :: Musubi.Upload.Error.t()
+  defp build_client_error(payload) when is_map(payload) do
+    code = parse_client_error_code(Map.get(payload, "code"))
+
+    case Map.get(payload, "message") do
+      message when is_binary(message) and message != "" -> Musubi.Upload.Error.new(code, message)
+      _other -> Musubi.Upload.Error.new(code)
+    end
+  end
+
+  @allowed_client_error_codes ~w(external_failed)
+
+  defp parse_client_error_code(code) when is_binary(code) do
+    if code in @allowed_client_error_codes do
+      String.to_existing_atom(code)
+    else
+      :external_failed
+    end
+  end
+
+  defp parse_client_error_code(_other), do: :external_failed
+
   defp error_reason(:already_mounted), do: "root already mounted"
   defp error_reason(:invalid_params), do: "params must be a map"
   defp error_reason(:missing_field), do: "missing required field"
@@ -316,4 +435,5 @@ defmodule Musubi.Transport.ConnectionChannel do
   defp error_reason(:unknown_command), do: "unknown command"
   defp error_reason(:unknown_root), do: "unknown root"
   defp error_reason(:unknown_store), do: "unknown store"
+  defp error_reason(:unknown_upload), do: "unknown upload"
 end

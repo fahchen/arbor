@@ -45,7 +45,7 @@ type StoreDefMarker<T> = Extract<
 
 type FieldMarker<T> = Extract<
   SymbolMarker<T>,
-  { readonly kind: "store" | "stream" | "async" }
+  { readonly kind: "store" | "stream" | "async" | "upload" }
 >
 
 export type ShapeOf<M extends StoreModule<R>, R> =
@@ -80,7 +80,7 @@ export type CommandReply<
 // Snapshot and proxy projection (symbol-branded generated marker matching)
 // ---------------------------------------------------------------------------
 
-type FieldMarkerOfKind<T, Kind extends "store" | "stream" | "async"> = Extract<
+type FieldMarkerOfKind<T, Kind extends "store" | "stream" | "async" | "upload"> = Extract<
   FieldMarker<T>,
   { readonly kind: Kind }
 >
@@ -88,6 +88,7 @@ type FieldMarkerOfKind<T, Kind extends "store" | "stream" | "async"> = Extract<
 type IsStoreField<T> = [FieldMarkerOfKind<T, "store">] extends [never] ? false : true
 type IsStreamField<T> = [FieldMarkerOfKind<T, "stream">] extends [never] ? false : true
 type IsAsyncField<T> = [FieldMarkerOfKind<T, "async">] extends [never] ? false : true
+type IsUploadField<T> = [FieldMarkerOfKind<T, "upload">] extends [never] ? false : true
 
 type StoreFieldModule<T> =
   [FieldMarkerOfKind<T, "store">] extends [never]
@@ -120,15 +121,17 @@ export type SnapshotValue<T, R> =
         ? StoreSnapshot<M, R>
         : never
       : never
-    : IsAsyncField<T> extends true
-      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
-      : IsStreamField<T> extends true
-        ? SnapshotValue<StreamFieldItem<T>, R>[]
-        : T extends readonly (infer U)[]
-          ? SnapshotValue<U, R>[]
-          : T extends object
-            ? { [K in keyof T]: SnapshotValue<T[K], R> }
-            : T
+    : IsUploadField<T> extends true
+      ? UploadHandle
+      : IsAsyncField<T> extends true
+        ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
+        : IsStreamField<T> extends true
+          ? SnapshotValue<StreamFieldItem<T>, R>[]
+          : T extends readonly (infer U)[]
+            ? SnapshotValue<U, R>[]
+            : T extends object
+              ? { [K in keyof T]: SnapshotValue<T[K], R> }
+              : T
 
 export type StoreSnapshot<M extends StoreModule<R>, R> = {
   readonly __musubi_store_id__: StoreId
@@ -143,15 +146,17 @@ export type ProxyValue<T, R> =
         ? StoreProxy<M, R>
         : never
       : never
-    : IsAsyncField<T> extends true
-      ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
-      : IsStreamField<T> extends true
-        ? SnapshotValue<StreamFieldItem<T>, R>[]
-        : T extends readonly (infer U)[]
-          ? ProxyValue<U, R>[]
-          : T extends object
-            ? { [K in keyof T]: ProxyValue<T[K], R> }
-            : T
+    : IsUploadField<T> extends true
+      ? UploadHandle
+      : IsAsyncField<T> extends true
+        ? AsyncResult<SnapshotAsyncValue<AsyncFieldValue<T>, R>>
+        : IsStreamField<T> extends true
+          ? SnapshotValue<StreamFieldItem<T>, R>[]
+          : T extends readonly (infer U)[]
+            ? ProxyValue<U, R>[]
+            : T extends object
+              ? { [K in keyof T]: ProxyValue<T[K], R> }
+              : T
 
 export interface StoreRuntime<M extends StoreModule<R>, R> {
   readonly __musubi_store_id__: StoreId
@@ -179,6 +184,132 @@ export type StreamEntry<T> = {
 export type WireStreamMarker = {
   __musubi_stream__: string
 }
+
+export type WireUploadMarker = {
+  __musubi_upload__: string
+}
+
+export type UploadStatus =
+  | "idle"
+  | "selecting"
+  | "uploading"
+  | "success"
+  | "error"
+  | "cancelled"
+
+export type EntryStatus =
+  | "pending"
+  | "uploading"
+  | "success"
+  | "error"
+  | "cancelled"
+
+export interface UploadError {
+  code:
+    | "too_large"
+    | "too_many_files"
+    | "not_accepted"
+    | "chunk_timeout"
+    | "external_failed"
+    | "preflight_rejected"
+    | (string & {})
+  message: string
+}
+
+export interface UploadEntry {
+  ref: string
+  clientName: string
+  clientSize: number
+  clientType: string
+  progress: number
+  status: EntryStatus
+  errors: UploadError[]
+  readonly isPending: boolean
+  readonly isUploading: boolean
+  readonly isSuccess: boolean
+  readonly isError: boolean
+  readonly isCancelled: boolean
+}
+
+export interface UploadConfig {
+  accept: string[] | "any"
+  maxEntries: number
+  maxFileSize: number
+  chunkSize: number
+}
+
+export interface UploadHandle {
+  readonly config: UploadConfig
+  readonly status: UploadStatus
+  readonly entries: readonly UploadEntry[]
+  readonly errors: readonly UploadError[]
+  readonly progress: number
+  readonly isIdle: boolean
+  readonly isSelecting: boolean
+  readonly isUploading: boolean
+  readonly isSuccess: boolean
+  readonly isError: boolean
+  select(files: FileList | File[]): Promise<readonly UploadEntry[]>
+  start(): Promise<void>
+  cancel(entryRef?: string): Promise<void>
+  reset(): Promise<void>
+}
+
+export interface ExternalUploaderArgs {
+  entry: UploadEntry
+  file: File
+  meta: unknown
+  onProgress: (pct: number) => void
+  signal: AbortSignal
+}
+
+export type ExternalUploader = (args: ExternalUploaderArgs) => Promise<void>
+
+// Wire shapes for upload_ops
+export type UploadOp =
+  | {
+      op: "config"
+      upload: string
+      store_id: StoreId
+      config: {
+        accept: string[] | "any"
+        max_entries: number
+        max_file_size: number
+        chunk_size: number
+      }
+    }
+  | {
+      op: "add"
+      upload: string
+      store_id: StoreId
+      ref: string
+      entry: {
+        ref: string
+        client_name: string
+        client_size: number
+        client_type: string
+        progress: number
+        status: EntryStatus
+        errors: UploadError[]
+      }
+    }
+  | {
+      op: "progress"
+      upload: string
+      store_id: StoreId
+      ref: string
+      progress: number
+    }
+  | { op: "complete"; upload: string; store_id: StoreId; ref: string }
+  | {
+      op: "error"
+      upload: string
+      store_id: StoreId
+      ref?: string
+      error: UploadError
+    }
+  | { op: "cancel"; upload: string; store_id: StoreId; ref: string }
+  | { op: "reset"; upload: string; store_id: StoreId }
 
 export type JsonPatchOp =
   | { op: "add"; path: string; value: unknown }
@@ -211,6 +342,7 @@ export type PatchEnvelope = {
   version: number
   ops: JsonPatchOp[]
   stream_ops: StreamOp[]
+  upload_ops: UploadOp[]
 }
 
 export type ConnectionPatchEnvelope = PatchEnvelope & {
@@ -232,6 +364,13 @@ export type WireAsyncResult<T = unknown> =
 
 export const STORE_ID_KEY = "__musubi_store_id__" as const
 export const STREAM_MARKER_KEY = "__musubi_stream__" as const
+export const UPLOAD_MARKER_KEY = "__musubi_upload__" as const
+
+const UPLOAD_KEY_SEP = "\0"
+
+export function uploadStoreKey(storeId: StoreId, uploadName: string): string {
+  return `${storeIdKey(storeId)}${UPLOAD_KEY_SEP}${uploadName}`
+}
 
 export function storeIdKey(storeId: StoreId): string {
   return JSON.stringify(storeId)
