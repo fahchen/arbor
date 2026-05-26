@@ -9,9 +9,12 @@ defmodule Musubi.Hooks.ValidateReplySchema do
   `:before_command` stage; that stamp remains in place across the
   handler and `:after_command` stages, so this hook reuses it.
 
-  Validation walks each declared reply field, checks presence (string
-  or atom key), and dispatches to `Musubi.Type.valid?/3`. Any mismatch
-  raises `ArgumentError` per BDR-0003.
+  The reply is converted to wire form once via `Musubi.Wire.to_wire/1`
+  — the same whole-map shape the client receives — and validation walks
+  each declared reply field against that wire map, dispatching to
+  `Musubi.Type.valid?/3` (which expects wire form). Any mismatch raises
+  `ArgumentError` per BDR-0003. The raw `reply` argument is left
+  untouched so user `:after_command` hooks still observe it.
 
   Successful validation emits `[:musubi, :validate, :reply, :stop]`.
 
@@ -26,6 +29,7 @@ defmodule Musubi.Hooks.ValidateReplySchema do
   alias Musubi.Hooks.ValidateCommandSchema
   alias Musubi.Socket
   alias Musubi.Type
+  alias Musubi.Wire
 
   @typedoc "Field-level validation error: `{field_name, message}`."
   @type validation_error() :: {atom(), String.t()}
@@ -45,7 +49,7 @@ defmodule Musubi.Hooks.ValidateReplySchema do
         {:cont, socket}
 
       {:ok, %{reply_fields: fields}} ->
-        validate_fields!(target_module, command_name, fields, reply)
+        validate_fields!(target_module, command_name, fields, Wire.to_wire(reply))
         emit_stop(target_module, command_name)
         {:cont, socket}
     end
@@ -97,12 +101,11 @@ defmodule Musubi.Hooks.ValidateReplySchema do
     end
   end
 
+  # `reply` is the wire-form map (string keys); declared field names are
+  # atoms, so fetch by the field's wire-form string key.
   @spec fetch_field(map(), atom()) :: {:ok, term()} | :error
   defp fetch_field(reply, name) when is_atom(name) do
-    case Map.fetch(reply, name) do
-      {:ok, value} -> {:ok, value}
-      :error -> Map.fetch(reply, Atom.to_string(name))
-    end
+    Map.fetch(reply, Atom.to_string(name))
   end
 
   @spec format_errors(module(), atom(), [validation_error()]) :: String.t()

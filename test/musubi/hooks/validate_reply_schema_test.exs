@@ -26,6 +26,18 @@ defmodule Musubi.Hooks.ValidateReplySchemaTest do
       end
     end
 
+    command :status_reply do
+      reply do
+        field :status, :active
+      end
+    end
+
+    command :nested_reply do
+      reply do
+        field :meta, %{count: integer()}
+      end
+    end
+
     @impl Musubi.Store
     def mount(socket), do: {:ok, socket}
     @impl Musubi.Store
@@ -100,6 +112,30 @@ defmodule Musubi.Hooks.ValidateReplySchemaTest do
                  :with_reply,
                  %{},
                  %{ok: true, name: "Alice"},
+                 socket
+               )
+    end
+
+    test "validates atom-valued reply against its wire-form string" do
+      socket = host_socket_targeting(TargetStore)
+
+      assert {:cont, ^socket} =
+               ValidateReplySchema.after_command(
+                 :status_reply,
+                 %{},
+                 %{status: :active},
+                 socket
+               )
+    end
+
+    test "validates a nested atom-keyed reply against its wire-form shape" do
+      socket = host_socket_targeting(TargetStore)
+
+      assert {:cont, ^socket} =
+               ValidateReplySchema.after_command(
+                 :nested_reply,
+                 %{},
+                 %{meta: %{count: 3}},
                  socket
                )
     end
