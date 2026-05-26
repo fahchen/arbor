@@ -666,12 +666,13 @@ defmodule Musubi.Page.Server do
   # Command pipeline + render
   # ---------------------------------------------------------------------------
 
-  # Single client-bound reply seam. Both the handler reply and any
+  # Single client-bound reply seam. The handler reply and any
   # `:before_command` halt reply are normalized through `Musubi.Wire` here
-  # so the client receives the same wire form as rendered state. The raw
-  # reply flowed through `:after_command` hooks and the `:auth, :deny`
-  # telemetry inside `run_command_pipeline`, so user hooks and observability
-  # still see the handler's original Elixir term.
+  # so the client receives the same wire form as rendered state. The raw,
+  # un-wired reply is what observability sees: handler replies pass through
+  # `:after_command` hooks; halt replies surface only in the
+  # `[:musubi, :auth, :deny]` telemetry inside `run_command_pipeline` — so
+  # user hooks and operators still see the handler's original Elixir term.
   @spec run_command_with_render(store_id(), atom(), command_payload(), State.t()) ::
           {:ok | :halted, command_reply(), State.t(), PatchEnvelope.t() | nil}
   defp run_command_with_render(store_id, command_name, payload, %State{} = state) do
