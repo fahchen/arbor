@@ -11,6 +11,22 @@ not in lockstep yet; entries note which surface they affect.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-26
+
+### Changed
+
+- Command replies now serialize through `Musubi.Wire` (#57). Replies match
+  the wire shape the client receives (string keys, stringified atoms), and
+  schema validation runs against that form — fixing atom-valued and nested
+  reply-field validation. `:after_command` hooks and `[:musubi, :auth,
+  :deny]` telemetry still see the raw reply (atom keys/values).
+
+### Added
+
+- `Musubi.Wire` support for `DateTime`/`NaiveDateTime`/`Date`/`Time`
+  (ISO8601) and `URI` (string) (#57). `MapSet`, `Decimal`, and tuples stay
+  unhandled and raise `Protocol.UndefinedError` — convert first.
+
 ## [0.3.0] — 2026-05-20
 
 ### Added
@@ -106,7 +122,8 @@ Initial public release of the Musubi runtime (then `Arbor`):
 - TypeScript client and React adapter that materialize the diff stream
   into immutable snapshots.
 
-[Unreleased]: https://github.com/fahchen/musubi/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/fahchen/musubi/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/fahchen/musubi/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fahchen/musubi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fahchen/musubi/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fahchen/musubi/releases/tag/v0.1.0
