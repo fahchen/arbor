@@ -113,8 +113,8 @@ defmodule Musubi.Upload.HelpersTest do
 
     {:ok, reply} = Musubi.Testing.dispatch_command(page, :peek, %{})
 
-    assert length(reply.completed) == 2
-    assert reply.in_progress == []
+    assert length(reply["completed"]) == 2
+    assert reply["in_progress"] == []
     stop_page(page)
   end
 
@@ -123,7 +123,7 @@ defmodule Musubi.Upload.HelpersTest do
 
     {:ok, reply} = Musubi.Testing.dispatch_command(page, :consume, %{})
 
-    assert length(reply.urls) == 2
+    assert length(reply["urls"]) == 2
 
     assert_receive {:patch, envelope}
     assert Enum.any?(envelope.upload_ops, fn op -> op.op == "reset" and op.upload == "avatar" end)
@@ -153,7 +153,7 @@ defmodule Musubi.Upload.HelpersTest do
     {:ok, reply} = Musubi.Testing.dispatch_command(page, :consume, %{})
 
     refute File.exists?(path), "consume should remove the temp file"
-    assert length(reply.urls) == 1
+    assert length(reply["urls"]) == 1
     stop_page(page)
   end
 

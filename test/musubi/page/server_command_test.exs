@@ -294,6 +294,42 @@ defmodule Musubi.Page.ServerCommandTest do
     end
   end
 
+  defmodule WireReplyStore do
+    @moduledoc false
+    use Musubi.Store
+
+    state do
+      field :ok, boolean()
+    end
+
+    command :atom_keyed
+    command :atom_valued
+    command :nested
+    command :already_wire
+
+    @impl Musubi.Store
+    def mount(socket), do: {:ok, Musubi.Socket.assign(socket, :ok, true)}
+    @impl Musubi.Store
+    def render(socket), do: %{ok: socket.assigns.ok}
+
+    @impl Musubi.Store
+    def handle_command(:atom_keyed, _payload, socket) do
+      {:reply, %{selected: "abc"}, socket}
+    end
+
+    def handle_command(:atom_valued, _payload, socket) do
+      {:reply, %{status: :active}, socket}
+    end
+
+    def handle_command(:nested, _payload, socket) do
+      {:reply, %{meta: %{count: 3, tags: [:a, :b]}}, socket}
+    end
+
+    def handle_command(:already_wire, _payload, socket) do
+      {:reply, %{"ok" => true}, socket}
+    end
+  end
+
   setup do
     Process.flag(:trap_exit, true)
     :ok
@@ -303,7 +339,7 @@ defmodule Musubi.Page.ServerCommandTest do
     test "dispatches the command to the root handler and returns the reply" do
       pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
 
-      assert {:ok, %{reloaded: true}} = Server.command(pid, [], :reload_products, %{})
+      assert {:ok, %{"reloaded" => true}} = Server.command(pid, [], :reload_products, %{})
     end
   end
 
@@ -324,10 +360,10 @@ defmodule Musubi.Page.ServerCommandTest do
     test "dispatches the command to the matching child store handler" do
       pid = start_supervised!({Server, {ProductsListStore, %{}, %{transport_pid: self()}}})
 
-      assert {:ok, %{selected: "prod_123"}} =
+      assert {:ok, %{"selected" => "prod_123"}} =
                Server.command(pid, ["products", "prod_123"], :select, %{})
 
-      assert {:ok, %{selected: "prod_456"}} =
+      assert {:ok, %{"selected" => "prod_456"}} =
                Server.command(pid, ["products", "prod_456"], :select, %{})
     end
   end
@@ -385,7 +421,7 @@ defmodule Musubi.Page.ServerCommandTest do
       pid =
         start_supervised!({Server, {HaltingStore, %{test_pid: self()}, %{transport_pid: self()}}})
 
-      assert {:ok, %{ok: false, reason: "unauthorized"}} =
+      assert {:ok, %{"ok" => false, "reason" => "unauthorized"}} =
                Server.command(pid, [], :restricted, %{})
 
       refute_received :handler_should_not_run
@@ -416,7 +452,7 @@ defmodule Musubi.Page.ServerCommandTest do
     test "the client receives the handler's reply payload" do
       pid = start_supervised!({Server, {RootStore, %{}, %{transport_pid: self()}}})
 
-      assert {:ok, %{selected: "abc"}} =
+      assert {:ok, %{"selected" => "abc"}} =
                Server.command(pid, ["leaf"], :select, %{"id" => "abc"})
     end
   end
@@ -426,6 +462,33 @@ defmodule Musubi.Page.ServerCommandTest do
       pid = start_supervised!({Server, {TypedReplyStore, %{}, %{transport_pid: self()}}})
 
       assert {:ok, %{"ok" => true}} = Server.command(pid, [], :ok_reply, %{})
+    end
+  end
+
+  describe "Scenario: Command replies are returned in wire form" do
+    test "atom keys become string keys" do
+      pid = start_supervised!({Server, {WireReplyStore, %{}, %{transport_pid: self()}}})
+
+      assert {:ok, %{"selected" => "abc"}} = Server.command(pid, [], :atom_keyed, %{})
+    end
+
+    test "atom values become their wire-form strings" do
+      pid = start_supervised!({Server, {WireReplyStore, %{}, %{transport_pid: self()}}})
+
+      assert {:ok, %{"status" => "active"}} = Server.command(pid, [], :atom_valued, %{})
+    end
+
+    test "nested values are recursively wired" do
+      pid = start_supervised!({Server, {WireReplyStore, %{}, %{transport_pid: self()}}})
+
+      assert {:ok, %{"meta" => %{"count" => 3, "tags" => ["a", "b"]}}} =
+               Server.command(pid, [], :nested, %{})
+    end
+
+    test "already-wire replies pass through unchanged (idempotent)" do
+      pid = start_supervised!({Server, {WireReplyStore, %{}, %{transport_pid: self()}}})
+
+      assert {:ok, %{"ok" => true}} = Server.command(pid, [], :already_wire, %{})
     end
   end
 
