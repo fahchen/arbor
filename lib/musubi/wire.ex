@@ -8,9 +8,16 @@ defprotocol Musubi.Wire do
     * atoms (other than `nil`/`true`/`false`) into strings,
     * atom map keys into string keys,
     * structs into plain maps via deriving (recursing on field values),
-    * lists by recursing element-wise.
+    * lists by recursing element-wise,
+    * `DateTime`/`NaiveDateTime`/`Date`/`Time` into ISO8601 strings,
+    * `URI` into its string form.
 
   Scalars (binaries, integers, floats, booleans, `nil`) pass through unchanged.
+
+  Types without a `Musubi.Wire` implementation (e.g. tuples, `MapSet`,
+  `Decimal`, or undecorated structs) raise `Protocol.UndefinedError`;
+  convert them to a wire-safe shape before returning them from a render
+  or command reply.
 
   Auto-derive: `Musubi.State.__using__/1` and `Musubi.Store.__using__/1` add
   `@derive Musubi.Wire`, so user-defined store and state structs serialize
@@ -95,6 +102,26 @@ defimpl Musubi.Wire, for: Map do
       {Musubi.Wire.Encoder.key_to_wire(key), Musubi.Wire.to_wire(value)}
     end)
   end
+end
+
+defimpl Musubi.Wire, for: DateTime do
+  def to_wire(value), do: DateTime.to_iso8601(value)
+end
+
+defimpl Musubi.Wire, for: NaiveDateTime do
+  def to_wire(value), do: NaiveDateTime.to_iso8601(value)
+end
+
+defimpl Musubi.Wire, for: Date do
+  def to_wire(value), do: Date.to_iso8601(value)
+end
+
+defimpl Musubi.Wire, for: Time do
+  def to_wire(value), do: Time.to_iso8601(value)
+end
+
+defimpl Musubi.Wire, for: URI do
+  def to_wire(value), do: URI.to_string(value)
 end
 
 defimpl Musubi.Wire, for: Musubi.Child do
