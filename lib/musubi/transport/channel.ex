@@ -79,6 +79,7 @@ defmodule Musubi.Transport.Channel do
   alias Musubi.Page.PatchEnvelope
   alias Musubi.Page.Server
   alias Musubi.Telemetry
+  alias Musubi.Wire
 
   @doc false
   defmacro __using__(opts) do
@@ -166,7 +167,7 @@ defmodule Musubi.Transport.Channel do
            name,
            Map.get(payload, "payload", %{})
          ) do
-      {:ok, reply} -> {:reply, {:ok, reply}, socket}
+      {:ok, reply} -> {:reply, {:ok, Wire.to_wire(reply)}, socket}
       {:error, reason} -> {:reply, {:error, %{reason: error_reason(reason)}}, socket}
     end
   end

@@ -29,6 +29,8 @@ defmodule Musubi.TestingTest do
       end
     end
 
+    command :pick
+
     @impl Musubi.Store
     def mount(_params, socket) do
       socket =
@@ -55,6 +57,10 @@ defmodule Musubi.TestingTest do
 
     def handle_command(:declare, %{"winner" => "p2"}, socket) do
       {:reply, %{"ok" => true}, Musubi.Socket.assign(socket, :winner, :p2)}
+    end
+
+    def handle_command(:pick, _payload, socket) do
+      {:reply, %{status: :ok, winner: :p1}, socket}
     end
   end
 
@@ -107,6 +113,15 @@ defmodule Musubi.TestingTest do
 
       assert {:ok, %{"ok" => true}} =
                Musubi.Testing.dispatch_command(page, :bump, %{"by" => 1})
+    end
+
+    test "returns the reply in native Elixir shape (symmetric with render/2)" do
+      page = Musubi.Testing.mount(SimpleStore)
+
+      # Native atom keys and atom values come back as-is — no wire artifacts,
+      # no Musubi.Wire.to_wire/1 in test code.
+      assert {:ok, %{status: :ok, winner: :p1}} =
+               Musubi.Testing.dispatch_command(page, :pick, %{})
     end
   end
 
