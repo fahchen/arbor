@@ -11,6 +11,18 @@ not in lockstep yet; entries note which surface they affect.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-28
+
+### Added
+
+- `Musubi.Testing.dispatch_command/4` now accepts a native (atom-keyed,
+  atom-valued) payload and wire-encodes it via `Musubi.Wire.to_wire/1`
+  before dispatch, so `handle_command/3` receives the same string-keyed
+  map a real client delivers (#61). Tests can write `%{by: 3}` instead of
+  `%{"by" => 3}`; the encode is idempotent on existing string-keyed
+  payloads, so this is non-breaking. Symmetric with the egress `to_wire`
+  encoding of command replies (#59).
+
 ## [0.5.0] — 2026-05-27
 
 ### Changed
@@ -132,7 +144,8 @@ Initial public release of the Musubi runtime (then `Arbor`):
 - TypeScript client and React adapter that materialize the diff stream
   into immutable snapshots.
 
-[Unreleased]: https://github.com/fahchen/musubi/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/fahchen/musubi/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/fahchen/musubi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fahchen/musubi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fahchen/musubi/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fahchen/musubi/compare/v0.2.0...v0.3.0
