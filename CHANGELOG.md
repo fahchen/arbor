@@ -11,6 +11,16 @@ not in lockstep yet; entries note which surface they affect.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-27
+
+### Changed
+
+- Command replies are now returned in native Elixir shape (atom keys,
+  structs, atom values), symmetric with `render/1`; `Musubi.Wire.to_wire/1`
+  moves to the transport egress (#59). Revises #57. Client wire contract
+  unchanged. **Breaking** (Elixir API): tests asserting wire-shaped replies
+  from `dispatch_command/3` / `command/4` must switch to native shape.
+
 ## [0.4.0] — 2026-05-26
 
 ### Changed
@@ -122,7 +132,8 @@ Initial public release of the Musubi runtime (then `Arbor`):
 - TypeScript client and React adapter that materialize the diff stream
   into immutable snapshots.
 
-[Unreleased]: https://github.com/fahchen/musubi/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/fahchen/musubi/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/fahchen/musubi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fahchen/musubi/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fahchen/musubi/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fahchen/musubi/compare/v0.1.0...v0.2.0
