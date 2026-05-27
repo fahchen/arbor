@@ -43,7 +43,6 @@ defmodule Musubi.Page.Server do
   alias Musubi.Stream
   alias Musubi.Telemetry
   alias Musubi.Upload
-  alias Musubi.Wire
 
   @type transport_opts() :: map()
   @type start_arg() ::
@@ -666,13 +665,15 @@ defmodule Musubi.Page.Server do
   # Command pipeline + render
   # ---------------------------------------------------------------------------
 
-  # Single client-bound reply seam. The handler reply and any
-  # `:before_command` halt reply are normalized through `Musubi.Wire` here
-  # so the client receives the same wire form as rendered state. The raw,
-  # un-wired reply is what observability sees: handler replies pass through
-  # `:after_command` hooks; halt replies surface only in the
-  # `[:musubi, :auth, :deny]` telemetry inside `run_command_pipeline` — so
-  # user hooks and operators still see the handler's original Elixir term.
+  # Command replies leave the runtime in native Elixir shape (atom keys,
+  # structs, atom values) — symmetric with `render/1` output. The wire-form
+  # transformation (`Musubi.Wire.to_wire/1`) happens at the transport egress
+  # (`Musubi.Transport.Channel` / `Musubi.Transport.ConnectionChannel`), the
+  # same boundary that serializes patch envelopes. So `command/4`,
+  # `command_by_name/4`, and `Musubi.Testing.dispatch_command/3` all expose
+  # the native reply. Reply-schema validation still runs against the wire
+  # form: `Musubi.Hooks.ValidateReplySchema` wires internally for validation
+  # only and leaves the returned reply untouched.
   @spec run_command_with_render(store_id(), atom(), command_payload(), State.t()) ::
           {:ok | :halted, command_reply(), State.t(), PatchEnvelope.t() | nil}
   defp run_command_with_render(store_id, command_name, payload, %State{} = state) do
@@ -682,10 +683,10 @@ defmodule Musubi.Page.Server do
     case pipeline_status do
       :ok ->
         {next_state, envelope} = render_and_envelope(state)
-        {:ok, Wire.to_wire(reply), next_state, envelope}
+        {:ok, reply, next_state, envelope}
 
       :halted ->
-        {:halted, Wire.to_wire(reply), state, nil}
+        {:halted, reply, state, nil}
     end
   end
 

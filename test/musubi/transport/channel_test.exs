@@ -47,9 +47,14 @@ defmodule Musubi.Transport.ChannelTest do
       end
     end
 
+    command :select
+
     @impl Musubi.Store
     def handle_command(:rename, %{"title" => title}, socket),
       do: {:noreply, Musubi.Socket.assign(socket, :title, title)}
+
+    def handle_command(:select, _payload, socket),
+      do: {:reply, %{status: :ok, selected: "abc"}, socket}
   end
 
   defmodule ParamStore do
@@ -173,6 +178,26 @@ defmodule Musubi.Transport.ChannelTest do
       "base_version" => 1,
       "ops" => [%{op: "replace", path: "/title", value: "Outbox"}]
     })
+
+    shutdown_channel(socket)
+  end
+
+  test "command reply is wire-shaped (string keys, stringified atoms) on egress" do
+    {:ok, _reply, socket} = join_root()
+
+    assert_push("patch", %{"version" => 1})
+
+    ref =
+      push(socket, "command", %{
+        "store_id" => [],
+        "name" => "select",
+        "payload" => %{}
+      })
+
+    # Handler returns the native reply `%{status: :ok, selected: "abc"}`;
+    # the channel adapter wires it to string keys + stringified atoms on
+    # the way out to the client.
+    assert_reply(ref, :ok, %{"status" => "ok", "selected" => "abc"})
 
     shutdown_channel(socket)
   end

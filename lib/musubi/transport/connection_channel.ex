@@ -26,6 +26,7 @@ defmodule Musubi.Transport.ConnectionChannel do
   alias Musubi.Socket
   alias Musubi.Telemetry
   alias Musubi.Transport.Socket, as: TransportSocket
+  alias Musubi.Wire
 
   # Phoenix socket assign containing the Musubi socket module.
   @socket_module_key :__musubi_socket_module__
@@ -95,7 +96,7 @@ defmodule Musubi.Transport.ConnectionChannel do
              name,
              Map.get(payload, "payload", %{})
            ) do
-      {:reply, {:ok, reply}, socket}
+      {:reply, {:ok, Wire.to_wire(reply)}, socket}
     else
       {:error, reason} -> {:reply, {:error, %{reason: error_reason(reason)}}, socket}
     end
