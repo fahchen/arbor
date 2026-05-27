@@ -123,6 +123,18 @@ defmodule Musubi.TestingTest do
       assert {:ok, %{status: :ok, winner: :p1}} =
                Musubi.Testing.dispatch_command(page, :pick, %{})
     end
+
+    test "accepts a native (atom-keyed) payload, wire-encoded before dispatch" do
+      page = Musubi.Testing.mount(SimpleStore)
+
+      # Handlers match string keys (the wire contract); atom keys and atom
+      # values are normalized to strings, so this routes identically to
+      # passing %{"by" => 3} / %{"winner" => "p1"}.
+      {:ok, _reply} = Musubi.Testing.dispatch_command(page, :bump, %{by: 3})
+      {:ok, _reply} = Musubi.Testing.dispatch_command(page, :declare, %{winner: :p1})
+
+      assert Musubi.Testing.render(page) == %{count: 3, winner: :p1}
+    end
   end
 
   describe "child store addressing via store_id" do

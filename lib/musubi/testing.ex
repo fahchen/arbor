@@ -15,7 +15,7 @@ defmodule Musubi.Testing do
   ## Example
 
       page = Musubi.Testing.mount(RoomStore, %{"room_code" => "AB12"})
-      Musubi.Testing.dispatch_command(page, :ko, %{"target" => "p2"})
+      Musubi.Testing.dispatch_command(page, :ko, %{target: "p2"})
 
       assert Musubi.Testing.render(page) == %{
         winner: :p1,
@@ -25,6 +25,7 @@ defmodule Musubi.Testing do
 
   alias Musubi.Page.Server
   alias Musubi.Socket
+  alias Musubi.Wire
 
   defstruct [:pid, :root, :transport]
 
@@ -56,12 +57,19 @@ defmodule Musubi.Testing do
 
   Mirrors the client-side `proxy.dispatchCommand(name, payload)`
   contract.
+
+  `payload` is given in native Elixir shape and wire-encoded via
+  `Musubi.Wire.to_wire/1` before dispatch, so the store's
+  `handle_command/3` receives the same string-keyed map a real client
+  would deliver over the wire. Write `%{by: 3}` (or `%{"by" => 3}` —
+  the encode is idempotent on wire data); atom keys and atom values are
+  normalized to strings, symmetric with the egress encoding of replies.
   """
   @spec dispatch_command(t(), atom(), map(), Socket.store_id()) ::
           {:ok, map()} | {:error, term()}
   def dispatch_command(%__MODULE__{pid: pid}, name, payload, store_id \\ [])
       when is_atom(name) and is_map(payload) and is_list(store_id) do
-    Server.command(pid, store_id, name, payload)
+    Server.command(pid, store_id, name, Wire.to_wire(payload))
   end
 
   @doc """
