@@ -361,14 +361,18 @@ export function createMusubi<R>(): MusubiFactory<R> {
         previous.key !== sharedMount.key ||
         previous.unmountOnCleanup !== unmountOnCleanup
       ) {
-        if (activeTokenRef.current !== null) {
-          suspenseSweepRegistry.unregister(activeTokenRef.current)
-        }
-        // Bump the entry's generation and capture the lease here. The
-        // finalizer only acts if the entry's current generation still
-        // equals this lease — that way an abandoned-then-reclaimed
-        // entry isn't torn down by a stale finalizer fired for a render
-        // that the new consumer has already superseded.
+        // Deliberately do NOT unregister the previous token here. A
+        // render-phase unregister is unsafe: a still-suspended earlier
+        // render (e.g. an in-flight transition for identity B) has its
+        // safety net armed *only* via the previous registration, and a
+        // later render swapping to identity C would disarm B's net
+        // before B ever gets a chance to commit — leaking the
+        // server-side root if B's mount eventually settles. Instead,
+        // just drop the strong reference (overwrite `activeTokenRef`
+        // below); GC reclaims the abandoned token and the finalizer
+        // sweeps its still-valid lease normally. Committed
+        // registrations are unregistered explicitly by the commit-phase
+        // effect cleanup using its captured `tokenAtCommit`.
         sharedMount.generation += 1
         const nextToken: object = {}
         const nextHoldings: SuspenseSweepHoldings = {

@@ -692,11 +692,10 @@ describe("useMusubiRootSuspense", () => {
 
   test("orphan sweep bails when a newer render supersedes the lease", async () => {
     // Drive the lease/generation check in `__runSuspenseOrphanSweep`
-    // directly. GC is non-deterministic so we don't rely on it here —
-    // this test exercises the pure helper that the FinalizationRegistry
-    // calls, covering the race Codex flagged: a stale finalizer queued
-    // for an abandoned render should not unmount a `shared` entry that
-    // a newer render has already reused.
+    // directly. The render is still suspended (gate never resolves), so
+    // `shared.refs === 0` and the only thing that can short-circuit the
+    // sweep is the lease check itself — exactly the path Codex flagged
+    // as previously unexercised.
     const fake = buildProxy()
     const connection = new FakeMusubiConnection(fake.asProxy())
     const gate = deferred<StoreProxy<Root, ReactTestStores>>()
@@ -715,24 +714,26 @@ describe("useMusubiRootSuspense", () => {
       </MusubiProvider>
     )
 
-    // The hook ran in render-phase, populated `pendingRootMounts`, and
-    // armed a finalizer at the current generation. Read the entry and
-    // simulate a newer render claiming the slot by bumping generation
-    // again — the stale finalizer's lease is now superseded.
     const mounts = __pendingRootMountsForTests.get(
       connection as unknown as MusubiConnection<unknown>
     )!
     const key = "lease-1|React.Test.Root|null"
     const shared = mounts.get(key)!
+    expect(shared.refs).toBe(0)
     const staleLease = shared.generation
+    // Simulate a newer render that has armed a fresh finalizer at a
+    // higher generation. The stale finalizer's lease is now superseded.
     shared.generation += 1
 
-    // Settle the in-flight mount so the sweep's `.then` chain runs.
-    await act(async () => {
-      gate.resolve(fake.asProxy())
-      await gate.promise
-      await flushTimers()
-    })
+    // Tear down the React tree BEFORE settling. Reader never commits,
+    // so `bumpMountRef` never runs and `refs` stays at 0 throughout —
+    // the only check that can short-circuit the sweep is the
+    // generation/lease comparison. If a regression removed every
+    // lease check the sweep's `.then` chain would later see
+    // `refs === 0` and `mounts.get(key) === shared`, proceed to
+    // `mounts.delete` + `mounted.unmount()`, and this test would
+    // observe the unwanted unmount.
+    result.unmount()
 
     __runSuspenseOrphanSweep({
       connection: connection as unknown as MusubiConnection<unknown>,
@@ -740,14 +741,15 @@ describe("useMusubiRootSuspense", () => {
       unmountOnCleanup: true,
       lease: staleLease
     })
-    await act(async () => { await flushTimers() })
 
-    // Stale finalizer must not delete the entry or unmount the store.
+    await act(async () => {
+      gate.resolve(fake.asProxy())
+      await gate.promise
+      await flushTimers()
+    })
+
     expect(mounts.get(key)).toBe(shared)
     expect(connection.unmounts).toEqual([])
-
-    result.unmount()
-    await act(async () => { await flushTimers() })
   })
 
   test("orphan sweep bails when a committed consumer is holding the entry", async () => {
