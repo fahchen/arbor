@@ -11,6 +11,8 @@ not in lockstep yet; entries note which surface they affect.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-05-30
+
 ### Fixed
 
 - **Transport** — `Musubi.Transport.Socket.build_connect_socket/2` no
