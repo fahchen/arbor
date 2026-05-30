@@ -659,13 +659,28 @@ describe("useMusubiRootSuspense", () => {
       await flushTimers()
     })
 
-    // No client-side sweep: a `setTimeout`-scheduled teardown would race
-    // React 19's MessageChannel-scheduled commit and wedge Suspense in an
-    // infinite mount/unmount loop. The abandoned mount stays parked with
-    // refs===0 until the connection is released (then GC'd via the
-    // `pendingRootMounts` WeakMap); the server's mountStore timeout
-    // reclaims the remote side.
-    expect(connection.unmounts).toEqual([])
+    // The FinalizationRegistry safety net unmounts the orphaned root once
+    // the discarded fiber's hook state — including the per-render token —
+    // is GC'd. Real browsers collect on their own schedule; the test runs
+    // with `--expose-gc` (see vite.config.ts) so we can drive it
+    // deterministically here.
+    const triggerGc = (
+      globalThis as unknown as { gc?: () => void }
+    ).gc
+    if (typeof triggerGc !== "function") {
+      throw new Error(
+        "node --expose-gc is required to exercise the Suspense orphan sweep"
+      )
+    }
+    for (let i = 0; i < 20; i++) {
+      triggerGc()
+      // Yield to microtasks + the FinalizationRegistry queue (which runs on
+      // its own task after GC).
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      if (connection.unmounts.length > 0) break
+    }
+
+    expect(connection.unmounts).toEqual(["orphan-1"])
   })
 
   test("failure variant: failed mount entry is removed (no poison) and retries", async () => {

@@ -332,28 +332,35 @@ export function createMusubi<R>(): MusubiFactory<R> {
     // Render-phase: lookup-or-create. DO NOT bump refs here — that happens
     // in the commit-phase effect below. Suspense may discard this render.
     const sharedMount = ensureRootMount<M, R>(connection, mountOptions)
-    const committedRef = useRef(false)
+
+    // Per-fiber render-phase token registered with `suspenseSweepRegistry`.
+    // While React holds onto this fiber's hook state the token is reachable
+    // and the finalizer does not run. When React discards the render
+    // (parent unmounts, Suspense throws the subtree away) without ever
+    // committing, the fiber's hook state is released, the token becomes
+    // GC-eligible, and the finalizer eventually tears the orphaned mount
+    // down. This replaces the old timer-based `scheduleSuspenseOrphanSweep`
+    // (which raced React 19's MessageChannel commit and wedged Suspense in
+    // an infinite mount/unmount loop): no timer, no race, fully bounded by
+    // GC reachability.
+    const tokenRef = useRef<object | null>(null)
+    if (tokenRef.current === null) {
+      tokenRef.current = {}
+      suspenseSweepRegistry.register(tokenRef.current, {
+        connection: connection as MusubiConnection<unknown>,
+        key: sharedMount.key,
+        unmountOnCleanup
+      })
+    }
 
     useEffect(() => {
       // Commit-phase: this render won; take a ref.
       bumpMountRef(connection, sharedMount.key)
-      committedRef.current = true
       return () => {
-        committedRef.current = false
         releaseRootMount(connection, sharedMount.key, unmountOnCleanup)
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [connection, sharedMount.key, unmountOnCleanup])
-
-    // No client-side orphan sweep: a `setTimeout`-scheduled teardown races
-    // React 19's MessageChannel-scheduled passive-effect commit (where
-    // `bumpMountRef` runs), tearing the entry down before any consumer can
-    // claim it and wedging the Suspense boundary in an infinite
-    // mount/unmount loop. The server's `mountStore` timeout reclaims any
-    // genuinely abandoned mount; if a `useMusubiRootSuspense` render
-    // settles but is then discarded, the entry stays put with refs===0
-    // until the connection itself is released, then is GC'd via the
-    // `pendingRootMounts` WeakMap.
 
     if (sharedMount.failed) {
       throw sharedMount.error
@@ -485,6 +492,37 @@ const pendingRootMounts: WeakMap<
   MusubiConnection<unknown>,
   Map<string, SharedRootMount>
 > = new WeakMap()
+
+/**
+ * FinalizationRegistry safety net for `useMusubiRootSuspense`. When a
+ * Suspense render starts a mount via `ensureRootMount` but never commits
+ * (parent unmounts before the promise settles, React discards the
+ * subtree, etc.), the commit-phase `useEffect` never runs so neither
+ * `bumpMountRef` nor `releaseRootMount` ever touch refs. The per-render
+ * token registered here keeps the entry's teardown reachable as long as
+ * the fiber's hook state is reachable; once the fiber is released the
+ * token becomes GC-eligible and the finalizer drops the orphaned entry
+ * and (when requested) unmounts the server-side root. GC timing is
+ * non-deterministic — the entry can linger until the next collection —
+ * but cleanup is guaranteed eventually, instead of waiting for the whole
+ * channel to terminate.
+ */
+const suspenseSweepRegistry = new FinalizationRegistry<{
+  connection: MusubiConnection<unknown>
+  key: string
+  unmountOnCleanup: boolean
+}>(({ connection, key, unmountOnCleanup }) => {
+  const mounts = pendingRootMounts.get(connection)
+  const shared = mounts?.get(key)
+  if (!mounts || !shared) return
+  // A committed consumer claimed the entry: leave it alone, ref accounting
+  // owns the lifecycle now.
+  if (shared.refs > 0) return
+  mounts.delete(key)
+  if (!shared.failed && shared.value && unmountOnCleanup) {
+    void shared.value.unmount()
+  }
+})
 
 /**
  * Render-phase safe: returns the existing shared mount entry or creates a new
