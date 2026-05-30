@@ -77,7 +77,7 @@ defmodule Musubi.Transport.Socket do
     session =
       case Map.get(connect_info, :session) do
         session when is_map(session) -> session
-        _ -> %{}
+        _other -> %{}
       end
 
     %Musubi.Socket{}
