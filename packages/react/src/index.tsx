@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState
 } from "react"
@@ -332,24 +333,94 @@ export function createMusubi<R>(): MusubiFactory<R> {
     // Render-phase: lookup-or-create. DO NOT bump refs here — that happens
     // in the commit-phase effect below. Suspense may discard this render.
     const sharedMount = ensureRootMount<M, R>(connection, mountOptions)
-    const committedRef = useRef(false)
+
+    // Per-identity render-phase token registered with `suspenseSweepRegistry`.
+    // While React holds onto this fiber's hook state the token is reachable
+    // and the finalizer does not run. When React discards the render
+    // (parent unmounts, Suspense throws the subtree away) without ever
+    // committing, the fiber's hook state is released, the token becomes
+    // GC-eligible, and the finalizer eventually tears the orphaned mount
+    // down. This replaces the old timer-based `scheduleSuspenseOrphanSweep`
+    // (which raced React 19's MessageChannel commit and wedged Suspense in
+    // an infinite mount/unmount loop).
+    //
+    // Each identity change in render allocates a FRESH token (not a single
+    // fiber-stable token) so its registration can be unregistered
+    // independently. With a shared token, a render N+1 that supersedes a
+    // still-armed safety net from render N would also unregister N's
+    // registration when its own effect cleanup ran later — silently
+    // disarming the safety net on a render that hadn't committed yet.
+    const activeTokenRef = useRef<object | null>(null)
+    const activeHoldingsRef = useRef<SuspenseSweepHoldings | null>(null)
+
+    // Stable per-fiber claim id. `useId` survives StrictMode dev
+    // double-invoke (and Suspense retries) so all spurious
+    // re-registrations of the same logical mount add the SAME id to
+    // `shared.claimers`; `Set` deduplication keeps the bookkeeping
+    // honest. Different fibers (siblings using the same root) get
+    // distinct ids, so each owns its own claim and one's lifecycle
+    // doesn't poison the other's safety net.
+    const claimerId = useId()
+
+    if (suspenseSweepRegistry !== null) {
+      const previous = activeHoldingsRef.current
+      const currentConnection = connection as MusubiConnection<unknown>
+      const needsArm =
+        previous === null ||
+        previous.connection !== currentConnection ||
+        previous.key !== sharedMount.key ||
+        previous.unmountOnCleanup !== unmountOnCleanup ||
+        !sharedMount.claimers.has(claimerId)
+
+      if (needsArm) {
+        // Deliberately do NOT unregister the previous token here. A
+        // render-phase unregister is unsafe: a still-suspended earlier
+        // render (e.g. an in-flight transition for identity B) has its
+        // safety net armed *only* via the previous registration, and a
+        // later render swapping to identity C would disarm B's net
+        // before B ever gets a chance to commit — leaking the
+        // server-side root if B's mount eventually settles. Instead,
+        // just drop the strong reference (overwrite `activeTokenRef`
+        // below); GC reclaims the abandoned token and the finalizer
+        // sweeps the entry via its `claimerId` normally.
+        sharedMount.claimers.add(claimerId)
+        const nextToken: object = {}
+        const nextHoldings: SuspenseSweepHoldings = {
+          connection: currentConnection,
+          key: sharedMount.key,
+          unmountOnCleanup,
+          claimerId,
+          shared: sharedMount
+        }
+        suspenseSweepRegistry.register(nextToken, nextHoldings, nextToken)
+        activeTokenRef.current = nextToken
+        activeHoldingsRef.current = nextHoldings
+      }
+    }
 
     useEffect(() => {
       // Commit-phase: this render won; take a ref.
       bumpMountRef(connection, sharedMount.key)
-      committedRef.current = true
+      // Snapshot the token that was active when this effect set up so
+      // cleanup can unregister exactly this registration even if a later
+      // render swaps `activeTokenRef` out from under us.
+      const tokenAtCommit = activeTokenRef.current
+      const sharedAtCommit = sharedMount
       return () => {
-        committedRef.current = false
+        // Drop this fiber's render-phase claim — refs now owns the
+        // entry's lifecycle for the committed lifespan.
+        sharedAtCommit.claimers.delete(claimerId)
         releaseRootMount(connection, sharedMount.key, unmountOnCleanup)
+        if (suspenseSweepRegistry !== null && tokenAtCommit !== null) {
+          suspenseSweepRegistry.unregister(tokenAtCommit)
+          if (activeTokenRef.current === tokenAtCommit) {
+            activeTokenRef.current = null
+            activeHoldingsRef.current = null
+          }
+        }
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [connection, sharedMount.key, unmountOnCleanup])
-
-    // Schedule orphan-cleanup sweep regardless of success/failure: if no
-    // commit-phase effect bumps refs by the time the promise settles, tear
-    // the mount down so a discarded Suspense render doesn't leak a live
-    // root, and clear the failed entry so a retry can run.
-    scheduleSuspenseOrphanSweep(connection, sharedMount.key, unmountOnCleanup)
 
     if (sharedMount.failed) {
       throw sharedMount.error
@@ -475,13 +546,126 @@ type SharedRootMount = {
   value: MountedStore<never, unknown> | null
   error: Error | null
   cleanupTimer: ReturnType<typeof setTimeout> | null
-  orphanSweepScheduled: boolean
+  // Set of `useId()` claim ids — one per fiber currently holding a
+  // render-phase safety net on this entry. The sweep is a no-op while
+  // the set is non-empty; the last live consumer (committed via
+  // `refs`, or a render-phase claim) is the one that ultimately
+  // tears the entry down. A `Set` rather than a monotonic generation
+  // makes this robust to React 19 StrictMode dev double-invoke and
+  // Suspense retries, which can register a single fiber's claim
+  // multiple times — `Set.add` deduplicates so a sibling consumer's
+  // claim isn't crowded out by spurious re-registrations.
+  claimers: Set<string>
 }
 
 const pendingRootMounts: WeakMap<
   MusubiConnection<unknown>,
   Map<string, SharedRootMount>
 > = new WeakMap()
+
+/** Internal: exposed for white-box tests, not part of the public API. */
+export const __pendingRootMountsForTests = pendingRootMounts
+
+type SuspenseSweepHoldings = {
+  connection: MusubiConnection<unknown>
+  key: string
+  unmountOnCleanup: boolean
+  // The `useId()` id of the fiber that armed this safety net. The
+  // sweep removes this id from `shared.claimers` first, then bails if
+  // anyone else (committed via `refs` or render-phase via remaining
+  // claimer ids) still holds the entry.
+  claimerId: string
+  // Strong reference to the exact `SharedRootMount` instance that was
+  // live at register time. The sweep bails when `mounts.get(key)` no
+  // longer matches this object — i.e. the original entry was torn
+  // down and replaced by a freshly-allocated one for the same key —
+  // so a stale finalizer can never mutate or unmount the new entry.
+  // Adds one extra pointer per pending registration; released when
+  // the finalizer fires (or sooner via `unregister` from the commit
+  // path).
+  shared: SharedRootMount
+}
+
+/**
+ * Core Suspense-orphan sweep. Exported for white-box unit tests because
+ * the host's GC schedule is not deterministic; tests drive this directly
+ * to cover the claimer-set and committed-claim cases without waiting on
+ * `globalThis.gc()`.
+ */
+export function __runSuspenseOrphanSweep(holdings: SuspenseSweepHoldings): void {
+  const { connection, key, unmountOnCleanup, claimerId, shared } = holdings
+  const mounts = pendingRootMounts.get(connection)
+  if (!mounts) return
+  // Stale finalizer: the entry alive at registration time is no
+  // longer the live one (the original was torn down and a fresh
+  // `SharedRootMount` was allocated for the same key). Bail before
+  // touching anything so the new entry's claimers/refs aren't
+  // disturbed.
+  if (mounts.get(key) !== shared) return
+  // Drop our render-phase claim. Idempotent — `Set.delete` on an
+  // already-removed id is a no-op, which covers re-arming and
+  // already-committed paths.
+  shared.claimers.delete(claimerId)
+  // A committed consumer claimed the entry: leave it alone, ref
+  // accounting owns the lifecycle now.
+  if (shared.refs > 0) return
+  // Other fibers' render-phase safety nets still hold the entry; one
+  // of those will eventually do the teardown.
+  if (shared.claimers.size > 0) return
+
+  // Wait for the in-flight mount to settle before deciding. If the GC
+  // fires before `shared.promise` resolves, `shared.value` is still
+  // null; deleting the entry now would orphan the eventual
+  // `MountedStore` with no one left to call `.unmount()` on it. Chain
+  // off the promise so the unmount tracks the settled value (mirrors
+  // the deferred unmount in `releaseRootMount`).
+  void shared.promise.then(
+    (mounted) => {
+      // Re-check between this callback being scheduled and running —
+      // a sibling consumer may have rearmed or committed in the gap.
+      if (mounts.get(key) !== shared) return
+      if (shared.refs > 0) return
+      if (shared.claimers.size > 0) return
+      mounts.delete(key)
+      if (unmountOnCleanup) void mounted.unmount()
+    },
+    () => {
+      if (mounts.get(key) !== shared) return
+      if (shared.refs > 0) return
+      if (shared.claimers.size > 0) return
+      // Failed mount: nothing to unmount, just drop the dead entry so
+      // a future render can retry.
+      mounts.delete(key)
+    }
+  )
+}
+
+/**
+ * FinalizationRegistry safety net for `useMusubiRootSuspense`. When a
+ * Suspense render starts a mount via `ensureRootMount` but never commits
+ * (parent unmounts before the promise settles, React discards the
+ * subtree, etc.), the commit-phase `useEffect` never runs so neither
+ * `bumpMountRef` nor `releaseRootMount` ever touch refs. The per-render
+ * token registered here keeps the entry's teardown reachable as long as
+ * the fiber's hook state is reachable; once the fiber is released the
+ * token becomes GC-eligible and the finalizer drops the orphaned entry
+ * and (when requested) unmounts the server-side root. GC timing is
+ * non-deterministic — the entry can linger until the next collection —
+ * but cleanup is guaranteed eventually, instead of waiting for the whole
+ * channel to terminate.
+ *
+ * `FinalizationRegistry` lands in Chrome 84 / Safari 14.1 / Node 14.6 —
+ * universal across the React 19 support matrix — but feature-detect at
+ * module load so an older host (kiosk WebViews, embedded shells) still
+ * imports without throwing `ReferenceError`. With no registry the
+ * orphaned mount lingers until the channel terminates (the pre-fix
+ * baseline behaviour), which is acceptable degradation; the committed
+ * path is unaffected because it owns its own ref-counted cleanup.
+ */
+const suspenseSweepRegistry: FinalizationRegistry<SuspenseSweepHoldings> | null =
+  typeof FinalizationRegistry !== "undefined"
+    ? new FinalizationRegistry<SuspenseSweepHoldings>(__runSuspenseOrphanSweep)
+    : null
 
 /**
  * Render-phase safe: returns the existing shared mount entry or creates a new
@@ -513,7 +697,7 @@ function ensureRootMount<M extends StoreModule<R>, R>(
     value: null,
     error: null,
     cleanupTimer: null,
-    orphanSweepScheduled: false
+    claimers: new Set<string>()
   }
 
   shared.promise = connection
@@ -588,35 +772,6 @@ function releaseRootMount<R>(
       void shared.promise.then((mounted) => mounted.unmount()).catch(() => undefined)
     }
   }, 0)
-}
-
-/**
- * Suspense success-with-no-consumer path: if the promise resolves but no
- * commit-phase effect ever bumped refs, the mount is orphaned. Sweep on a
- * microtask after settle. Idempotent per (connection, key).
- */
-function scheduleSuspenseOrphanSweep<R>(
-  connection: MusubiConnection<R>,
-  key: string,
-  unmountOnCleanup: boolean
-): void {
-  const mounts = pendingRootMounts.get(connection as MusubiConnection<unknown>)
-  const shared = mounts?.get(key)
-  if (!mounts || !shared || shared.orphanSweepScheduled) return
-  shared.orphanSweepScheduled = true
-
-  const sweep = () => {
-    setTimeout(() => {
-      shared.orphanSweepScheduled = false
-      if (shared.refs > 0) return
-      // No consumer ever committed: drop the entry. On success, also unmount.
-      mounts.delete(key)
-      if (!shared.failed && shared.value && unmountOnCleanup) {
-        void shared.value.unmount()
-      }
-    }, 0)
-  }
-  shared.promise.then(sweep, sweep)
 }
 
 function rootMountsFor<R>(

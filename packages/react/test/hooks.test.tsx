@@ -2,7 +2,14 @@ import { act, render, screen } from "@testing-library/react"
 import * as React from "react"
 import { describe, expect, test, vi } from "vitest"
 
-import { createMusubi, MusubiCommandError, keyOf, shallowEqual } from "../src"
+import {
+  createMusubi,
+  MusubiCommandError,
+  keyOf,
+  shallowEqual,
+  __pendingRootMountsForTests,
+  __runSuspenseOrphanSweep
+} from "../src"
 import * as clientModule from "@musubi/client"
 
 import { FakeStoreProxy } from "./setup"
@@ -659,8 +666,250 @@ describe("useMusubiRootSuspense", () => {
       await flushTimers()
     })
 
-    // Orphan sweep should have unmounted the abandoned root.
+    // The FinalizationRegistry safety net unmounts the orphaned root once
+    // the discarded fiber's hook state — including the per-render token —
+    // is GC'd. Real browsers collect on their own schedule; the test runs
+    // with `--expose-gc` (see vite.config.ts) so we can drive it
+    // deterministically here.
+    const triggerGc = (globalThis as unknown as { gc?: () => void }).gc
+    if (typeof triggerGc !== "function") {
+      throw new Error("node --expose-gc is required to exercise the Suspense orphan sweep")
+    }
+    for (let i = 0; i < 20; i++) {
+      triggerGc()
+      // Yield to microtasks + the FinalizationRegistry queue (which runs on
+      // its own task after GC).
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      if (connection.unmounts.length > 0) break
+    }
+
     expect(connection.unmounts).toEqual(["orphan-1"])
+  })
+
+  test("orphan sweep bails when a newer render supersedes the lease", async () => {
+    // Drive the lease/generation check in `__runSuspenseOrphanSweep`
+    // directly. The render is still suspended (gate never resolves), so
+    // `shared.refs === 0` and the only thing that can short-circuit the
+    // sweep is the lease check itself — exactly the path Codex flagged
+    // as previously unexercised.
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    const gate = deferred<StoreProxy<Root, ReactTestStores>>()
+    connection.mountResult = gate.promise
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "lease-1" })
+      return <span>{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <MusubiProvider connection={connection}>
+        <React.Suspense fallback={<span>load</span>}>
+          <Reader />
+        </React.Suspense>
+      </MusubiProvider>
+    )
+
+    const mounts = __pendingRootMountsForTests.get(
+      connection as unknown as MusubiConnection<unknown>
+    )!
+    const key = "lease-1|React.Test.Root|null"
+    const shared = mounts.get(key)!
+    expect(shared.refs).toBe(0)
+
+    // Seed an unrelated sibling claim — Reader's own `useId` claims
+    // (however many React decides to allocate across speculative
+    // renders) are not load-bearing for this test; what matters is
+    // that the sibling's external claim survives the sweep.
+    const siblingClaimerId = "sibling-claimer"
+    shared.claimers.add(siblingClaimerId)
+
+    result.unmount()
+
+    // Sweep with a claimerId that is not the sibling's. Sweep removes
+    // its own claimerId (idempotent if absent) and then checks
+    // whether the claimers set is empty. The sibling claim keeps the
+    // set non-empty so the sweep must bail before deleting the entry
+    // or calling `mounted.unmount()`.
+    __runSuspenseOrphanSweep({
+      connection: connection as unknown as MusubiConnection<unknown>,
+      key,
+      unmountOnCleanup: true,
+      claimerId: "phantom-claimer",
+      shared
+    })
+
+    await act(async () => {
+      gate.resolve(fake.asProxy())
+      await gate.promise
+      await flushTimers()
+    })
+
+    expect(mounts.get(key)).toBe(shared)
+    expect(connection.unmounts).toEqual([])
+    expect(shared.claimers.has(siblingClaimerId)).toBe(true)
+  })
+
+  test("orphan sweep bails when the entry was replaced by a fresh SharedRootMount", async () => {
+    // Stale-finalizer guard: if a `SharedRootMount` is torn down and
+    // a new one allocated for the same key (e.g. failed mount + retry
+    // path through `ensureRootMount`), a previously-armed finalizer
+    // must not mutate or unmount the replacement entry. The sweep's
+    // `mounts.get(key) !== holdings.shared` identity check is what
+    // closes this.
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "stale-1" })
+      return <span>stale:{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <MusubiProvider connection={connection}>
+        <React.Suspense fallback={<span>load</span>}>
+          <Reader />
+        </React.Suspense>
+      </MusubiProvider>
+    )
+    expect(await screen.findByText("stale:Inbox")).toBeTruthy()
+
+    const mounts = __pendingRootMountsForTests.get(
+      connection as unknown as MusubiConnection<unknown>
+    )!
+    const key = "stale-1|React.Test.Root|null"
+    const liveShared = mounts.get(key)!
+
+    // Simulate a finalizer queued against a previously-torn-down
+    // SharedRootMount — same connection + key, different object
+    // identity. Seed a sentinel claimer so the test can prove that
+    // the entry guard short-circuits BEFORE the sweep's
+    // `shared.claimers.delete(claimerId)` mutation runs: if the entry
+    // guard at the head of the sweep is removed, that delete will
+    // strip the sentinel from `staleShared.claimers`, and the
+    // assertion below will fail. Without this, removing only the
+    // entry guard (and keeping the post-promise guards) would leave
+    // the test silently green.
+    const sentinelClaimerId = "stale-fiber"
+    const staleShared = {
+      refs: 0,
+      promise: Promise.resolve(null as never),
+      settled: true,
+      failed: false,
+      value: null,
+      error: null,
+      cleanupTimer: null,
+      claimers: new Set<string>([sentinelClaimerId])
+    } as unknown as Parameters<typeof __runSuspenseOrphanSweep>[0]["shared"]
+
+    __runSuspenseOrphanSweep({
+      connection: connection as unknown as MusubiConnection<unknown>,
+      key,
+      unmountOnCleanup: true,
+      claimerId: sentinelClaimerId,
+      shared: staleShared
+    })
+    await act(async () => { await flushTimers() })
+
+    // The live entry must be untouched and the stale entry's own
+    // state must also be untouched (the sweep bailed before the
+    // entry-head `claimers.delete`).
+    expect(mounts.get(key)).toBe(liveShared)
+    expect(connection.unmounts).toEqual([])
+    expect((staleShared as unknown as { claimers: Set<string> }).claimers.has(sentinelClaimerId)).toBe(true)
+
+    result.unmount()
+    await act(async () => { await flushTimers() })
+  })
+
+  test("StrictMode + sibling: this fiber's lifecycle does not poison a sibling's claim", async () => {
+    // The original concern Codex raised about render-phase generation
+    // bumps was that StrictMode (or any concurrent retry) could
+    // spuriously advance the counter and orphan a sibling consumer's
+    // lease. Switching to a `useId`-keyed `Set<claimerId>` removes
+    // that whole class of bug: regardless of how many times React
+    // re-invokes this body under StrictMode, an unrelated
+    // `siblingClaimerId` we seeded into `shared.claimers` must
+    // survive every render-phase and commit-cleanup mutation made by
+    // Reader.
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "sibling-1" })
+      return <span>strict:{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <React.StrictMode>
+        <MusubiProvider connection={connection}>
+          <React.Suspense fallback={<span>load</span>}>
+            <Reader />
+          </React.Suspense>
+        </MusubiProvider>
+      </React.StrictMode>
+    )
+    expect(await screen.findByText("strict:Inbox")).toBeTruthy()
+
+    const mounts = __pendingRootMountsForTests.get(
+      connection as unknown as MusubiConnection<unknown>
+    )!
+    const key = "sibling-1|React.Test.Root|null"
+    const shared = mounts.get(key)!
+
+    const siblingClaimerId = "external-sibling-claimer"
+    shared.claimers.add(siblingClaimerId)
+
+    result.unmount()
+    await act(async () => { await flushTimers() })
+
+    // Reader's commit-cleanup drops Reader's own `useId` claims and
+    // releases its ref. The sibling's claim must still be intact, and
+    // the entry should still be parked (the sibling's safety net is
+    // what's responsible for tearing it down later).
+    expect(shared.claimers.has(siblingClaimerId)).toBe(true)
+  })
+
+  test("orphan sweep bails when a committed consumer is holding the entry", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "committed-1" })
+      return <span>commit:{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <MusubiProvider connection={connection}>
+        <React.Suspense fallback={<span>load</span>}>
+          <Reader />
+        </React.Suspense>
+      </MusubiProvider>
+    )
+    expect(await screen.findByText("commit:Inbox")).toBeTruthy()
+
+    const mounts = __pendingRootMountsForTests.get(
+      connection as unknown as MusubiConnection<unknown>
+    )!
+    const key = "committed-1|React.Test.Root|null"
+    const shared = mounts.get(key)!
+    expect(shared.refs).toBeGreaterThan(0)
+
+    __runSuspenseOrphanSweep({
+      connection: connection as unknown as MusubiConnection<unknown>,
+      key,
+      unmountOnCleanup: true,
+      claimerId: "stranger",
+      shared
+    })
+    await act(async () => { await flushTimers() })
+
+    expect(mounts.get(key)).toBe(shared)
+    expect(connection.unmounts).toEqual([])
+
+    result.unmount()
+    await act(async () => { await flushTimers() })
+    expect(connection.unmounts).toEqual(["committed-1"])
   })
 
   test("failure variant: failed mount entry is removed (no poison) and retries", async () => {

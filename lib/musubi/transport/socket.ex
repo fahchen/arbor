@@ -68,7 +68,17 @@ defmodule Musubi.Transport.Socket do
   """
   @spec build_connect_socket(map(), map()) :: Musubi.Socket.t()
   def build_connect_socket(params, connect_info) when is_map(params) and is_map(connect_info) do
-    session = Map.get(connect_info, :session, %{})
+    # Phoenix's cookie session store yields `%{session: nil}` (not a missing
+    # key) on a cookieless first WebSocket handshake, so a `Map.get/3`
+    # default never fires. Normalize anything that isn't a map (nil from
+    # the cookie store; in principle any out-of-contract value) to `%{}`
+    # so `Musubi.Socket.put_session/2`'s `is_map(session)` guard always
+    # holds.
+    session =
+      case Map.get(connect_info, :session) do
+        session when is_map(session) -> session
+        _other -> %{}
+      end
 
     %Musubi.Socket{}
     |> Musubi.Socket.put_session(session)
