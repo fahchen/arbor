@@ -11,6 +11,30 @@ not in lockstep yet; entries note which surface they affect.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Transport** — `Musubi.Transport.Socket.build_connect_socket/2` no
+  longer crashes the WebSocket handshake with `FunctionClauseError` when
+  Phoenix's cookie session store delivers `connect_info = %{session:
+  nil}` (the shape it produces on a cookieless first visit). The handler
+  now normalizes `nil` to `%{}` before passing the session through to
+  `Musubi.Socket.put_session/2` (#63).
+- **`@musubi/react`** — Drop the `react ^18.3.0` / `react-dom ^18.3.0`
+  devDependencies that were causing pnpm-workspace consumers on React
+  19 to ship two React copies in their production bundle and crash
+  with minified React error `#525` on the first Suspense render. React
+  is now hoisted at the repo root and pinned via `pnpm.overrides`; the
+  package's public `peerDependencies` (`react ^18.2.0 || ^19.0.0`) is
+  unchanged (#63).
+- **`@musubi/react`** — `useMusubiRootSuspense` no longer wedges
+  Suspense in an infinite mount/unmount loop under React 19. The
+  previous timer-based orphan sweep raced React 19's
+  MessageChannel-scheduled commit and tore the mount entry down before
+  any consumer could claim it; the cleanup path is now a
+  `FinalizationRegistry`-backed safety net keyed on a per-render
+  token, which fires only after React releases the discarded fiber —
+  no timer, no race, no infinite remount (#63).
+
 ## [0.6.0] — 2026-05-28
 
 ### Added
