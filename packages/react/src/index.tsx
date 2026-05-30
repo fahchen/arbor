@@ -389,7 +389,8 @@ export function createMusubi<R>(): MusubiFactory<R> {
           connection: currentConnection,
           key: sharedMount.key,
           unmountOnCleanup,
-          claimerId
+          claimerId,
+          shared: sharedMount
         }
         suspenseSweepRegistry.register(nextToken, nextHoldings, nextToken)
         activeTokenRef.current = nextToken
@@ -574,6 +575,15 @@ type SuspenseSweepHoldings = {
   // anyone else (committed via `refs` or render-phase via remaining
   // claimer ids) still holds the entry.
   claimerId: string
+  // Strong reference to the exact `SharedRootMount` instance that was
+  // live at register time. The sweep bails when `mounts.get(key)` no
+  // longer matches this object — i.e. the original entry was torn
+  // down and replaced by a freshly-allocated one for the same key —
+  // so a stale finalizer can never mutate or unmount the new entry.
+  // Adds one extra pointer per pending registration; released when
+  // the finalizer fires (or sooner via `unregister` from the commit
+  // path).
+  shared: SharedRootMount
 }
 
 /**
@@ -583,10 +593,15 @@ type SuspenseSweepHoldings = {
  * `globalThis.gc()`.
  */
 export function __runSuspenseOrphanSweep(holdings: SuspenseSweepHoldings): void {
-  const { connection, key, unmountOnCleanup, claimerId } = holdings
+  const { connection, key, unmountOnCleanup, claimerId, shared } = holdings
   const mounts = pendingRootMounts.get(connection)
-  const shared = mounts?.get(key)
-  if (!mounts || !shared) return
+  if (!mounts) return
+  // Stale finalizer: the entry alive at registration time is no
+  // longer the live one (the original was torn down and a fresh
+  // `SharedRootMount` was allocated for the same key). Bail before
+  // touching anything so the new entry's claimers/refs aren't
+  // disturbed.
+  if (mounts.get(key) !== shared) return
   // Drop our render-phase claim. Idempotent — `Set.delete` on an
   // already-removed id is a no-op, which covers re-arming and
   // already-committed paths.
@@ -608,16 +623,16 @@ export function __runSuspenseOrphanSweep(holdings: SuspenseSweepHoldings): void 
     (mounted) => {
       // Re-check between this callback being scheduled and running —
       // a sibling consumer may have rearmed or committed in the gap.
+      if (mounts.get(key) !== shared) return
       if (shared.refs > 0) return
       if (shared.claimers.size > 0) return
-      if (mounts.get(key) !== shared) return
       mounts.delete(key)
       if (unmountOnCleanup) void mounted.unmount()
     },
     () => {
+      if (mounts.get(key) !== shared) return
       if (shared.refs > 0) return
       if (shared.claimers.size > 0) return
-      if (mounts.get(key) !== shared) return
       // Failed mount: nothing to unmount, just drop the dead entry so
       // a future render can retry.
       mounts.delete(key)

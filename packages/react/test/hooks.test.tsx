@@ -735,7 +735,8 @@ describe("useMusubiRootSuspense", () => {
       connection: connection as unknown as MusubiConnection<unknown>,
       key,
       unmountOnCleanup: true,
-      claimerId: "phantom-claimer"
+      claimerId: "phantom-claimer",
+      shared
     })
 
     await act(async () => {
@@ -747,6 +748,71 @@ describe("useMusubiRootSuspense", () => {
     expect(mounts.get(key)).toBe(shared)
     expect(connection.unmounts).toEqual([])
     expect(shared.claimers.has(siblingClaimerId)).toBe(true)
+  })
+
+  test("orphan sweep bails when the entry was replaced by a fresh SharedRootMount", async () => {
+    // Stale-finalizer guard: if a `SharedRootMount` is torn down and
+    // a new one allocated for the same key (e.g. failed mount + retry
+    // path through `ensureRootMount`), a previously-armed finalizer
+    // must not mutate or unmount the replacement entry. The sweep's
+    // `mounts.get(key) !== holdings.shared` identity check is what
+    // closes this.
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "stale-1" })
+      return <span>stale:{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <MusubiProvider connection={connection}>
+        <React.Suspense fallback={<span>load</span>}>
+          <Reader />
+        </React.Suspense>
+      </MusubiProvider>
+    )
+    expect(await screen.findByText("stale:Inbox")).toBeTruthy()
+
+    const mounts = __pendingRootMountsForTests.get(
+      connection as unknown as MusubiConnection<unknown>
+    )!
+    const key = "stale-1|React.Test.Root|null"
+    const liveShared = mounts.get(key)!
+
+    // Simulate a finalizer queued against a previously-torn-down
+    // SharedRootMount — same connection + key, different object
+    // identity.
+    const staleShared = {
+      refs: 0,
+      promise: Promise.resolve(null as never),
+      settled: true,
+      failed: false,
+      value: null,
+      error: null,
+      cleanupTimer: null,
+      claimers: new Set<string>()
+    } as unknown as Parameters<typeof __runSuspenseOrphanSweep>[0]["shared"]
+
+    __runSuspenseOrphanSweep({
+      connection: connection as unknown as MusubiConnection<unknown>,
+      key,
+      unmountOnCleanup: true,
+      claimerId: "stale-fiber",
+      shared: staleShared
+    })
+    await act(async () => { await flushTimers() })
+
+    // The live entry must be untouched. If the identity guard were
+    // dropped the sweep would mutate `liveShared.claimers` (deleting
+    // "stale-fiber" is a no-op) and then short-circuit only on
+    // `refs > 0`. With the guard, the sweep bails BEFORE touching
+    // anything on the live entry — assert that.
+    expect(mounts.get(key)).toBe(liveShared)
+    expect(connection.unmounts).toEqual([])
+
+    result.unmount()
+    await act(async () => { await flushTimers() })
   })
 
   test("StrictMode + sibling: this fiber's lifecycle does not poison a sibling's claim", async () => {
@@ -826,7 +892,8 @@ describe("useMusubiRootSuspense", () => {
       connection: connection as unknown as MusubiConnection<unknown>,
       key,
       unmountOnCleanup: true,
-      claimerId: "stranger"
+      claimerId: "stranger",
+      shared
     })
     await act(async () => { await flushTimers() })
 
