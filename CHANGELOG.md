@@ -11,6 +11,8 @@ not in lockstep yet; entries note which surface they affect.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-05-30
+
 ### Fixed
 
 - **Transport** — `Musubi.Transport.Socket.build_connect_socket/2` no
@@ -173,7 +175,8 @@ Initial public release of the Musubi runtime (then `Arbor`):
 - TypeScript client and React adapter that materialize the diff stream
   into immutable snapshots.
 
-[Unreleased]: https://github.com/fahchen/musubi/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/fahchen/musubi/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/fahchen/musubi/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/fahchen/musubi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fahchen/musubi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fahchen/musubi/compare/v0.3.0...v0.4.0
