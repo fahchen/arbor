@@ -24,5 +24,15 @@ defmodule Musubi.Transport.SocketTest do
 
       assert Musubi.Socket.session(socket) == %{}
     end
+
+    test "normalizes a non-map session value to %{}" do
+      # `put_session/2` only accepts maps; any out-of-contract value (list,
+      # binary, atom, …) routed through here must be normalized rather
+      # than crashing the WebSocket handshake.
+      for bad <- [[], "not-a-map", :not_a_map, 42] do
+        socket = TransportSocket.build_connect_socket(%{}, %{session: bad})
+        assert Musubi.Socket.session(socket) == %{}
+      end
+    end
   end
 end

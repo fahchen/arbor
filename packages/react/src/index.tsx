@@ -363,10 +363,11 @@ export function createMusubi<R>(): MusubiFactory<R> {
     const currentConnection = connection as MusubiConnection<unknown>
     const previousHoldings = holdingsRef.current
     if (
-      previousHoldings === null ||
-      previousHoldings.connection !== currentConnection ||
-      previousHoldings.key !== sharedMount.key ||
-      previousHoldings.unmountOnCleanup !== unmountOnCleanup
+      suspenseSweepRegistry !== null &&
+      (previousHoldings === null ||
+        previousHoldings.connection !== currentConnection ||
+        previousHoldings.key !== sharedMount.key ||
+        previousHoldings.unmountOnCleanup !== unmountOnCleanup)
     ) {
       if (previousHoldings !== null) {
         suspenseSweepRegistry.unregister(tokenRef.current)
@@ -394,8 +395,14 @@ export function createMusubi<R>(): MusubiFactory<R> {
         releaseRootMount(connection, sharedMount.key, unmountOnCleanup)
         // The commit path owns the entry's lifecycle now; drop the
         // finalizer holdings so a later GC of the fiber can't fire a
-        // second `unmount()` against an already-released entry.
-        if (tokenRef.current !== null && holdingsRef.current !== null) {
+        // second `unmount()` against an already-released entry. No-op
+        // when the host lacks `FinalizationRegistry` — the safety net
+        // was never armed in the first place.
+        if (
+          suspenseSweepRegistry !== null &&
+          tokenRef.current !== null &&
+          holdingsRef.current !== null
+        ) {
           suspenseSweepRegistry.unregister(tokenRef.current)
           holdingsRef.current = null
         }
@@ -534,6 +541,12 @@ const pendingRootMounts: WeakMap<
   Map<string, SharedRootMount>
 > = new WeakMap()
 
+type SuspenseSweepHoldings = {
+  connection: MusubiConnection<unknown>
+  key: string
+  unmountOnCleanup: boolean
+}
+
 /**
  * FinalizationRegistry safety net for `useMusubiRootSuspense`. When a
  * Suspense render starts a mount via `ensureRootMount` but never commits
@@ -547,12 +560,18 @@ const pendingRootMounts: WeakMap<
  * non-deterministic — the entry can linger until the next collection —
  * but cleanup is guaranteed eventually, instead of waiting for the whole
  * channel to terminate.
+ *
+ * `FinalizationRegistry` lands in Chrome 84 / Safari 14.1 / Node 14.6 —
+ * universal across the React 19 support matrix — but feature-detect at
+ * module load so an older host (kiosk WebViews, embedded shells) still
+ * imports without throwing `ReferenceError`. With no registry the
+ * orphaned mount lingers until the channel terminates (the pre-fix
+ * baseline behaviour), which is acceptable degradation; the committed
+ * path is unaffected because it owns its own ref-counted cleanup.
  */
-const suspenseSweepRegistry = new FinalizationRegistry<{
-  connection: MusubiConnection<unknown>
-  key: string
-  unmountOnCleanup: boolean
-}>(({ connection, key, unmountOnCleanup }) => {
+const suspenseSweepRegistry: FinalizationRegistry<SuspenseSweepHoldings> | null =
+  typeof FinalizationRegistry !== "undefined"
+    ? new FinalizationRegistry<SuspenseSweepHoldings>(({ connection, key, unmountOnCleanup }) => {
   const mounts = pendingRootMounts.get(connection)
   const shared = mounts?.get(key)
   if (!mounts || !shared) return
@@ -584,7 +603,8 @@ const suspenseSweepRegistry = new FinalizationRegistry<{
       mounts.delete(key)
     }
   )
-})
+      })
+    : null
 
 /**
  * Render-phase safe: returns the existing shared mount entry or creates a new
