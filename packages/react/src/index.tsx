@@ -343,14 +343,48 @@ export function createMusubi<R>(): MusubiFactory<R> {
     // (which raced React 19's MessageChannel commit and wedged Suspense in
     // an infinite mount/unmount loop): no timer, no race, fully bounded by
     // GC reachability.
+    //
+    // The token itself is stable per fiber (so we don't churn registry
+    // entries on every render), but the registered holdings must track
+    // the current mount identity — re-register whenever `connection`,
+    // `key`, or `unmountOnCleanup` change so the finalizer cleans the
+    // entry the fiber is actually using.
     const tokenRef = useRef<object | null>(null)
+    const holdingsRef = useRef<{
+      connection: MusubiConnection<unknown>
+      key: string
+      unmountOnCleanup: boolean
+    } | null>(null)
+
     if (tokenRef.current === null) {
       tokenRef.current = {}
-      suspenseSweepRegistry.register(tokenRef.current, {
-        connection: connection as MusubiConnection<unknown>,
+    }
+
+    const currentConnection = connection as MusubiConnection<unknown>
+    const previousHoldings = holdingsRef.current
+    if (
+      previousHoldings === null ||
+      previousHoldings.connection !== currentConnection ||
+      previousHoldings.key !== sharedMount.key ||
+      previousHoldings.unmountOnCleanup !== unmountOnCleanup
+    ) {
+      if (previousHoldings !== null) {
+        suspenseSweepRegistry.unregister(tokenRef.current)
+      }
+      const nextHoldings = {
+        connection: currentConnection,
         key: sharedMount.key,
         unmountOnCleanup
-      })
+      }
+      // Third arg is the unregister token; reusing `tokenRef.current`
+      // means commit-phase cleanup (below) can drop the safety net
+      // explicitly via `unregister(tokenRef.current)`.
+      suspenseSweepRegistry.register(
+        tokenRef.current,
+        nextHoldings,
+        tokenRef.current
+      )
+      holdingsRef.current = nextHoldings
     }
 
     useEffect(() => {
@@ -358,6 +392,13 @@ export function createMusubi<R>(): MusubiFactory<R> {
       bumpMountRef(connection, sharedMount.key)
       return () => {
         releaseRootMount(connection, sharedMount.key, unmountOnCleanup)
+        // The commit path owns the entry's lifecycle now; drop the
+        // finalizer holdings so a later GC of the fiber can't fire a
+        // second `unmount()` against an already-released entry.
+        if (tokenRef.current !== null && holdingsRef.current !== null) {
+          suspenseSweepRegistry.unregister(tokenRef.current)
+          holdingsRef.current = null
+        }
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [connection, sharedMount.key, unmountOnCleanup])
@@ -518,10 +559,31 @@ const suspenseSweepRegistry = new FinalizationRegistry<{
   // A committed consumer claimed the entry: leave it alone, ref accounting
   // owns the lifecycle now.
   if (shared.refs > 0) return
-  mounts.delete(key)
-  if (!shared.failed && shared.value && unmountOnCleanup) {
-    void shared.value.unmount()
-  }
+
+  // Wait for the in-flight mount to settle before deciding. If the GC
+  // fires before `shared.promise` resolves, `shared.value` is still
+  // null; deleting the entry now would orphan the eventual
+  // `MountedStore` with no one left to call `.unmount()` on it. Chain
+  // off the promise so the unmount tracks the settled value (mirrors
+  // the deferred unmount in `releaseRootMount`).
+  void shared.promise.then(
+    (mounted) => {
+      // Re-check refs: a late commit may have claimed the entry between
+      // promise settlement and this callback.
+      if (shared.refs > 0) return
+      // Re-check the entry: a sibling render may already have rebuilt it.
+      if (mounts.get(key) !== shared) return
+      mounts.delete(key)
+      if (unmountOnCleanup) void mounted.unmount()
+    },
+    () => {
+      if (shared.refs > 0) return
+      if (mounts.get(key) !== shared) return
+      // Failed mount: nothing to unmount, just drop the dead entry so
+      // a future render can retry.
+      mounts.delete(key)
+    }
+  )
 })
 
 /**
