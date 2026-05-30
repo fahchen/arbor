@@ -30,10 +30,14 @@ not in lockstep yet; entries note which surface they affect.
   Suspense in an infinite mount/unmount loop under React 19. The
   previous timer-based orphan sweep raced React 19's
   MessageChannel-scheduled commit and tore the mount entry down before
-  any consumer could claim it; the cleanup path is now a
-  `FinalizationRegistry`-backed safety net keyed on a per-render
-  token, which fires only after React releases the discarded fiber —
-  no timer, no race, no infinite remount (#63).
+  any consumer could claim it. The cleanup path is now a
+  `FinalizationRegistry`-backed safety net: each render-phase mount
+  allocates a fresh unregister token and bumps a generation counter on
+  the shared entry; the finalizer fires only after React releases the
+  discarded fiber, and bails on stale leases (a newer render claimed
+  the slot) and on committed entries (the ref count owns the lifecycle).
+  Falls back to "cleanup on channel termination" on hosts that lack
+  `FinalizationRegistry`. (#63).
 
 ## [0.6.0] — 2026-05-28
 

@@ -2,7 +2,14 @@ import { act, render, screen } from "@testing-library/react"
 import * as React from "react"
 import { describe, expect, test, vi } from "vitest"
 
-import { createMusubi, MusubiCommandError, keyOf, shallowEqual } from "../src"
+import {
+  createMusubi,
+  MusubiCommandError,
+  keyOf,
+  shallowEqual,
+  __pendingRootMountsForTests,
+  __runSuspenseOrphanSweep
+} from "../src"
 import * as clientModule from "@musubi/client"
 
 import { FakeStoreProxy } from "./setup"
@@ -681,6 +688,107 @@ describe("useMusubiRootSuspense", () => {
     }
 
     expect(connection.unmounts).toEqual(["orphan-1"])
+  })
+
+  test("orphan sweep bails when a newer render supersedes the lease", async () => {
+    // Drive the lease/generation check in `__runSuspenseOrphanSweep`
+    // directly. GC is non-deterministic so we don't rely on it here —
+    // this test exercises the pure helper that the FinalizationRegistry
+    // calls, covering the race Codex flagged: a stale finalizer queued
+    // for an abandoned render should not unmount a `shared` entry that
+    // a newer render has already reused.
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+    const gate = deferred<StoreProxy<Root, ReactTestStores>>()
+    connection.mountResult = gate.promise
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "lease-1" })
+      return <span>{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <MusubiProvider connection={connection}>
+        <React.Suspense fallback={<span>load</span>}>
+          <Reader />
+        </React.Suspense>
+      </MusubiProvider>
+    )
+
+    // The hook ran in render-phase, populated `pendingRootMounts`, and
+    // armed a finalizer at the current generation. Read the entry and
+    // simulate a newer render claiming the slot by bumping generation
+    // again — the stale finalizer's lease is now superseded.
+    const mounts = __pendingRootMountsForTests.get(
+      connection as unknown as MusubiConnection<unknown>
+    )!
+    const key = "lease-1|React.Test.Root|null"
+    const shared = mounts.get(key)!
+    const staleLease = shared.generation
+    shared.generation += 1
+
+    // Settle the in-flight mount so the sweep's `.then` chain runs.
+    await act(async () => {
+      gate.resolve(fake.asProxy())
+      await gate.promise
+      await flushTimers()
+    })
+
+    __runSuspenseOrphanSweep({
+      connection: connection as unknown as MusubiConnection<unknown>,
+      key,
+      unmountOnCleanup: true,
+      lease: staleLease
+    })
+    await act(async () => { await flushTimers() })
+
+    // Stale finalizer must not delete the entry or unmount the store.
+    expect(mounts.get(key)).toBe(shared)
+    expect(connection.unmounts).toEqual([])
+
+    result.unmount()
+    await act(async () => { await flushTimers() })
+  })
+
+  test("orphan sweep bails when a committed consumer is holding the entry", async () => {
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "committed-1" })
+      return <span>commit:{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <MusubiProvider connection={connection}>
+        <React.Suspense fallback={<span>load</span>}>
+          <Reader />
+        </React.Suspense>
+      </MusubiProvider>
+    )
+    expect(await screen.findByText("commit:Inbox")).toBeTruthy()
+
+    const mounts = __pendingRootMountsForTests.get(
+      connection as unknown as MusubiConnection<unknown>
+    )!
+    const key = "committed-1|React.Test.Root|null"
+    const shared = mounts.get(key)!
+    expect(shared.refs).toBeGreaterThan(0)
+
+    __runSuspenseOrphanSweep({
+      connection: connection as unknown as MusubiConnection<unknown>,
+      key,
+      unmountOnCleanup: true,
+      lease: shared.generation
+    })
+    await act(async () => { await flushTimers() })
+
+    expect(mounts.get(key)).toBe(shared)
+    expect(connection.unmounts).toEqual([])
+
+    result.unmount()
+    await act(async () => { await flushTimers() })
+    expect(connection.unmounts).toEqual(["committed-1"])
   })
 
   test("failure variant: failed mount entry is removed (no poison) and retries", async () => {

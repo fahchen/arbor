@@ -333,7 +333,7 @@ export function createMusubi<R>(): MusubiFactory<R> {
     // in the commit-phase effect below. Suspense may discard this render.
     const sharedMount = ensureRootMount<M, R>(connection, mountOptions)
 
-    // Per-fiber render-phase token registered with `suspenseSweepRegistry`.
+    // Per-identity render-phase token registered with `suspenseSweepRegistry`.
     // While React holds onto this fiber's hook state the token is reachable
     // and the finalizer does not run. When React discards the render
     // (parent unmounts, Suspense throws the subtree away) without ever
@@ -341,70 +341,64 @@ export function createMusubi<R>(): MusubiFactory<R> {
     // GC-eligible, and the finalizer eventually tears the orphaned mount
     // down. This replaces the old timer-based `scheduleSuspenseOrphanSweep`
     // (which raced React 19's MessageChannel commit and wedged Suspense in
-    // an infinite mount/unmount loop): no timer, no race, fully bounded by
-    // GC reachability.
+    // an infinite mount/unmount loop).
     //
-    // The token itself is stable per fiber (so we don't churn registry
-    // entries on every render), but the registered holdings must track
-    // the current mount identity — re-register whenever `connection`,
-    // `key`, or `unmountOnCleanup` change so the finalizer cleans the
-    // entry the fiber is actually using.
-    const tokenRef = useRef<object | null>(null)
-    const holdingsRef = useRef<{
-      connection: MusubiConnection<unknown>
-      key: string
-      unmountOnCleanup: boolean
-    } | null>(null)
+    // Each identity change in render allocates a FRESH token (not a single
+    // fiber-stable token) so its registration can be unregistered
+    // independently. With a shared token, a render N+1 that supersedes a
+    // still-armed safety net from render N would also unregister N's
+    // registration when its own effect cleanup ran later — silently
+    // disarming the safety net on a render that hadn't committed yet.
+    const activeTokenRef = useRef<object | null>(null)
+    const activeHoldingsRef = useRef<SuspenseSweepHoldings | null>(null)
 
-    if (tokenRef.current === null) {
-      tokenRef.current = {}
-    }
-
-    const currentConnection = connection as MusubiConnection<unknown>
-    const previousHoldings = holdingsRef.current
-    if (
-      suspenseSweepRegistry !== null &&
-      (previousHoldings === null ||
-        previousHoldings.connection !== currentConnection ||
-        previousHoldings.key !== sharedMount.key ||
-        previousHoldings.unmountOnCleanup !== unmountOnCleanup)
-    ) {
-      if (previousHoldings !== null) {
-        suspenseSweepRegistry.unregister(tokenRef.current)
+    if (suspenseSweepRegistry !== null) {
+      const previous = activeHoldingsRef.current
+      const currentConnection = connection as MusubiConnection<unknown>
+      if (
+        previous === null ||
+        previous.connection !== currentConnection ||
+        previous.key !== sharedMount.key ||
+        previous.unmountOnCleanup !== unmountOnCleanup
+      ) {
+        if (activeTokenRef.current !== null) {
+          suspenseSweepRegistry.unregister(activeTokenRef.current)
+        }
+        // Bump the entry's generation and capture the lease here. The
+        // finalizer only acts if the entry's current generation still
+        // equals this lease — that way an abandoned-then-reclaimed
+        // entry isn't torn down by a stale finalizer fired for a render
+        // that the new consumer has already superseded.
+        sharedMount.generation += 1
+        const nextToken: object = {}
+        const nextHoldings: SuspenseSweepHoldings = {
+          connection: currentConnection,
+          key: sharedMount.key,
+          unmountOnCleanup,
+          lease: sharedMount.generation
+        }
+        suspenseSweepRegistry.register(nextToken, nextHoldings, nextToken)
+        activeTokenRef.current = nextToken
+        activeHoldingsRef.current = nextHoldings
       }
-      const nextHoldings = {
-        connection: currentConnection,
-        key: sharedMount.key,
-        unmountOnCleanup
-      }
-      // Third arg is the unregister token; reusing `tokenRef.current`
-      // means commit-phase cleanup (below) can drop the safety net
-      // explicitly via `unregister(tokenRef.current)`.
-      suspenseSweepRegistry.register(
-        tokenRef.current,
-        nextHoldings,
-        tokenRef.current
-      )
-      holdingsRef.current = nextHoldings
     }
 
     useEffect(() => {
       // Commit-phase: this render won; take a ref.
       bumpMountRef(connection, sharedMount.key)
+      // Snapshot the token that was active when this effect set up so
+      // cleanup can unregister exactly this registration even if a later
+      // render swaps `activeTokenRef` out from under us. The shared
+      // token of the older design lost this race.
+      const tokenAtCommit = activeTokenRef.current
       return () => {
         releaseRootMount(connection, sharedMount.key, unmountOnCleanup)
-        // The commit path owns the entry's lifecycle now; drop the
-        // finalizer holdings so a later GC of the fiber can't fire a
-        // second `unmount()` against an already-released entry. No-op
-        // when the host lacks `FinalizationRegistry` — the safety net
-        // was never armed in the first place.
-        if (
-          suspenseSweepRegistry !== null &&
-          tokenRef.current !== null &&
-          holdingsRef.current !== null
-        ) {
-          suspenseSweepRegistry.unregister(tokenRef.current)
-          holdingsRef.current = null
+        if (suspenseSweepRegistry !== null && tokenAtCommit !== null) {
+          suspenseSweepRegistry.unregister(tokenAtCommit)
+          if (activeTokenRef.current === tokenAtCommit) {
+            activeTokenRef.current = null
+            activeHoldingsRef.current = null
+          }
         }
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -534,6 +528,13 @@ type SharedRootMount = {
   value: MountedStore<never, unknown> | null
   error: Error | null
   cleanupTimer: ReturnType<typeof setTimeout> | null
+  // Monotonic counter bumped every time `useMusubiRootSuspense` arms a
+  // fresh Suspense-orphan finalizer for this entry. The finalizer
+  // captures the value it saw at registration as a `lease` and only acts
+  // if the entry's current generation still equals that lease. That way
+  // a render N+1 that reuses the same `shared` entry can't be torn down
+  // by a stale finalizer queued for the abandoned render N.
+  generation: number
 }
 
 const pendingRootMounts: WeakMap<
@@ -541,10 +542,61 @@ const pendingRootMounts: WeakMap<
   Map<string, SharedRootMount>
 > = new WeakMap()
 
+/** Internal: exposed for white-box tests, not part of the public API. */
+export const __pendingRootMountsForTests = pendingRootMounts
+
 type SuspenseSweepHoldings = {
   connection: MusubiConnection<unknown>
   key: string
   unmountOnCleanup: boolean
+  // Generation snapshot taken at registration time. The sweep is a no-op
+  // unless the entry's current generation still equals this value.
+  lease: number
+}
+
+/**
+ * Core Suspense-orphan sweep. Exported for white-box unit tests because
+ * the host's GC schedule is not deterministic; tests drive this directly
+ * to cover the generation-lease and committed-claim cases without
+ * waiting on `globalThis.gc()`.
+ */
+export function __runSuspenseOrphanSweep(holdings: SuspenseSweepHoldings): void {
+  const { connection, key, unmountOnCleanup, lease } = holdings
+  const mounts = pendingRootMounts.get(connection)
+  const shared = mounts?.get(key)
+  if (!mounts || !shared) return
+  // A committed consumer claimed the entry: leave it alone, ref accounting
+  // owns the lifecycle now.
+  if (shared.refs > 0) return
+  // A newer render has armed a fresh finalizer (or claimed the entry in
+  // some other way) — this lease is stale, bail.
+  if (shared.generation !== lease) return
+
+  // Wait for the in-flight mount to settle before deciding. If the GC
+  // fires before `shared.promise` resolves, `shared.value` is still
+  // null; deleting the entry now would orphan the eventual
+  // `MountedStore` with no one left to call `.unmount()` on it. Chain
+  // off the promise so the unmount tracks the settled value (mirrors
+  // the deferred unmount in `releaseRootMount`).
+  void shared.promise.then(
+    (mounted) => {
+      if (shared.refs > 0) return
+      if (mounts.get(key) !== shared) return
+      // Re-check the lease — between registration and the promise
+      // settling, another consumer may have superseded this finalizer.
+      if (shared.generation !== lease) return
+      mounts.delete(key)
+      if (unmountOnCleanup) void mounted.unmount()
+    },
+    () => {
+      if (shared.refs > 0) return
+      if (mounts.get(key) !== shared) return
+      if (shared.generation !== lease) return
+      // Failed mount: nothing to unmount, just drop the dead entry so
+      // a future render can retry.
+      mounts.delete(key)
+    }
+  )
 }
 
 /**
@@ -571,39 +623,7 @@ type SuspenseSweepHoldings = {
  */
 const suspenseSweepRegistry: FinalizationRegistry<SuspenseSweepHoldings> | null =
   typeof FinalizationRegistry !== "undefined"
-    ? new FinalizationRegistry<SuspenseSweepHoldings>(({ connection, key, unmountOnCleanup }) => {
-  const mounts = pendingRootMounts.get(connection)
-  const shared = mounts?.get(key)
-  if (!mounts || !shared) return
-  // A committed consumer claimed the entry: leave it alone, ref accounting
-  // owns the lifecycle now.
-  if (shared.refs > 0) return
-
-  // Wait for the in-flight mount to settle before deciding. If the GC
-  // fires before `shared.promise` resolves, `shared.value` is still
-  // null; deleting the entry now would orphan the eventual
-  // `MountedStore` with no one left to call `.unmount()` on it. Chain
-  // off the promise so the unmount tracks the settled value (mirrors
-  // the deferred unmount in `releaseRootMount`).
-  void shared.promise.then(
-    (mounted) => {
-      // Re-check refs: a late commit may have claimed the entry between
-      // promise settlement and this callback.
-      if (shared.refs > 0) return
-      // Re-check the entry: a sibling render may already have rebuilt it.
-      if (mounts.get(key) !== shared) return
-      mounts.delete(key)
-      if (unmountOnCleanup) void mounted.unmount()
-    },
-    () => {
-      if (shared.refs > 0) return
-      if (mounts.get(key) !== shared) return
-      // Failed mount: nothing to unmount, just drop the dead entry so
-      // a future render can retry.
-      mounts.delete(key)
-    }
-  )
-      })
+    ? new FinalizationRegistry<SuspenseSweepHoldings>(__runSuspenseOrphanSweep)
     : null
 
 /**
@@ -635,7 +655,8 @@ function ensureRootMount<M extends StoreModule<R>, R>(
     failed: false,
     value: null,
     error: null,
-    cleanupTimer: null
+    cleanupTimer: null,
+    generation: 0
   }
 
   shared.promise = connection
