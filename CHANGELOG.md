@@ -32,12 +32,13 @@ not in lockstep yet; entries note which surface they affect.
   MessageChannel-scheduled commit and tore the mount entry down before
   any consumer could claim it. The cleanup path is now a
   `FinalizationRegistry`-backed safety net: each render-phase mount
-  allocates a fresh unregister token and bumps a generation counter on
-  the shared entry; the finalizer fires only after React releases the
-  discarded fiber, and bails on stale leases (a newer render claimed
-  the slot) and on committed entries (the ref count owns the lifecycle).
-  Falls back to "cleanup on channel termination" on hosts that lack
-  `FinalizationRegistry`. (#63).
+  allocates a fresh unregister token and adds the fiber's `useId`
+  claim to a `Set<claimerId>` on the shared entry. The finalizer
+  fires only after React releases the discarded fiber, drops this
+  fiber's claim, and bails while the set is non-empty (other sibling
+  consumers still hold the entry) or while `refs > 0` (a committed
+  consumer owns the lifecycle). Falls back to "cleanup on channel
+  termination" on hosts that lack `FinalizationRegistry`. (#63).
 
 ## [0.6.0] — 2026-05-28
 

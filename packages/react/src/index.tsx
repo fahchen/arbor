@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState
 } from "react"
@@ -352,15 +353,26 @@ export function createMusubi<R>(): MusubiFactory<R> {
     const activeTokenRef = useRef<object | null>(null)
     const activeHoldingsRef = useRef<SuspenseSweepHoldings | null>(null)
 
+    // Stable per-fiber claim id. `useId` survives StrictMode dev
+    // double-invoke (and Suspense retries) so all spurious
+    // re-registrations of the same logical mount add the SAME id to
+    // `shared.claimers`; `Set` deduplication keeps the bookkeeping
+    // honest. Different fibers (siblings using the same root) get
+    // distinct ids, so each owns its own claim and one's lifecycle
+    // doesn't poison the other's safety net.
+    const claimerId = useId()
+
     if (suspenseSweepRegistry !== null) {
       const previous = activeHoldingsRef.current
       const currentConnection = connection as MusubiConnection<unknown>
-      if (
+      const needsArm =
         previous === null ||
         previous.connection !== currentConnection ||
         previous.key !== sharedMount.key ||
-        previous.unmountOnCleanup !== unmountOnCleanup
-      ) {
+        previous.unmountOnCleanup !== unmountOnCleanup ||
+        !sharedMount.claimers.has(claimerId)
+
+      if (needsArm) {
         // Deliberately do NOT unregister the previous token here. A
         // render-phase unregister is unsafe: a still-suspended earlier
         // render (e.g. an in-flight transition for identity B) has its
@@ -370,16 +382,14 @@ export function createMusubi<R>(): MusubiFactory<R> {
         // server-side root if B's mount eventually settles. Instead,
         // just drop the strong reference (overwrite `activeTokenRef`
         // below); GC reclaims the abandoned token and the finalizer
-        // sweeps its still-valid lease normally. Committed
-        // registrations are unregistered explicitly by the commit-phase
-        // effect cleanup using its captured `tokenAtCommit`.
-        sharedMount.generation += 1
+        // sweeps the entry via its `claimerId` normally.
+        sharedMount.claimers.add(claimerId)
         const nextToken: object = {}
         const nextHoldings: SuspenseSweepHoldings = {
           connection: currentConnection,
           key: sharedMount.key,
           unmountOnCleanup,
-          lease: sharedMount.generation
+          claimerId
         }
         suspenseSweepRegistry.register(nextToken, nextHoldings, nextToken)
         activeTokenRef.current = nextToken
@@ -392,10 +402,13 @@ export function createMusubi<R>(): MusubiFactory<R> {
       bumpMountRef(connection, sharedMount.key)
       // Snapshot the token that was active when this effect set up so
       // cleanup can unregister exactly this registration even if a later
-      // render swaps `activeTokenRef` out from under us. The shared
-      // token of the older design lost this race.
+      // render swaps `activeTokenRef` out from under us.
       const tokenAtCommit = activeTokenRef.current
+      const sharedAtCommit = sharedMount
       return () => {
+        // Drop this fiber's render-phase claim — refs now owns the
+        // entry's lifecycle for the committed lifespan.
+        sharedAtCommit.claimers.delete(claimerId)
         releaseRootMount(connection, sharedMount.key, unmountOnCleanup)
         if (suspenseSweepRegistry !== null && tokenAtCommit !== null) {
           suspenseSweepRegistry.unregister(tokenAtCommit)
@@ -532,13 +545,16 @@ type SharedRootMount = {
   value: MountedStore<never, unknown> | null
   error: Error | null
   cleanupTimer: ReturnType<typeof setTimeout> | null
-  // Monotonic counter bumped every time `useMusubiRootSuspense` arms a
-  // fresh Suspense-orphan finalizer for this entry. The finalizer
-  // captures the value it saw at registration as a `lease` and only acts
-  // if the entry's current generation still equals that lease. That way
-  // a render N+1 that reuses the same `shared` entry can't be torn down
-  // by a stale finalizer queued for the abandoned render N.
-  generation: number
+  // Set of `useId()` claim ids — one per fiber currently holding a
+  // render-phase safety net on this entry. The sweep is a no-op while
+  // the set is non-empty; the last live consumer (committed via
+  // `refs`, or a render-phase claim) is the one that ultimately
+  // tears the entry down. A `Set` rather than a monotonic generation
+  // makes this robust to React 19 StrictMode dev double-invoke and
+  // Suspense retries, which can register a single fiber's claim
+  // multiple times — `Set.add` deduplicates so a sibling consumer's
+  // claim isn't crowded out by spurious re-registrations.
+  claimers: Set<string>
 }
 
 const pendingRootMounts: WeakMap<
@@ -553,28 +569,34 @@ type SuspenseSweepHoldings = {
   connection: MusubiConnection<unknown>
   key: string
   unmountOnCleanup: boolean
-  // Generation snapshot taken at registration time. The sweep is a no-op
-  // unless the entry's current generation still equals this value.
-  lease: number
+  // The `useId()` id of the fiber that armed this safety net. The
+  // sweep removes this id from `shared.claimers` first, then bails if
+  // anyone else (committed via `refs` or render-phase via remaining
+  // claimer ids) still holds the entry.
+  claimerId: string
 }
 
 /**
  * Core Suspense-orphan sweep. Exported for white-box unit tests because
  * the host's GC schedule is not deterministic; tests drive this directly
- * to cover the generation-lease and committed-claim cases without
- * waiting on `globalThis.gc()`.
+ * to cover the claimer-set and committed-claim cases without waiting on
+ * `globalThis.gc()`.
  */
 export function __runSuspenseOrphanSweep(holdings: SuspenseSweepHoldings): void {
-  const { connection, key, unmountOnCleanup, lease } = holdings
+  const { connection, key, unmountOnCleanup, claimerId } = holdings
   const mounts = pendingRootMounts.get(connection)
   const shared = mounts?.get(key)
   if (!mounts || !shared) return
-  // A committed consumer claimed the entry: leave it alone, ref accounting
-  // owns the lifecycle now.
+  // Drop our render-phase claim. Idempotent — `Set.delete` on an
+  // already-removed id is a no-op, which covers re-arming and
+  // already-committed paths.
+  shared.claimers.delete(claimerId)
+  // A committed consumer claimed the entry: leave it alone, ref
+  // accounting owns the lifecycle now.
   if (shared.refs > 0) return
-  // A newer render has armed a fresh finalizer (or claimed the entry in
-  // some other way) — this lease is stale, bail.
-  if (shared.generation !== lease) return
+  // Other fibers' render-phase safety nets still hold the entry; one
+  // of those will eventually do the teardown.
+  if (shared.claimers.size > 0) return
 
   // Wait for the in-flight mount to settle before deciding. If the GC
   // fires before `shared.promise` resolves, `shared.value` is still
@@ -584,18 +606,18 @@ export function __runSuspenseOrphanSweep(holdings: SuspenseSweepHoldings): void 
   // the deferred unmount in `releaseRootMount`).
   void shared.promise.then(
     (mounted) => {
+      // Re-check between this callback being scheduled and running —
+      // a sibling consumer may have rearmed or committed in the gap.
       if (shared.refs > 0) return
+      if (shared.claimers.size > 0) return
       if (mounts.get(key) !== shared) return
-      // Re-check the lease — between registration and the promise
-      // settling, another consumer may have superseded this finalizer.
-      if (shared.generation !== lease) return
       mounts.delete(key)
       if (unmountOnCleanup) void mounted.unmount()
     },
     () => {
       if (shared.refs > 0) return
+      if (shared.claimers.size > 0) return
       if (mounts.get(key) !== shared) return
-      if (shared.generation !== lease) return
       // Failed mount: nothing to unmount, just drop the dead entry so
       // a future render can retry.
       mounts.delete(key)
@@ -660,7 +682,7 @@ function ensureRootMount<M extends StoreModule<R>, R>(
     value: null,
     error: null,
     cleanupTimer: null,
-    generation: 0
+    claimers: new Set<string>()
   }
 
   shared.promise = connection

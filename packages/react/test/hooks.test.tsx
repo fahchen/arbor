@@ -671,13 +671,9 @@ describe("useMusubiRootSuspense", () => {
     // is GC'd. Real browsers collect on their own schedule; the test runs
     // with `--expose-gc` (see vite.config.ts) so we can drive it
     // deterministically here.
-    const triggerGc = (
-      globalThis as unknown as { gc?: () => void }
-    ).gc
+    const triggerGc = (globalThis as unknown as { gc?: () => void }).gc
     if (typeof triggerGc !== "function") {
-      throw new Error(
-        "node --expose-gc is required to exercise the Suspense orphan sweep"
-      )
+      throw new Error("node --expose-gc is required to exercise the Suspense orphan sweep")
     }
     for (let i = 0; i < 20; i++) {
       triggerGc()
@@ -720,26 +716,26 @@ describe("useMusubiRootSuspense", () => {
     const key = "lease-1|React.Test.Root|null"
     const shared = mounts.get(key)!
     expect(shared.refs).toBe(0)
-    const staleLease = shared.generation
-    // Simulate a newer render that has armed a fresh finalizer at a
-    // higher generation. The stale finalizer's lease is now superseded.
-    shared.generation += 1
 
-    // Tear down the React tree BEFORE settling. Reader never commits,
-    // so `bumpMountRef` never runs and `refs` stays at 0 throughout —
-    // the only check that can short-circuit the sweep is the
-    // generation/lease comparison. If a regression removed every
-    // lease check the sweep's `.then` chain would later see
-    // `refs === 0` and `mounts.get(key) === shared`, proceed to
-    // `mounts.delete` + `mounted.unmount()`, and this test would
-    // observe the unwanted unmount.
+    // Seed an unrelated sibling claim — Reader's own `useId` claims
+    // (however many React decides to allocate across speculative
+    // renders) are not load-bearing for this test; what matters is
+    // that the sibling's external claim survives the sweep.
+    const siblingClaimerId = "sibling-claimer"
+    shared.claimers.add(siblingClaimerId)
+
     result.unmount()
 
+    // Sweep with a claimerId that is not the sibling's. Sweep removes
+    // its own claimerId (idempotent if absent) and then checks
+    // whether the claimers set is empty. The sibling claim keeps the
+    // set non-empty so the sweep must bail before deleting the entry
+    // or calling `mounted.unmount()`.
     __runSuspenseOrphanSweep({
       connection: connection as unknown as MusubiConnection<unknown>,
       key,
       unmountOnCleanup: true,
-      lease: staleLease
+      claimerId: "phantom-claimer"
     })
 
     await act(async () => {
@@ -750,6 +746,55 @@ describe("useMusubiRootSuspense", () => {
 
     expect(mounts.get(key)).toBe(shared)
     expect(connection.unmounts).toEqual([])
+    expect(shared.claimers.has(siblingClaimerId)).toBe(true)
+  })
+
+  test("StrictMode + sibling: this fiber's lifecycle does not poison a sibling's claim", async () => {
+    // The original concern Codex raised about render-phase generation
+    // bumps was that StrictMode (or any concurrent retry) could
+    // spuriously advance the counter and orphan a sibling consumer's
+    // lease. Switching to a `useId`-keyed `Set<claimerId>` removes
+    // that whole class of bug: regardless of how many times React
+    // re-invokes this body under StrictMode, an unrelated
+    // `siblingClaimerId` we seeded into `shared.claimers` must
+    // survive every render-phase and commit-cleanup mutation made by
+    // Reader.
+    const fake = buildProxy()
+    const connection = new FakeMusubiConnection(fake.asProxy())
+
+    function Reader() {
+      const store = useMusubiRootSuspense({ module: "React.Test.Root", id: "sibling-1" })
+      return <span>strict:{store.snapshot().title}</span>
+    }
+
+    const result = render(
+      <React.StrictMode>
+        <MusubiProvider connection={connection}>
+          <React.Suspense fallback={<span>load</span>}>
+            <Reader />
+          </React.Suspense>
+        </MusubiProvider>
+      </React.StrictMode>
+    )
+    expect(await screen.findByText("strict:Inbox")).toBeTruthy()
+
+    const mounts = __pendingRootMountsForTests.get(
+      connection as unknown as MusubiConnection<unknown>
+    )!
+    const key = "sibling-1|React.Test.Root|null"
+    const shared = mounts.get(key)!
+
+    const siblingClaimerId = "external-sibling-claimer"
+    shared.claimers.add(siblingClaimerId)
+
+    result.unmount()
+    await act(async () => { await flushTimers() })
+
+    // Reader's commit-cleanup drops Reader's own `useId` claims and
+    // releases its ref. The sibling's claim must still be intact, and
+    // the entry should still be parked (the sibling's safety net is
+    // what's responsible for tearing it down later).
+    expect(shared.claimers.has(siblingClaimerId)).toBe(true)
   })
 
   test("orphan sweep bails when a committed consumer is holding the entry", async () => {
@@ -781,7 +826,7 @@ describe("useMusubiRootSuspense", () => {
       connection: connection as unknown as MusubiConnection<unknown>,
       key,
       unmountOnCleanup: true,
-      lease: shared.generation
+      claimerId: "stranger"
     })
     await act(async () => { await flushTimers() })
 
