@@ -782,7 +782,15 @@ describe("useMusubiRootSuspense", () => {
 
     // Simulate a finalizer queued against a previously-torn-down
     // SharedRootMount — same connection + key, different object
-    // identity.
+    // identity. Seed a sentinel claimer so the test can prove that
+    // the entry guard short-circuits BEFORE the sweep's
+    // `shared.claimers.delete(claimerId)` mutation runs: if the entry
+    // guard at the head of the sweep is removed, that delete will
+    // strip the sentinel from `staleShared.claimers`, and the
+    // assertion below will fail. Without this, removing only the
+    // entry guard (and keeping the post-promise guards) would leave
+    // the test silently green.
+    const sentinelClaimerId = "stale-fiber"
     const staleShared = {
       refs: 0,
       promise: Promise.resolve(null as never),
@@ -791,25 +799,24 @@ describe("useMusubiRootSuspense", () => {
       value: null,
       error: null,
       cleanupTimer: null,
-      claimers: new Set<string>()
+      claimers: new Set<string>([sentinelClaimerId])
     } as unknown as Parameters<typeof __runSuspenseOrphanSweep>[0]["shared"]
 
     __runSuspenseOrphanSweep({
       connection: connection as unknown as MusubiConnection<unknown>,
       key,
       unmountOnCleanup: true,
-      claimerId: "stale-fiber",
+      claimerId: sentinelClaimerId,
       shared: staleShared
     })
     await act(async () => { await flushTimers() })
 
-    // The live entry must be untouched. If the identity guard were
-    // dropped the sweep would mutate `liveShared.claimers` (deleting
-    // "stale-fiber" is a no-op) and then short-circuit only on
-    // `refs > 0`. With the guard, the sweep bails BEFORE touching
-    // anything on the live entry — assert that.
+    // The live entry must be untouched and the stale entry's own
+    // state must also be untouched (the sweep bailed before the
+    // entry-head `claimers.delete`).
     expect(mounts.get(key)).toBe(liveShared)
     expect(connection.unmounts).toEqual([])
+    expect((staleShared as unknown as { claimers: Set<string> }).claimers.has(sentinelClaimerId)).toBe(true)
 
     result.unmount()
     await act(async () => { await flushTimers() })
