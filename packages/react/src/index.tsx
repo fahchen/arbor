@@ -345,11 +345,15 @@ export function createMusubi<R>(): MusubiFactory<R> {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [connection, sharedMount.key, unmountOnCleanup])
 
-    // Schedule orphan-cleanup sweep regardless of success/failure: if no
-    // commit-phase effect bumps refs by the time the promise settles, tear
-    // the mount down so a discarded Suspense render doesn't leak a live
-    // root, and clear the failed entry so a retry can run.
-    scheduleSuspenseOrphanSweep(connection, sharedMount.key, unmountOnCleanup)
+    // No client-side orphan sweep: a `setTimeout`-scheduled teardown races
+    // React 19's MessageChannel-scheduled passive-effect commit (where
+    // `bumpMountRef` runs), tearing the entry down before any consumer can
+    // claim it and wedging the Suspense boundary in an infinite
+    // mount/unmount loop. The server's `mountStore` timeout reclaims any
+    // genuinely abandoned mount; if a `useMusubiRootSuspense` render
+    // settles but is then discarded, the entry stays put with refs===0
+    // until the connection itself is released, then is GC'd via the
+    // `pendingRootMounts` WeakMap.
 
     if (sharedMount.failed) {
       throw sharedMount.error
@@ -475,7 +479,6 @@ type SharedRootMount = {
   value: MountedStore<never, unknown> | null
   error: Error | null
   cleanupTimer: ReturnType<typeof setTimeout> | null
-  orphanSweepScheduled: boolean
 }
 
 const pendingRootMounts: WeakMap<
@@ -512,8 +515,7 @@ function ensureRootMount<M extends StoreModule<R>, R>(
     failed: false,
     value: null,
     error: null,
-    cleanupTimer: null,
-    orphanSweepScheduled: false
+    cleanupTimer: null
   }
 
   shared.promise = connection
@@ -588,35 +590,6 @@ function releaseRootMount<R>(
       void shared.promise.then((mounted) => mounted.unmount()).catch(() => undefined)
     }
   }, 0)
-}
-
-/**
- * Suspense success-with-no-consumer path: if the promise resolves but no
- * commit-phase effect ever bumped refs, the mount is orphaned. Sweep on a
- * microtask after settle. Idempotent per (connection, key).
- */
-function scheduleSuspenseOrphanSweep<R>(
-  connection: MusubiConnection<R>,
-  key: string,
-  unmountOnCleanup: boolean
-): void {
-  const mounts = pendingRootMounts.get(connection as MusubiConnection<unknown>)
-  const shared = mounts?.get(key)
-  if (!mounts || !shared || shared.orphanSweepScheduled) return
-  shared.orphanSweepScheduled = true
-
-  const sweep = () => {
-    setTimeout(() => {
-      shared.orphanSweepScheduled = false
-      if (shared.refs > 0) return
-      // No consumer ever committed: drop the entry. On success, also unmount.
-      mounts.delete(key)
-      if (!shared.failed && shared.value && unmountOnCleanup) {
-        void shared.value.unmount()
-      }
-    }, 0)
-  }
-  shared.promise.then(sweep, sweep)
 }
 
 function rootMountsFor<R>(

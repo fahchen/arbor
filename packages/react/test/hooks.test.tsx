@@ -659,8 +659,13 @@ describe("useMusubiRootSuspense", () => {
       await flushTimers()
     })
 
-    // Orphan sweep should have unmounted the abandoned root.
-    expect(connection.unmounts).toEqual(["orphan-1"])
+    // No client-side sweep: a `setTimeout`-scheduled teardown would race
+    // React 19's MessageChannel-scheduled commit and wedge Suspense in an
+    // infinite mount/unmount loop. The abandoned mount stays parked with
+    // refs===0 until the connection is released (then GC'd via the
+    // `pendingRootMounts` WeakMap); the server's mountStore timeout
+    // reclaims the remote side.
+    expect(connection.unmounts).toEqual([])
   })
 
   test("failure variant: failed mount entry is removed (no poison) and retries", async () => {
